@@ -1,0 +1,7 @@
+pos:
+  security:
+    pin-pepper: test-pepper
+    jwt-secret: test-jwt-signing-key-0123456789-abcdefghij
+    login-throttle:
+      max-failures: 10
+      window: 5m

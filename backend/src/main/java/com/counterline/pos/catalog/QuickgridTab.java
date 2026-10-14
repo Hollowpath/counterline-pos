@@ -1,0 +1,36 @@
+package com.counterline.pos.catalog;
+
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
+/** A bottom-bar tab on the sell screen (e.g. "Selling Items") holding a grid of category folders. */
+@Entity
+@Table(name = "quickgrid_tab")
+public class QuickgridTab {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+
+    private short sortOrder;
+
+    protected QuickgridTab() {
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public short getSortOrder() {
+        return sortOrder;
+    }
+}

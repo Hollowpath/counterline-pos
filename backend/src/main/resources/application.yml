@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: pos-api
+  datasource:
+    # Defaults match docker-compose.yml for local development only.
+    # Deployed environments must supply DB_URL / DB_USERNAME / DB_PASSWORD.
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/pos}
+    username: ${DB_USERNAME:pos}
+    password: ${DB_PASSWORD:pos}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  mvc:
+    problemdetails:
+      enabled: true
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          # The web apps' HTML pages: always revalidated (hashed assets are cached; see WebAppsConfig).
+          no-cache: true
+
+server:
+  # Behind the ALB, honour X-Forwarded-For from private-network proxies so the
+  # request's remote address is the real client (used for login throttling).
+  forward-headers-strategy: native
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+pos:
+  outlet:
+    time-zone: ${POS_OUTLET_TIME_ZONE:Asia/Kuala_Lumpur}
+    default-phone-country-code: ${POS_OUTLET_PHONE_COUNTRY_CODE:60}
+  security:
+    # pin-pepper and jwt-secret deliberately have no defaults: deployed environments must
+    # supply POS_SECURITY_PIN_PEPPER and POS_SECURITY_JWT_SECRET (from Secrets Manager).
+    token-ttl: 12h
+    # Manager approval at a cashier's terminal ("Special Access Required"): one action, short-lived.
+    special-access-ttl: 5m
+    login-throttle:
+      max-failures: 10
+      window: 5m
+
+---
+# Local development: demo catalogue + demo staff, and throwaway secrets.
+spring:
+  config:
+    activate:
+      on-profile: local
+  flyway:
+    locations: classpath:db/migration,classpath:db/demo
+
+pos:
+  security:
+    pin-pepper: local-dev-pepper-not-a-secret
+    jwt-secret: local-dev-jwt-signing-key-not-a-secret-0123456789

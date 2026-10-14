@@ -1,0 +1,52 @@
+package com.counterline.pos.register;
+
+import com.counterline.pos.register.RegisterMovement.Direction;
+import com.counterline.pos.reports.ReportDtos.SalesSummary;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.List;
+
+public final class RegisterDtos {
+
+    private RegisterDtos() {
+    }
+
+    /**
+     * Manage Register: whether the register is open and, if so, the current session. When closed,
+     * {@code lastClosed} is the most recent session (its closing summary). {@code openOrders} are
+     * placed, unpaid orders, which must be paid or voided before the register can close.
+     */
+    public record RegisterStatus(boolean open, SessionResponse session, SessionResponse lastClosed, long openOrders) {
+    }
+
+    public record SessionResponse(Long id, long version, Instant openedAt, String openedBy,
+                                  Instant closedAt, String closedBy, String closingNote,
+                                  List<MovementResponse> movements, BigDecimal payIns, BigDecimal payOuts,
+                                  SalesSummary sales) {
+    }
+
+    public record MovementResponse(Long id, Direction direction, BigDecimal amount, String reason,
+                                   String staffName, Instant createdAt) {
+
+        static MovementResponse from(RegisterMovement movement) {
+            return new MovementResponse(movement.getId(), movement.getDirection(), movement.getAmount(),
+                    movement.getReason(), movement.getStaff().getFullName(), movement.getCreatedAt());
+        }
+    }
+
+    public record MovementRequest(
+            @NotNull Direction direction,
+            @NotNull @DecimalMin("0.01") @Digits(integer = 10, fraction = 2) BigDecimal amount,
+            @NotBlank @Size(max = 200) String reason) {
+    }
+
+    /** {@code version} is the session the cashier is looking at, so a stale screen cannot close it. */
+    public record CloseRequest(@NotNull Long version, @Size(max = 500) String note) {
+    }
+}

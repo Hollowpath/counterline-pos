@@ -1,0 +1,60 @@
+# Local development only. Credentials here are for localhost use, not for any deployed environment.
+#
+#   docker compose up -d                       the database, for running the API and Vite yourself
+#   docker compose --profile app up --build    the whole app in its image, with a database of its own
+#                                              (a fresh shop: set the iPad up with a manager PIN):
+#                                              http://localhost:8090 (POS), /display.html, /dashboard.html
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: pos
+      POSTGRES_USER: pos
+      POSTGRES_PASSWORD: pos
+    ports:
+      - "5432:5432"
+    volumes:
+      - pos-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos -d pos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # The image's own database, apart from the one above, as a deployed environment would have: its
+  # tills, sales and members never mix with the API you run yourself. Not published on a port.
+  app-db:
+    profiles: ["app"]
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: pos
+      POSTGRES_USER: pos
+      POSTGRES_PASSWORD: pos
+    volumes:
+      - pos-app-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos -d pos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    profiles: ["app"]
+    build: .
+    image: counterline-pos:local
+    depends_on:
+      app-db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://app-db:5432/pos
+      DB_USERNAME: pos
+      DB_PASSWORD: pos
+      # The demo catalogue, demo staff and the local profile's throwaway secrets (see application.yml).
+      SPRING_PROFILES_ACTIVE: local
+    # 8090 so it can run alongside an API you started yourself on 8080.
+    ports:
+      - "8090:8080"
+
+volumes:
+  pos-db:
+  pos-app-db:

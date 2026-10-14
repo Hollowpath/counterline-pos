@@ -1,0 +1,157 @@
+// Mirrors the backend's dashboard DTOs.
+
+import type { Outlet } from '../auth/types'
+
+/** Head office (every outlet) or an outlet manager (their own). */
+export interface DashboardSession {
+  token: string
+  expiresAt: string
+  name: string
+  role: 'ADMIN' | 'MANAGER'
+  /** The manager's outlet; null for head office. */
+  outlet: Outlet | null
+}
+
+export interface RecentOrder {
+  orderNumber: string
+  paidAt: string
+  total: number
+  staffName: string
+  items: string | null
+}
+
+export interface OutletLive {
+  outletId: number
+  code: string
+  name: string
+  registerOpen: boolean
+  openOrders: number
+  orderCount: number
+  grossSales: number
+  netSales: number
+  lastSaleAt: string | null
+  recentOrders: RecentOrder[]
+}
+
+export interface LiveSales {
+  date: string
+  orderCount: number
+  netSales: number
+  outlets: OutletLive[]
+  generatedAt: string
+}
+
+export interface AdminItem {
+  id: number
+  name: string
+  price: number
+  active: boolean
+  /** The promotion that makes a promotional item free, if any. */
+  promotion: string | null
+  /**
+   * A seasonal flavour (it earns the seasonal-flavour promotion's free item) from `seasonalFrom`
+   * (null: now) to `seasonalUntil`; `seasonalNow`: today is one of those days.
+   */
+  seasonal: boolean
+  seasonalFrom: string | null
+  seasonalUntil: string | null
+  seasonalNow: boolean
+}
+
+export interface AdminCategory {
+  id: number
+  name: string
+  tab: string | null
+  items: AdminItem[]
+}
+
+export interface AdminDiscount {
+  id: number
+  name: string
+  kind: 'PERCENT' | 'AMOUNT'
+  value: number
+  scope: 'ITEM' | 'ORDER' | 'BOTH'
+  requiresApproval: boolean
+  /** Can't be given on a member's sale (the staff discount). */
+  notForMembers: boolean
+  /** A paper voucher keyed in at the till: its sale gives no Buy 3 Free 1, seasonal or birthday free items. */
+  countsAsVoucher: boolean
+  active: boolean
+}
+
+/** An iPad set up as a till. */
+export interface TillDevice {
+  id: number
+  label: string
+  outletId: number
+  outletName: string
+  setUpBy: string
+  setUpAt: string
+  lastLoginAt: string | null
+}
+
+/** An outlet's PIN pads, each locked on its own by too many wrong PINs in a row. */
+export type PinPad = 'TILL' | 'CLOCK' | 'SETUP'
+
+/** A PIN pad locked now (mirrors PinLockService.PinLockResponse). */
+export interface PinLock {
+  outletId: number
+  outletName: string
+  pad: PinPad
+  /** "PIN login", "Clock In/Out" or "iPad set-up". */
+  padName: string
+  lockedUntil: string
+}
+
+/** Headline figures for a period (mirrors SalesOverviewService.Figures). */
+export interface SalesFigures {
+  netSales: number
+  orders: number
+  averageOrder: number
+  /** Units charged for (free items not counted). */
+  itemsSold: number
+  /** Orders with a member on them. */
+  memberOrders: number
+  refunds: number
+}
+
+/** The dashboard's charts for a period (mirrors SalesOverviewService.Overview). */
+export interface SalesOverview {
+  from: string
+  to: string
+  outletId: number | null
+  current: SalesFigures
+  /** The period just before, as long. */
+  previous: SalesFigures
+  days: { date: string; orders: number; netSales: number }[]
+  outlets: { outletId: number; name: string; orders: number; netSales: number }[]
+  /** 0–23, every hour. */
+  hours: { hour: number; orders: number; sales: number }[]
+  topItems: { name: string; quantity: number; sales: number }[]
+  categories: { name: string; amount: number }[]
+  paymentMethods: { name: string; amount: number }[]
+  generatedAt: string
+}
+
+export const dashboardPaths = {
+  login: '/api/v1/dashboard/auth/login',
+  outlets: '/api/v1/dashboard/outlets',
+  live: '/api/v1/dashboard/live',
+  overview: (from: string, to: string, outletId: number | null) =>
+    `/api/v1/dashboard/overview?${new URLSearchParams({ from, to, ...(outletId === null ? {} : { outletId: String(outletId) }) })}`,
+  report: (outletId: number, name: string, from: string, to: string) =>
+    `/api/v1/dashboard/outlets/${outletId}/reports/${name}?${new URLSearchParams({ from, to })}`,
+  items: '/api/v1/dashboard/catalog/items',
+  item: (id: number) => `/api/v1/dashboard/catalog/items/${id}`,
+  discounts: '/api/v1/dashboard/discounts',
+  discount: (id: number) => `/api/v1/dashboard/discounts/${id}`,
+  vouchers: '/api/v1/dashboard/vouchers',
+  voucherBatch: (id: number) => `/api/v1/dashboard/vouchers/${id}`,
+  points: (customerId: number) => `/api/v1/dashboard/customers/${customerId}/points`,
+  owedItems: (customerId: number) => `/api/v1/dashboard/customers/${customerId}/owed-items`,
+  promotions: '/api/v1/dashboard/promotions',
+  devices: '/api/v1/dashboard/devices',
+  deviceReset: (id: number) => `/api/v1/dashboard/devices/${id}/reset`,
+  pinLocks: '/api/v1/dashboard/pin-locks',
+  pinUnlock: (outletId: number, pad: PinPad) => `/api/v1/dashboard/pin-locks/${outletId}/${pad}/unlock`,
+}

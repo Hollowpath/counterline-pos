@@ -1,0 +1,148 @@
+/*
+ * Tailwind CSS for all three apps (POS, customer display, dashboard): its reset, palette and
+ * utilities. The screens use Tailwind's own colours: charcoal and light zinc greys, plain red and
+ * green, orange for careful, an indigo accent; and the Inter typeface.
+ */
+/* theme(static): every colour variable is kept, also for var() in inline styles and SVG. */
+@import 'tailwindcss' theme(static);
+@import '@fontsource-variable/inter';
+
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* Phone layouts below 761px, where the screens always switched (max-width: 760px). */
+  --breakpoint-md: 47.5625rem;
+}
+
+@layer base {
+  html {
+    @apply bg-zinc-100 text-zinc-900 antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  body {
+    @apply bg-zinc-100;
+  }
+
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    @apply cursor-default opacity-40;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-indigo-500;
+  }
+
+  ::selection {
+    @apply bg-indigo-100 text-indigo-900;
+  }
+}
+
+/*
+ * The few building blocks used on nearly every screen. A button's colours are variables, so
+ * btn-primary, btn-danger and the rest change them whatever order the utilities end up in.
+ */
+@utility btn {
+  --btn-bg: var(--color-white);
+  --btn-bg-hover: var(--color-zinc-50);
+  --btn-fg: var(--color-zinc-700);
+  --btn-ring: var(--color-zinc-200);
+  --btn-ring-hover: var(--color-zinc-300);
+  --btn-glow: transparent;
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold;
+  @apply transition duration-150 active:scale-[0.97] disabled:active:scale-100;
+  background-color: var(--btn-bg);
+  color: var(--btn-fg);
+  box-shadow: inset 0 0 0 1px var(--btn-ring), 0 1px 2px 0 var(--btn-glow);
+
+  &:hover:not(:disabled) {
+    background-color: var(--btn-bg-hover);
+    box-shadow: inset 0 0 0 1px var(--btn-ring-hover), 0 6px 14px -4px var(--btn-glow);
+  }
+}
+
+@utility btn-primary {
+  --btn-bg: var(--color-indigo-600);
+  --btn-bg-hover: var(--color-indigo-500);
+  --btn-fg: var(--color-white);
+  --btn-ring: var(--color-indigo-600);
+  --btn-ring-hover: var(--color-indigo-500);
+  --btn-glow: --alpha(var(--color-indigo-600) / 35%);
+}
+
+@utility btn-danger {
+  --btn-bg: var(--color-red-600);
+  --btn-bg-hover: var(--color-red-500);
+  --btn-fg: var(--color-white);
+  --btn-ring: var(--color-red-600);
+  --btn-ring-hover: var(--color-red-500);
+  --btn-glow: --alpha(var(--color-red-600) / 35%);
+}
+
+@utility btn-success {
+  --btn-bg: var(--color-green-600);
+  --btn-bg-hover: var(--color-green-500);
+  --btn-fg: var(--color-white);
+  --btn-ring: var(--color-green-600);
+  --btn-ring-hover: var(--color-green-500);
+  --btn-glow: --alpha(var(--color-green-600) / 35%);
+}
+
+/* A button without a frame: text on the surface, tinted on hover. */
+@utility btn-ghost {
+  --btn-bg: transparent;
+  --btn-bg-hover: var(--color-zinc-100);
+  --btn-ring: transparent;
+  --btn-ring-hover: transparent;
+}
+
+@utility icon-btn {
+  @apply inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-lg leading-none text-zinc-600;
+  @apply shadow-xs ring-1 ring-zinc-200 transition ring-inset hover:bg-zinc-50 hover:text-zinc-900 active:scale-95;
+}
+
+/* Scrolls without showing a scroll bar (wheels, chip rows). */
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Printing a report (or the register's summary): a narrow end-of-day slip on 80 mm thermal
+   paper, through the iPad's print dialog. */
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 4mm;
+  }
+
+  html,
+  body {
+    background: #fff;
+    color: #000;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+  }
+}
+
+/* A search box's magnifier, on the left of the field. */
+@utility search-icon {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2394a3b8'%3E%3Cpath fill-rule='evenodd' d='M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  background-position: 0.8rem center;
+  background-repeat: no-repeat;
+  background-size: 1.1rem;
+}
+
+/* The login screens' backdrop: deep charcoal lit by indigo and fuchsia glows. */
+@utility login-backdrop {
+  background-color: var(--color-zinc-950);
+  background-image:
+    radial-gradient(60rem 40rem at 10% -10%, --alpha(var(--color-indigo-600) / 55%), transparent),
+    radial-gradient(50rem 36rem at 110% 110%, --alpha(var(--color-fuchsia-600) / 35%), transparent);
+}

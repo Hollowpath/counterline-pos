@@ -1,0 +1,14 @@
+# The build context is an allowlist: only the sources the Dockerfile copies go in.
+*
+!backend/
+!frontend/
+
+# Build output and dependencies are rebuilt inside the image.
+frontend/node_modules/
+frontend/dist/
+backend/target/
+
+# Never in an image.
+**/.env
+**/.env.*
+**/*.md

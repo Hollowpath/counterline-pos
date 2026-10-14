@@ -1,0 +1,48 @@
+# Counterline POS — files that must never be committed.
+# backend/.gitignore and frontend/.gitignore add their tools' own entries.
+
+# ---- Large media files ----
+*.mp4
+*.mov
+*.m4v
+*.avi
+*.heic
+
+# ---- Secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+# AWS CDK local context and credentials (deployments are run by the owner, not from this repo)
+cdk.context.json
+.aws/
+
+# ---- Build output and dependencies ----
+node_modules/
+dist/
+dist-ssr/
+target/
+build/
+cdk.out/
+coverage/
+*.tsbuildinfo
+
+# ---- Logs ----
+logs/
+*.log
+
+# ---- OS / IDE ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# ---- Claude Code local settings ----
+.claude/settings.local.json
