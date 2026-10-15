@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from 'react'
 import { ApiError } from '../../api/http'
 import { useApi } from '../../api/useApi'
 import { AppBar } from '../../app/AppBar'
@@ -17,7 +17,7 @@ import { FolderGrid } from './FolderGrid'
 import { FolderItems } from './FolderItems'
 import { ItemDialog } from './ItemDialog'
 import { OrderDiscountsGrid } from './OrderDiscountsGrid'
-import { cartItemCount, cartReducer, cartTotalSen, discountInSale, emptyCart, needsDiscountApproval, type CartLine } from './cart'
+import { cartItemCount, cartReducer, cartTotalSen, discountInSale, emptyCart, needsDiscountApproval, type CartAction, type CartLine } from './cart'
 import { useCartQuote } from './useCartQuote'
 import { useRegister } from '../register/registerApi'
 import { appBarTab } from '../../styles/ui'
@@ -56,11 +56,19 @@ export function SellScreen({
   const tabs = useApi<Tab[]>(catalogPaths.tabs)
   const [view, setView] = useState<View>({ kind: 'tab', tabId: null })
   const [openFolder, setOpenFolder] = useState<Folder | null>(null)
-  const [cart, dispatch] = useReducer(cartReducer, emptyCart)
+  const [cart, dispatchCart] = useReducer(cartReducer, emptyCart)
   const saleOpen = cart.open || cart.lines.length > 0
   useEffect(() => onSaleOpenChange(saleOpen), [saleOpen, onSaleOpenChange])
   const quote = useCartQuote(cart)
   const register = useRegister()
+  // Like closing the register while a sale is open, no sale can start while it is closed: the cart
+  // stays shut and the products can't be tapped. (A sale already open can still be cleared.)
+  const registerClosed = register.open === false
+  const salesBlocked = registerClosed && !cart.open
+  const dispatch: Dispatch<CartAction> = (action) => {
+    if (salesBlocked && action.type !== 'clear') return
+    dispatchCart(action)
+  }
   const [editing, setEditing] = useState<Editing | null>(null)
   const [paying, setPaying] = useState(false)
   // A member who logged in or signed up on the customer display joins the sale (not mid-payment).
@@ -86,7 +94,7 @@ export function SellScreen({
     loadEditableOrder(editRequest.orderId)
       .then((order) => {
         if (!current) return
-        dispatch({ type: 'loadOrder', order })
+        dispatchCart({ type: 'loadOrder', order })
         setPaying(false)
         setOpenFolder(null)
         setApprovalToken(undefined)
@@ -109,7 +117,7 @@ export function SellScreen({
     if (!voidedOrder) return
     const editing = editingOrder.current
     if (editing?.orderId === voidedOrder.orderId) {
-      dispatch({ type: 'clear' })
+      dispatchCart({ type: 'clear' })
       setPaying(false)
       setApprovalToken(undefined)
       setNotice({ tone: 'info', text: `${editing.orderNumber} voided` })
@@ -202,7 +210,11 @@ export function SellScreen({
 
   return (
     <div className="grid h-dvh grid-cols-[minmax(0,1fr)_320px] grid-rows-[minmax(0,1fr)_auto] max-md:grid-cols-[minmax(0,1fr)] max-md:grid-rows-[minmax(0,1fr)_minmax(0,40dvh)_auto]">
-      <section className="overflow-y-auto bg-zinc-100 p-5 max-md:px-3 max-md:py-3" aria-label="Products">
+      <section
+        className={`overflow-y-auto bg-zinc-100 p-5 transition-opacity max-md:px-3 max-md:py-3 ${salesBlocked ? 'opacity-40 grayscale' : ''}`}
+        aria-label="Products"
+        inert={salesBlocked}
+      >
         {catalog}
       </section>
 

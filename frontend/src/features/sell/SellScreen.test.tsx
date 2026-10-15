@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { CategoryItems, Tab } from '../catalog/types'
@@ -182,24 +182,43 @@ describe('SellScreen', () => {
     expect(screen.getByRole('button', { name: /popcorn pouch/i })).toBeInTheDocument()
   })
 
-  it('blocks Pay and Place Order while the register is closed', async () => {
+  it('starts no sale while the register is closed: New Sale and the products are blocked', async () => {
     stubApi({
       '/api/v1/catalog/tabs': () => jsonResponse(tabs),
       '/api/v1/catalog/categories/10/items': () => jsonResponse(pouchItems),
     })
+    const onSaleOpenChange = vi.fn()
     const user = userEvent.setup()
-    render(
-      <RegisterContext.Provider value={{ open: false, openOrders: 0, saleOpen: false, refresh: () => {} }}>
-        <SellScreen onOpenMenu={() => {}} />
+    const closed = { open: false, openOrders: 0, saleOpen: false, refresh: () => {} }
+    const { rerender } = render(
+      <RegisterContext.Provider value={closed}>
+        <SellScreen onOpenMenu={() => {}} onSaleOpenChange={onSaleOpenChange} />
       </RegisterContext.Provider>,
     )
 
-    await user.click(await screen.findByRole('button', { name: /popcorn pouch/i }))
-    await user.click(await products().findByRole('button', { name: /pouch caramel/i }))
+    const cart = within(screen.getByRole('complementary', { name: 'Current sale' }))
+    expect(cart.getByRole('button', { name: 'New Sale' })).toBeDisabled()
+    expect(cart.getByRole('status')).toHaveTextContent('Register closed')
+    const grid = screen.getByRole('region', { name: 'Products', hidden: true })
+    expect(grid).toHaveAttribute('inert')
+    // Even a tap that gets through (jsdom ignores inert) puts nothing in the cart.
+    await screen.findByRole('button', { name: /popcorn pouch/i, hidden: true })
+    fireEvent.click(screen.getByRole('button', { name: /popcorn pouch/i, hidden: true }))
+    fireEvent.click(await screen.findByRole('button', { name: /pouch caramel/i, hidden: true }))
+    expect(cart.getByRole('heading', { name: 'No Sale' })).toBeInTheDocument()
+    expect(onSaleOpenChange).not.toHaveBeenCalledWith(true)
 
-    expect(screen.getByRole('button', { name: 'Pay' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Place Order' })).toBeDisabled()
-    expect(screen.getByText('Register closed')).toBeInTheDocument()
+    // Opened: selling as usual.
+    rerender(
+      <RegisterContext.Provider value={{ ...closed, open: true }}>
+        <SellScreen onOpenMenu={() => {}} onSaleOpenChange={onSaleOpenChange} />
+      </RegisterContext.Provider>,
+    )
+    expect(screen.getByRole('region', { name: 'Products' })).not.toHaveAttribute('inert')
+    await user.click(products().getByRole('button', { name: /pouch caramel/i }))
+    expect(cart.getByRole('button', { name: 'Pay' })).toBeEnabled()
+    expect(cart.getByRole('button', { name: 'Place Order' })).toBeEnabled()
+    expect(cart.queryByText('Register closed')).not.toBeInTheDocument()
   })
 
   it('attaches a customer to the sale', async () => {

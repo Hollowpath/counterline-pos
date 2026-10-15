@@ -101,9 +101,15 @@ export function CartPanel({
           <span className="grid size-16 place-items-center rounded-2xl bg-indigo-50 text-indigo-500 ring-1 ring-indigo-100" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} className="size-8"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5V6a3.75 3.75 0 1 0-7.5 0v4.5m11.356-1.993 1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 0 1-1.12-1.243l1.264-12A1.125 1.125 0 0 1 5.513 7.5h12.974c.576 0 1.059.435 1.119 1.007ZM8.625 10.5a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm7.5 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" /></svg>
           </span>
-          <button type="button" className="btn btn-primary w-[min(16rem,100%)] py-4! text-base!" onClick={() => dispatch({ type: 'newSale' })}>
+          <button type="button" className="btn btn-primary w-[min(16rem,100%)] py-4! text-base!" disabled={registerClosed} onClick={() => dispatch({ type: 'newSale' })}>
             New Sale
           </button>
+          {registerClosed && (
+            <p className="flex w-[min(16rem,100%)] animate-rise-in items-center justify-center gap-2 rounded-xl bg-red-600 px-3 py-2.5 text-sm font-semibold text-white shadow-md shadow-red-600/25" role="status">
+              <svg viewBox="0 0 20 20" fill="currentColor" className="size-4 shrink-0" aria-hidden="true"><path fillRule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clipRule="evenodd" /></svg>
+              {REGISTER_CLOSED_MESSAGE}
+            </p>
+          )}
         </div>
       </aside>
     )
@@ -312,11 +318,6 @@ export function CartPanel({
           ))}
         </ul>
       )}
-      {registerClosed && !empty && (
-        <p className={cartNotice.error} role="status">
-          {REGISTER_CLOSED_MESSAGE}
-        </p>
-      )}
 
       <footer className="mx-3 flex items-baseline justify-between rounded-t-2xl bg-zinc-100 px-4 pt-3 pb-2 text-zinc-900 ring-1 ring-zinc-200/70 ring-inset">
         <span className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
@@ -325,10 +326,10 @@ export function CartPanel({
         <span className="text-2xl font-bold tracking-tight tabular-nums" data-testid="cart-total">{formatRM(cartTotalSen(cart))}</span>
       </footer>
       <div className="mx-3 mb-3 grid grid-cols-[2fr_1fr] gap-2 rounded-b-2xl bg-zinc-100 px-2 pb-2">
-        <button type="button" className="rounded-xl bg-linear-to-b from-indigo-500 to-indigo-600 px-2 py-3.5 text-base font-bold text-white shadow-lg shadow-indigo-600/30 transition enabled:hover:brightness-110 enabled:active:scale-[0.98]" disabled={empty || busy || registerClosed} onClick={onPlaceOrder}>
+        <button type="button" className="rounded-xl bg-linear-to-b from-indigo-500 to-indigo-600 px-2 py-3.5 text-base font-bold text-white shadow-lg shadow-indigo-600/30 transition enabled:hover:brightness-110 enabled:active:scale-[0.98]" disabled={empty || busy} onClick={onPlaceOrder}>
           {busy ? 'Placing…' : 'Place Order'}
         </button>
-        <button type="button" className="rounded-xl bg-zinc-300 px-2 py-3.5 text-base font-bold text-zinc-800 transition enabled:hover:bg-zinc-400/70 enabled:active:scale-[0.98]" disabled={empty || busy || registerClosed || blocked} onClick={onPay}>
+        <button type="button" className="rounded-xl bg-zinc-300 px-2 py-3.5 text-base font-bold text-zinc-800 transition enabled:hover:bg-zinc-400/70 enabled:active:scale-[0.98]" disabled={empty || busy || blocked} onClick={onPay}>
           Pay
         </button>
       </div>

@@ -101,7 +101,9 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
           </ul>
         )}
         {blockers.length > 0 && (
-          <p className="mt-6 rounded-2xl bg-zinc-950/25 px-4 py-3 text-sm font-semibold ring-1 ring-white/20" role="status">
+          // What still has to be settled before closing: it must stand out against the green.
+          <p className="mt-6 flex animate-rise-in items-center justify-center gap-2 rounded-2xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-red-900/30 ring-2 ring-white/70" role="status">
+            <svg viewBox="0 0 20 20" fill="currentColor" className="size-5 shrink-0" aria-hidden="true"><path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" /></svg>
             {blockers.join(' · ')}
           </p>
         )}
