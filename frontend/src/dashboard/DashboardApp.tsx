@@ -97,12 +97,12 @@ function DashboardShell({ session, onLogOut }: { session: DashboardSession; onLo
   return (
     <div className="flex h-dvh max-lg:flex-col">
       {/* The POS's side menu: always beside the page on a wide screen, opened from the bar on a small one. */}
-      {menuOpen && <div className="fixed inset-0 z-10 bg-zinc-950/50 backdrop-blur-[2px] lg:hidden" onClick={() => setMenuOpen(false)} />}
+      {menuOpen && <div className="fixed inset-0 z-10 animate-fade-in bg-zinc-950/50 backdrop-blur-[2px] lg:hidden" onClick={() => setMenuOpen(false)} />}
       <nav
         aria-label="Dashboard"
         className={[
           'flex w-64 shrink-0 flex-col bg-zinc-800 text-white shadow-xl print:hidden',
-          'max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-20 max-lg:w-[min(18rem,85vw)] max-lg:transition-transform',
+          'max-lg:fixed max-lg:inset-y-0 max-lg:left-0 max-lg:z-20 max-lg:w-[min(18rem,85vw)] max-lg:transition-transform max-lg:duration-300 max-lg:ease-(--ease-spring)',
           menuOpen ? '' : 'max-lg:-translate-x-full',
         ].join(' ')}
       >

@@ -41,6 +41,8 @@ export function PinEntry({ onSubmit, notice, lockStatus, fitScreen = false }: Pi
   const [pin, setPin] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Each refused PIN shakes the dots (a new key restarts the animation).
+  const [refusals, setRefusals] = useState(0)
   const [locked, setLocked] = useState<{ until: number } | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
@@ -96,6 +98,7 @@ export function PinEntry({ onSubmit, notice, lockStatus, fitScreen = false }: Pi
     setSubmitting(true)
     const failure = await onSubmit(fullPin)
     if (failure) {
+      setRefusals((count) => count + 1)
       if (typeof failure === 'string') {
         setError(failure)
         setLocked(null)
@@ -135,7 +138,10 @@ export function PinEntry({ onSubmit, notice, lockStatus, fitScreen = false }: Pi
   const message = `min-h-6 text-center text-sm ${fitScreen ? 'my-2 max-w-[26rem] text-zinc-500' : 'my-4 font-medium text-red-600'}`
   return (
     <div className={`flex flex-col items-center ${fitScreen ? 'w-[min(22rem,100%)]' : 'w-full'}`}>
-      <div className="flex gap-3.5 rounded-full bg-zinc-100 px-5 py-3 ring-1 ring-zinc-200/80 ring-inset" role="img" aria-label={`${pin.length} of ${PIN_LENGTH} digits entered`}>
+      <div
+        key={refusals}
+        className={`flex gap-3.5 rounded-full bg-zinc-100 px-5 py-3 ring-1 ring-zinc-200/80 ring-inset ${refusals > 0 ? 'animate-shake' : ''}`}
+        role="img" aria-label={`${pin.length} of ${PIN_LENGTH} digits entered`}>
         {Array.from({ length: PIN_LENGTH }, (_, index) => (
           <span key={index} className={`size-3.5 rounded-full transition duration-150 ${index < pin.length ? 'scale-110 bg-indigo-600 shadow-[0_0_0_4px_var(--color-indigo-100)]' : 'bg-zinc-300'}`} />
         ))}

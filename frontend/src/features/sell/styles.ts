@@ -32,8 +32,8 @@ export const lineDetail = 'text-xs font-normal text-zinc-500'
 
 /** A notice in the cart (a placed order, a member who logged in on the display). */
 export const cartNotice = {
-  info: 'mx-4 mb-3 rounded-xl bg-indigo-50 px-3 py-2 text-[0.8rem] font-medium text-indigo-700 ring-1 ring-indigo-100 ring-inset',
-  error: 'mx-4 mb-3 rounded-xl bg-red-50 px-3 py-2 text-[0.8rem] font-medium text-red-700 ring-1 ring-red-100 ring-inset',
+  info: 'mx-4 mb-3 animate-rise-in rounded-xl bg-indigo-50 px-3 py-2 text-[0.8rem] font-medium text-indigo-700 ring-1 ring-indigo-100 ring-inset',
+  error: 'mx-4 mb-3 animate-rise-in rounded-xl bg-red-50 px-3 py-2 text-[0.8rem] font-medium text-red-700 ring-1 ring-red-100 ring-inset',
 }
 
 /** The ✕ beside the customer or an order discount. */

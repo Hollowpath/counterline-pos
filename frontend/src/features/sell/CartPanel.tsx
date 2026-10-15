@@ -29,7 +29,7 @@ const cartPanel = 'z-[1] flex min-h-0 flex-col bg-white shadow-[-8px_0_24px_-12p
 /** A label beside the member's name (New Member, Owed). */
 const tag = 'inline-flex shrink-0 rounded-full px-2 py-0.5 align-middle text-[0.65rem] font-semibold whitespace-nowrap ring-1 ring-inset'
 /** A tapped label's details, under the member's name. */
-const perkDetail = 'mx-4 -mt-1 mb-2 text-xs text-zinc-600'
+const perkDetail = 'mx-4 -mt-1 mb-2 animate-rise-in text-xs text-zinc-600'
 /** [Current points] + [Earned from this cart] = [Total after this purchase] */
 const pointsBox = 'flex min-w-0 flex-1 flex-col items-center justify-between gap-0.5 rounded-xl px-1 py-1.5 text-center leading-tight font-medium text-zinc-500 ring-1 ring-inset [&_strong]:text-[0.95rem] [&_strong]:tabular-nums'
 
@@ -93,7 +93,7 @@ export function CartPanel({
           <h2 className="text-base font-bold tracking-tight text-zinc-900">No Sale</h2>
         </header>
         {notice && (
-          <p className={cartNotice[notice.tone]} role={notice.tone === 'error' ? 'alert' : 'status'}>
+          <p key={notice.text} className={cartNotice[notice.tone]} role={notice.tone === 'error' ? 'alert' : 'status'}>
             {notice.text}
           </p>
         )}
@@ -222,7 +222,7 @@ export function CartPanel({
         {sortedLines(cart.lines).map((line, index, lines) => (
           <li
             key={line.key}
-            className={`grid grid-cols-[auto_1fr_auto_auto] items-center gap-2.5 rounded-xl py-2 pr-1 pl-2 text-sm transition hover:bg-zinc-50 ${
+            className={`grid animate-rise-in grid-cols-[auto_1fr_auto_auto] items-center gap-2.5 rounded-xl py-2 pr-1 pl-2 text-sm transition hover:bg-zinc-50 ${
               // A heavier line where the next group starts (charged, then other items, then free).
               index > 0 && lineGroup(lines[index - 1]) < lineGroup(line) ? 'mt-2 rounded-t-none border-t-2 border-dashed border-zinc-400 pt-3' : ''}`}
           >
@@ -300,13 +300,13 @@ export function CartPanel({
       />
 
       {notice && (
-        <p className={cartNotice[notice.tone]} role={notice.tone === 'error' ? 'alert' : 'status'}>
+        <p key={notice.text} className={cartNotice[notice.tone]} role={notice.tone === 'error' ? 'alert' : 'status'}>
           {notice.text}
         </p>
       )}
 
       {problems.length > 0 && (
-        <ul className="mx-4 mb-2 list-disc rounded-lg bg-red-50 py-1.5 pr-3 pl-7 text-xs font-medium text-red-700 ring-1 ring-red-200 ring-inset [&_li+li]:mt-0.5" role="alert" aria-label="Why this sale can’t be paid yet">
+        <ul className="mx-4 mb-2 animate-fade-in list-disc rounded-lg bg-red-50 py-1.5 pr-3 pl-7 text-xs font-medium text-red-700 ring-1 ring-red-200 ring-inset [&_li+li]:mt-0.5" role="alert" aria-label="Why this sale can’t be paid yet">
           {problems.map((problem) => (
             <li key={problem}>{problem}</li>
           ))}

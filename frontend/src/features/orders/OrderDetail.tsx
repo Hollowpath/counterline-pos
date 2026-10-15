@@ -50,7 +50,7 @@ export function OrderDetail({ orderId, staff, onChanged, onVoided, onEdit }: Ord
   }
 
   return (
-    <article aria-label={`Order ${order.orderNumber}`}>
+    <article className="animate-rise-in" aria-label={`Order ${order.orderNumber}`}>
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-2xl font-bold tracking-tight text-zinc-900">
           {order.receiptCode} – {formatRM(totalSen)}

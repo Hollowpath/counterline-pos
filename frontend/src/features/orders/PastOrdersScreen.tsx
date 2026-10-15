@@ -53,7 +53,7 @@ export function PastOrdersScreen({ staff, onOpenMenu, onEditOrder, onOrderVoided
             >
               {tab.label}
               {tab.status === 'OPEN' && openOrders > 0 && (
-                <span className={`${countBadge} ml-1.5 align-[1px]`} aria-label={`${openOrders} open`}>{openOrders}</span>
+                <span key={openOrders} className={`${countBadge} ml-1.5 align-[1px]`} aria-label={`${openOrders} open`}>{openOrders}</span>
               )}
             </button>
           ))}

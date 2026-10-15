@@ -67,7 +67,7 @@ export function AppShell({ staff, outlet, welcome, onLogOff }: AppShellProps) {
   return (
     <RegisterContext.Provider value={register}>
       {/* Kept mounted so a sale in progress survives a visit to another screen. */}
-      <div hidden={screen !== 'pos'}>
+      <div className="animate-fade-in" hidden={screen !== 'pos'}>
         <SellScreen
           onOpenMenu={openMenu}
           isManager={staff.role === 'MANAGER'}
@@ -81,6 +81,7 @@ export function AppShell({ staff, outlet, welcome, onLogOff }: AppShellProps) {
         />
       </div>
       {screen === 'orders' && (
+        <div className="animate-fade-in">
         <PastOrdersScreen
           staff={staff}
           onOpenMenu={openMenu}
@@ -94,10 +95,15 @@ export function AppShell({ staff, outlet, welcome, onLogOff }: AppShellProps) {
             refreshRegister()
           }}
         />
+        </div>
       )}
-      {screen === 'register' && <RegisterScreen onOpenMenu={openMenu} />}
-      {screen === 'reports' && <ReportsScreen outletName={outlet.name} onOpenMenu={openMenu} />}
-      {screen === 'display' && <CustomerDisplayScreen displayId={displayId} onDisplayChange={setDisplayId} onOpenMenu={openMenu} />}
+      {screen === 'register' && <div className="animate-fade-in"><RegisterScreen onOpenMenu={openMenu} /></div>}
+      {screen === 'reports' && <div className="animate-fade-in"><ReportsScreen outletName={outlet.name} onOpenMenu={openMenu} /></div>}
+      {screen === 'display' && (
+        <div className="animate-fade-in">
+          <CustomerDisplayScreen displayId={displayId} onDisplayChange={setDisplayId} onOpenMenu={openMenu} />
+        </div>
+      )}
 
       {menuOpen && (
         <SideMenu
@@ -120,7 +126,7 @@ export function AppShell({ staff, outlet, welcome, onLogOff }: AppShellProps) {
       )}
       {clocking && <ClockDialog onClose={() => setClocking(false)} />}
       {showWelcome && (
-        <div className="pointer-events-none fixed top-[40%] left-1/2 z-20 flex -translate-x-1/2 items-center gap-3 rounded-2xl bg-zinc-900/90 px-6 py-4 font-semibold text-white shadow-2xl ring-1 ring-white/10 backdrop-blur" role="status">
+        <div className="pointer-events-none fixed top-[40%] left-1/2 z-20 flex -translate-x-1/2 animate-pop-in items-center gap-3 rounded-2xl bg-zinc-900/90 px-6 py-4 font-semibold text-white shadow-2xl ring-1 ring-white/10 backdrop-blur" role="status">
           <span className="grid size-8 place-items-center rounded-full bg-green-500 text-sm" aria-hidden="true">✓</span>
           Welcome, {staff.fullName}
         </div>

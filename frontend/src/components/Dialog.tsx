@@ -10,9 +10,9 @@ interface DialogProps {
 /** Centred modal panel over a dimmed backdrop. */
 export function Dialog({ title, wide = false, children }: DialogProps) {
   return (
-    <div className="fixed inset-0 z-30 grid place-items-center bg-zinc-950/50 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-30 grid animate-fade-in place-items-center bg-zinc-950/50 p-4 backdrop-blur-sm">
       <section
-        className={`max-h-full overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-zinc-900/10 max-md:p-5 ${wide ? 'w-[min(44rem,100%)]' : 'w-[min(32rem,100%)]'}`}
+        className={`max-h-full animate-pop-in overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-zinc-900/10 max-md:p-5 ${wide ? 'w-[min(44rem,100%)]' : 'w-[min(32rem,100%)]'}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}

@@ -106,7 +106,7 @@ export function DateField({ value, onChange, label = 'Date of birth', disabled =
       {open && (
         <div
           className={[
-            'absolute z-30 w-full min-w-60 rounded-2xl bg-white p-2.5 text-zinc-900 shadow-2xl ring-1 ring-zinc-900/10',
+            'absolute z-30 w-full min-w-60 animate-pop-in rounded-2xl bg-white p-2.5 text-zinc-900 shadow-2xl ring-1 ring-zinc-900/10',
             place.up ? 'bottom-[calc(100%+0.3rem)]' : 'top-[calc(100%+0.3rem)]',
             place.end ? 'right-0' : 'left-0',
           ].join(' ')}

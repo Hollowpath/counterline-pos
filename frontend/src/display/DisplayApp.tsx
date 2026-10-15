@@ -104,7 +104,7 @@ function CustomerScreen({ outletName, onDisconnected }: { outletName: string; on
     // One screen: the heading and totals stay in place and only the list of items scrolls (the
     // membership side scrolls on its own if a form is taller than the screen). A phone-width
     // screen stacks the two and scrolls as a page.
-    <div className="grid h-dvh grid-cols-[minmax(0,3fr)_minmax(18rem,2fr)] grid-rows-[minmax(0,1fr)] bg-zinc-100 max-md:h-auto max-md:min-h-dvh max-md:grid-cols-[minmax(0,1fr)] max-md:grid-rows-none">
+    <div className="grid h-dvh animate-fade-in grid-cols-[minmax(0,3fr)_minmax(18rem,2fr)] grid-rows-[minmax(0,1fr)] bg-zinc-100 max-md:h-auto max-md:min-h-dvh max-md:grid-cols-[minmax(0,1fr)] max-md:grid-rows-none">
       <section className="flex min-h-0 min-w-0 flex-col p-8 max-md:p-4">
         <CartLines cart={cart} />
       </section>
@@ -132,7 +132,7 @@ function CartLines({ cart }: { cart: CartView }) {
           ].join(' ')}
           aria-label="Your order">
           {cart.lines.map((line, index) => (
-            <li key={index}>
+            <li key={index} className="animate-rise-in">
               <span className="grid size-10 place-items-center rounded-xl bg-indigo-50 text-base font-bold text-indigo-600 tabular-nums">{line.quantity}×</span>
               <span className="font-medium text-zinc-900">
                 {line.name}
@@ -189,8 +189,8 @@ function LineAmount({ line }: { line: CartView['lines'][number] }) {
 
 function ThankYou({ cart }: { cart: CartView }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-xl text-zinc-600" role="status">
-      <span className="mb-4 grid size-24 place-items-center rounded-full bg-linear-to-br from-indigo-500 to-fuchsia-500 text-5xl shadow-xl shadow-indigo-500/30" aria-hidden="true">🍿</span>
+    <div className="flex flex-1 animate-fade-in flex-col items-center justify-center gap-2 text-center text-xl text-zinc-600" role="status">
+      <span className="mb-4 grid size-24 animate-check-pop place-items-center rounded-full bg-linear-to-br from-indigo-500 to-fuchsia-500 text-5xl shadow-xl shadow-indigo-500/30" aria-hidden="true">🍿</span>
       <p className="bg-linear-to-r from-indigo-600 to-fuchsia-600 bg-clip-text text-[3rem] leading-tight font-black tracking-tight text-transparent">Thank you{cart.memberName ? `, ${cart.memberName}` : ''}!</p>
       <p>Paid {rm(cart.total)}. Enjoy your popcorn.</p>
     </div>

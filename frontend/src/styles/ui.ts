@@ -107,7 +107,7 @@ export const customerRow = {
 }
 
 /** A count beside a menu item or tab, e.g. the open orders on Past Orders. */
-export const countBadge = 'inline-grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1.5 text-[0.7rem] leading-none font-bold text-white tabular-nums'
+export const countBadge = 'inline-grid h-5 min-w-5 animate-badge-pop place-items-center rounded-full bg-red-500 px-1.5 text-[0.7rem] leading-none font-bold text-white tabular-nums'
 
 /** A small rounded label: a status, a count, a tag. */
 export const pill = {

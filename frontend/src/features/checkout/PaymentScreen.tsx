@@ -303,7 +303,7 @@ function SaleComplete({ order, changeSen, onDone, doneLabel }: {
   return (
     <Dialog title="Sale complete">
       <div className="mb-5 flex flex-col items-center gap-1 text-center">
-        <span className="mb-2 grid size-16 place-items-center rounded-full bg-green-100 text-3xl text-green-600 ring-8 ring-green-50" aria-hidden="true">✓</span>
+        <span className="mb-2 grid size-16 animate-check-pop place-items-center rounded-full bg-green-100 text-3xl text-green-600 ring-8 ring-green-50" aria-hidden="true">✓</span>
         <p className="text-[2.2rem] leading-tight font-bold tracking-tight">{order.orderNumber}</p>
         <p className="text-sm font-medium text-zinc-600">Receipt {order.receiptCode}</p>
         <p className="text-sm text-zinc-500">{formatRM(toSen(order.total))} paid</p>

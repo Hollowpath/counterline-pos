@@ -41,9 +41,9 @@ export function SideMenu({ staff, outletName, openOrders = 0, current, onNavigat
   const initials = staff.fullName.split(/\s+/).map((word) => word[0]).slice(0, 2).join('').toUpperCase()
 
   return (
-    <div className="fixed inset-0 z-10 bg-zinc-950/50 backdrop-blur-[2px]" onClick={onClose}>
+    <div className="fixed inset-0 z-10 animate-fade-in bg-zinc-950/50 backdrop-blur-[2px]" onClick={onClose}>
       <nav
-        className="flex h-full w-[min(19rem,85vw)] flex-col bg-zinc-800 text-white shadow-2xl ring-1 ring-white/10"
+        className="flex h-full w-[min(19rem,85vw)] animate-drawer-in flex-col bg-zinc-800 text-white shadow-2xl ring-1 ring-white/10"
         aria-label="Main menu"
         onClick={(event) => event.stopPropagation()}
       >
@@ -74,7 +74,7 @@ export function SideMenu({ staff, outletName, openOrders = 0, current, onNavigat
                 </svg>
                 {item.label}
                 {item.screen === 'orders' && openOrders > 0 && (
-                  <span className={`${countBadge} ml-auto`} aria-label={`${openOrders} open`}>{openOrders}</span>
+                  <span key={openOrders} className={`${countBadge} ml-auto`} aria-label={`${openOrders} open`}>{openOrders}</span>
                 )}
               </button>
             </li>
