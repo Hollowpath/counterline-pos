@@ -24,7 +24,7 @@ export function PinLocksPanel() {
         setLocks(data)
         setLoadError(null)
       })
-      .catch((error: unknown) => setLoadError(error instanceof ApiError ? error.message : 'Could not reach the server.'))
+      .catch((error: unknown) => setLoadError(error instanceof ApiError ? error.message : 'Offline'))
   }, [])
 
   useEffect(() => {
@@ -42,7 +42,7 @@ export function PinLocksPanel() {
       setStatus({ tone: 'ok', text: `${lock.padName} at ${lock.outletName} is unlocked. Staff can enter their PIN again.` })
       load()
     } catch (error) {
-      setStatus({ tone: 'error', text: error instanceof ApiError ? error.message : 'Could not reach the server. Try again.' })
+      setStatus({ tone: 'error', text: error instanceof ApiError ? error.message : 'Offline' })
     } finally {
       setBusy(null)
     }

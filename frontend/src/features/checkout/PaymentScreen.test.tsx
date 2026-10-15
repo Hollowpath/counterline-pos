@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { Cart } from '../sell/cart'
@@ -47,6 +47,7 @@ function stubApi(...checkoutResponses: (() => Response | Promise<Response>)[]) {
     vi.fn((input: RequestInfo | URL, init: RequestInit = {}) => {
       const path = String(input)
       if (path === '/api/v1/payment-methods') return Promise.resolve(json(methods))
+      if (path === '/api/v1/orders/1') return Promise.resolve(json(order()))
       if (path === '/api/v1/orders' && init.method === 'POST') {
         checkoutBodies.push(JSON.parse(String(init.body)))
         const next = checkoutResponses.shift()
@@ -132,7 +133,6 @@ describe('PaymentScreen', () => {
 
     // Only cash is left: a sale takes one cashless method.
     expect(screen.getByRole('button', { name: 'DuitNow QR' })).toBeDisabled()
-    expect(screen.getByText('The rest can be paid in cash.')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Cash' }))
     const received = screen.getByLabelText('Cash received (RM)')
@@ -170,7 +170,7 @@ describe('PaymentScreen', () => {
     renderScreen()
 
     await pay(user, 'Visa', { reference: 'ref' })
-    expect(await screen.findByRole('alert')).toHaveTextContent('could not be confirmed')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not confirmed')
 
     await user.click(screen.getByRole('button', { name: 'Retry' }))
 
@@ -180,16 +180,39 @@ describe('PaymentScreen', () => {
   })
 
   it('shows why the server rejected the sale and offers only going back', async () => {
-    stubApi(() => json({ title: 'Request cannot be completed', detail: 'The register is closed. Open it in Manage Register before taking payment.' }, 422))
+    stubApi(() => json({ title: 'Request cannot be completed', detail: 'Register closed' }, 422))
     const user = userEvent.setup()
     const { onCancel } = renderScreen()
 
     await pay(user, 'Cash')
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('The register is closed')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Register closed')
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Back' }))
     expect(onCancel).toHaveBeenCalled()
+  })
+
+  it('prints the receipt by itself, and each print gives Sale complete its full time again', async () => {
+    const print = vi.spyOn(window, 'print')
+    stubApi(() => json(order(), 201))
+    const user = userEvent.setup()
+    const { onDone } = renderScreen()
+
+    await pay(user, 'Visa', { reference: 'ref' })
+    const done = await screen.findByRole('dialog', { name: 'Sale complete' })
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(1))
+    expect(document.getElementById('receipt-print')).toHaveTextContent('R355')
+
+    await waitFor(() => expect(done).toHaveTextContent('Closing in 4s'))
+    window.dispatchEvent(new Event('afterprint'))
+    await waitFor(() => expect(done).toHaveTextContent('Closing in 5s'))
+
+    // The customer wants a copy.
+    await waitFor(() => expect(done).toHaveTextContent('Closing in 4s'))
+    await user.click(within(done).getByRole('button', { name: 'Print Receipt' }))
+    expect(done).toHaveTextContent('Closing in 5s')
+    await waitFor(() => expect(print).toHaveBeenCalledTimes(2))
+    expect(onDone).not.toHaveBeenCalled()
   })
 
   it('completes a free sale without taking a payment', async () => {

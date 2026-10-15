@@ -148,7 +148,7 @@ describe('customer display', () => {
 
     expect(await screen.findByLabelText('Posters')).toBeInTheDocument()
     server.disconnected = true
-    expect(await screen.findByText(/disconnected from the till/, {}, WAIT)).toBeInTheDocument()
+    expect(await screen.findByText('Disconnected', {}, WAIT)).toBeInTheDocument()
     expect(localStorage.getItem(KEY)).toBeNull()
   })
 })

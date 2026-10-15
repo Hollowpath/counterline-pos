@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import type { Staff } from '../auth/types'
+import { countBadge } from '../styles/ui'
 
 export type Screen = 'pos' | 'orders' | 'register' | 'reports' | 'display'
 
@@ -18,6 +19,8 @@ const ITEMS: { screen: Screen; label: string; icon: string }[] = [
 interface SideMenuProps {
   staff: Staff
   outletName: string
+  /** Placed, unpaid orders: a count beside Past Orders. */
+  openOrders?: number
   current: Screen
   onNavigate: (screen: Screen) => void
   onClockInOut: () => void
@@ -26,7 +29,7 @@ interface SideMenuProps {
 }
 
 /** Slide-over navigation with the outlet, the logged-in staff member, Clock In/Out and Log Off. */
-export function SideMenu({ staff, outletName, current, onNavigate, onClockInOut, onClose, onLogOff }: SideMenuProps) {
+export function SideMenu({ staff, outletName, openOrders = 0, current, onNavigate, onClockInOut, onClose, onLogOff }: SideMenuProps) {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose()
@@ -70,6 +73,9 @@ export function SideMenu({ staff, outletName, current, onNavigate, onClockInOut,
                   <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
                 </svg>
                 {item.label}
+                {item.screen === 'orders' && openOrders > 0 && (
+                  <span className={`${countBadge} ml-auto`} aria-label={`${openOrders} open`}>{openOrders}</span>
+                )}
               </button>
             </li>
           ))}

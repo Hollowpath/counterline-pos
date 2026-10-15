@@ -129,6 +129,12 @@
     font-family: 'Courier New', monospace;
     font-size: 11px;
   }
+
+  /* A customer receipt being printed: only the slip, none of the screen behind it. Printing a
+     screen (printScreen) takes the slip away first. */
+  body:has(#receipt-print) > :not(#receipt-print) {
+    display: none !important;
+  }
 }
 
 /* A search box's magnifier, on the left of the field. */

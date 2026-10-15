@@ -1,4 +1,4 @@
-import type { Dispatch } from 'react'
+import { useState, type Dispatch } from 'react'
 import { formatRM } from '../../lib/money'
 import { maskPhone } from '../../lib/privacy'
 import { REGISTER_CLOSED_MESSAGE, useRegister } from '../register/registerApi'
@@ -22,12 +22,14 @@ import type { QuoteState } from './useCartQuote'
 import { useMemberPerks } from './useMemberPerks'
 import { cartNotice, lineDetail, removeX } from './styles'
 
-const NEEDS_MEMBER = 'Promotional items need a member. Add the customer’s membership to the sale, or remove the promotional items.'
+const NEEDS_MEMBER = 'Add member'
 
 /** The sale on the right of the Point of Sale (below the grid on a phone). */
 const cartPanel = 'z-[1] flex min-h-0 flex-col bg-white shadow-[-8px_0_24px_-12px_rgb(24_24_27/0.15)] ring-1 ring-zinc-900/5 max-md:shadow-[0_-8px_24px_-12px_rgb(24_24_27/0.2)]'
-/** A member's perk under their name (birthday month, a free gift). */
-const perk = 'mx-4 mb-1.5 rounded-xl px-3 py-1.5 text-xs font-medium ring-1 ring-inset'
+/** A label beside the member's name (New Member, Owed). */
+const tag = 'inline-flex shrink-0 rounded-full px-2 py-0.5 align-middle text-[0.65rem] font-semibold whitespace-nowrap ring-1 ring-inset'
+/** A tapped label's details, under the member's name. */
+const perkDetail = 'mx-4 -mt-1 mb-2 text-xs text-zinc-600'
 /** [Current points] + [Earned from this cart] = [Total after this purchase] */
 const pointsBox = 'flex min-w-0 flex-1 flex-col items-center justify-between gap-0.5 rounded-xl px-1 py-1.5 text-center leading-tight font-medium text-zinc-500 ring-1 ring-inset [&_strong]:text-[0.95rem] [&_strong]:tabular-nums'
 
@@ -39,8 +41,6 @@ function formatTime(iso: string): string {
 export interface CartNotice {
   tone: 'info' | 'error'
   text: string
-  /** The placed order it is about, so it can go once that order is voided. */
-  orderId?: number
 }
 
 interface CartPanelProps {
@@ -69,9 +69,14 @@ export function CartPanel({
   // once-only rewards).
   const staffOnly = cart.customer ? discountNotForMembers(cart) : null
   const problems = needsMember(cart) && cart.customer === null ? [NEEDS_MEMBER]
-    : staffOnly ? [`${staffOnly.name} can’t be given on a member’s sale. Remove ${cart.customer!.name} or the discount.`]
+    : staffOnly ? [`${staffOnly.name}: not for members`]
       : quote.status === 'ready' ? quote.quote.problems : []
   const perks = useMemberPerks(cart.customer?.id ?? null)
+  // The label whose details are shown ('new', or an owed promotion), for this member only.
+  const [perkShown, setPerkShown] = useState<{ customerId: number; perk: string } | null>(null)
+  const shownPerk = perkShown && perkShown.customerId === cart.customer?.id ? perkShown.perk : null
+  const togglePerk = (perk: string) =>
+    setPerkShown(shownPerk === perk || !cart.customer ? null : { customerId: cart.customer.id, perk })
   // The server's preview once the cart is quoted; until then, the member's points as they stand.
   const loyalty = (quote.status === 'ready' ? quote.quote.loyalty : null)
     ?? (perks ? { before: perks.points, earned: 0, redeemed: 0, after: perks.points } : null)
@@ -99,7 +104,6 @@ export function CartPanel({
           <button type="button" className="btn btn-primary w-[min(16rem,100%)] py-4! text-base!" onClick={() => dispatch({ type: 'newSale' })}>
             New Sale
           </button>
-          <p className="text-sm text-zinc-500">Or tap an item to start.</p>
         </div>
       </aside>
     )
@@ -124,14 +128,38 @@ export function CartPanel({
       <div className="mx-3 my-2.5 flex min-h-11 items-center justify-between gap-2 rounded-xl bg-zinc-50 px-3 py-1 text-sm ring-1 ring-zinc-200/70 ring-inset">
         {cart.customer ? (
           <>
-            <span>
-              <strong className="font-semibold text-zinc-900">{cart.customer.name}</strong>
-              {perks?.birthdayMonth && (
-                <span className="ml-[0.35rem] text-[1.25rem] leading-none" role="img" aria-label="Birthday month" title="Birthday month">
-                  🎂
-                </span>
-              )}
-              {cart.customer.phone && <span className="text-zinc-500"> · {maskPhone(cart.customer.phone)}</span>}
+            {/* The whole name, then its labels (they move to the next line rather than cover it), the phone number under them. */}
+            <span className="flex min-w-0 flex-col py-0.5">
+              <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+                <strong className="font-semibold break-words text-zinc-900">{cart.customer.name}</strong>
+                {perks?.birthdayMonth && (
+                  <span className="shrink-0 text-[1.25rem] leading-none" role="img" aria-label="Birthday month" title="Birthday month">
+                    🎂
+                  </span>
+                )}
+                {perks && perks.newMemberGifts.length > 0 && (
+                  <button
+                    type="button"
+                    className={`${tag} bg-indigo-50 text-indigo-700 ring-indigo-200`}
+                    aria-expanded={shownPerk === 'new'}
+                    onClick={() => togglePerk('new')}
+                  >
+                    New Member
+                  </button>
+                )}
+                {perks?.owedItems?.map((owed) => (
+                  <button
+                    key={owed.promotion}
+                    type="button"
+                    className={`${tag} bg-green-50 text-green-700 ring-green-200`}
+                    aria-expanded={shownPerk === owed.promotion}
+                    onClick={() => togglePerk(owed.promotion)}
+                  >
+                    Owed {owed.quantity}
+                  </button>
+                ))}
+              </span>
+              {cart.customer.phone && <span className="text-xs text-zinc-500 tabular-nums">{maskPhone(cart.customer.phone)}</span>}
             </span>
             <button
               type="button"
@@ -150,19 +178,15 @@ export function CartPanel({
           </button>
         )}
       </div>
-      {perks?.birthdayMonth && (
-        <p className={`${perk} bg-orange-50 text-orange-800 ring-orange-200`} role="status">
-          Birthday month: a free birthday can with every 3 items (max 2 a receipt).
-        </p>
-      )}
-      {perks?.owedItems?.map((owed) => (
-        <p key={owed.promotion} className={`${perk} bg-green-50 text-green-800 ring-green-200`} role="status">
-          Owed from last time: {owed.quantity} free {owed.items.join(' or ')} ({owed.reason}).
+      {/* A label's details, on a tap (a touchscreen has no hover). */}
+      {shownPerk === 'new' && perks?.newMemberGifts.map((gift) => (
+        <p key={gift.promotion} className={perkDetail}>
+          {gift.items.join(' / ')} · until {formatTime(gift.availableUntil)}
         </p>
       ))}
-      {perks?.newMemberGifts.map((gift) => (
-        <p key={gift.promotion} className={`${perk} bg-green-50 text-green-800 ring-green-200`} role="status">
-          New member gift: 1 free {gift.items.join(' or ')} until {formatTime(gift.availableUntil)} (optional).
+      {perks?.owedItems?.filter((owed) => owed.promotion === shownPerk).map((owed) => (
+        <p key={owed.promotion} className={perkDetail}>
+          {owed.quantity}× {owed.items.join(' / ')} · {owed.reason}
         </p>
       ))}
       {loyalty && (
@@ -200,7 +224,7 @@ export function CartPanel({
             key={line.key}
             className={`grid grid-cols-[auto_1fr_auto_auto] items-center gap-2.5 rounded-xl py-2 pr-1 pl-2 text-sm transition hover:bg-zinc-50 ${
               // A heavier line where the next group starts (charged, then other items, then free).
-              index > 0 && lineGroup(lines[index - 1]) < lineGroup(line) ? 'mt-2 rounded-t-none border-t border-dashed border-zinc-300 pt-3' : ''}`}
+              index > 0 && lineGroup(lines[index - 1]) < lineGroup(line) ? 'mt-2 rounded-t-none border-t-2 border-dashed border-zinc-400 pt-3' : ''}`}
           >
             <span className="grid h-6 min-w-7 place-items-center rounded-lg bg-zinc-100 px-1.5 text-xs font-bold text-zinc-600 tabular-nums">{line.quantity}x</span>
             <button
@@ -282,7 +306,7 @@ export function CartPanel({
       )}
 
       {problems.length > 0 && (
-        <ul className="mx-4 mb-3 list-disc rounded-xl bg-red-50 py-2.5 pr-3 pl-8 text-[0.8rem] font-medium text-red-700 ring-1 ring-red-200 ring-inset [&_li+li]:mt-1" role="alert" aria-label="Why this sale can’t be paid yet">
+        <ul className="mx-4 mb-2 list-disc rounded-lg bg-red-50 py-1.5 pr-3 pl-7 text-xs font-medium text-red-700 ring-1 ring-red-200 ring-inset [&_li+li]:mt-0.5" role="alert" aria-label="Why this sale can’t be paid yet">
           {problems.map((problem) => (
             <li key={problem}>{problem}</li>
           ))}
@@ -301,7 +325,7 @@ export function CartPanel({
         <span className="text-2xl font-bold tracking-tight tabular-nums" data-testid="cart-total">{formatRM(cartTotalSen(cart))}</span>
       </footer>
       <div className="mx-3 mb-3 grid grid-cols-[2fr_1fr] gap-2 rounded-b-2xl bg-zinc-100 px-2 pb-2">
-        <button type="button" className="rounded-xl bg-linear-to-b from-indigo-500 to-indigo-600 px-2 py-3.5 text-base font-bold text-white shadow-lg shadow-indigo-600/30 transition enabled:hover:brightness-110 enabled:active:scale-[0.98]" disabled={empty || busy} onClick={onPlaceOrder}>
+        <button type="button" className="rounded-xl bg-linear-to-b from-indigo-500 to-indigo-600 px-2 py-3.5 text-base font-bold text-white shadow-lg shadow-indigo-600/30 transition enabled:hover:brightness-110 enabled:active:scale-[0.98]" disabled={empty || busy || registerClosed} onClick={onPlaceOrder}>
           {busy ? 'Placing…' : 'Place Order'}
         </button>
         <button type="button" className="rounded-xl bg-zinc-300 px-2 py-3.5 text-base font-bold text-zinc-800 transition enabled:hover:bg-zinc-400/70 enabled:active:scale-[0.98]" disabled={empty || busy || registerClosed || blocked} onClick={onPay}>

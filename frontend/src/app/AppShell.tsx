@@ -28,6 +28,7 @@ export function AppShell({ staff, outlet, welcome, onLogOff }: AppShellProps) {
   const [clocking, setClocking] = useState(false)
   const [showWelcome, setShowWelcome] = useState(welcome)
   const [registerOpen, setRegisterOpen] = useState<boolean | null>(null)
+  const [openOrders, setOpenOrders] = useState(0)
   // The customer display paired with this till, if any.
   const [displayId, setDisplayId] = useState<number | null>(loadDisplayId)
   // "Edit Order" from Past Orders: the order to load into the cart (seq: each request is new).
@@ -41,11 +42,20 @@ export function AppShell({ staff, outlet, welcome, onLogOff }: AppShellProps) {
   // opened or closed the register). The server enforces it either way.
   const refreshRegister = useCallback(() => {
     getJson<RegisterStatus>(registerPath)
-      .then((status) => setRegisterOpen(status.open))
-      .catch(() => setRegisterOpen(null))
+      .then((status) => {
+        setRegisterOpen(status.open)
+        setOpenOrders(status.openOrders)
+      })
+      .catch(() => {
+        setRegisterOpen(null)
+        setOpenOrders(0)
+      })
   }, [])
   useEffect(refreshRegister, [refreshRegister])
-  const register = useMemo(() => ({ open: registerOpen, refresh: refreshRegister }), [registerOpen, refreshRegister])
+  const register = useMemo(
+    () => ({ open: registerOpen, openOrders, refresh: refreshRegister }),
+    [registerOpen, openOrders, refreshRegister],
+  )
 
   useEffect(() => {
     if (!showWelcome) return
@@ -77,7 +87,10 @@ export function AppShell({ staff, outlet, welcome, onLogOff }: AppShellProps) {
             setScreen('pos')
             refreshRegister()
           }}
-          onOrderVoided={(orderId) => setVoidedOrder((previous) => ({ orderId, seq: (previous?.seq ?? 0) + 1 }))}
+          onOrderVoided={(orderId) => {
+            setVoidedOrder((previous) => ({ orderId, seq: (previous?.seq ?? 0) + 1 }))
+            refreshRegister()
+          }}
         />
       )}
       {screen === 'register' && <RegisterScreen onOpenMenu={openMenu} />}
@@ -88,6 +101,7 @@ export function AppShell({ staff, outlet, welcome, onLogOff }: AppShellProps) {
         <SideMenu
           staff={staff}
           outletName={outlet.name}
+          openOrders={openOrders}
           current={screen}
           onNavigate={(next) => {
             setScreen(next)

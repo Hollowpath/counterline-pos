@@ -90,11 +90,12 @@ public class RegisterService {
         if (request.version() != session.getVersion()) {
             throw new ObjectOptimisticLockingFailureException(RegisterSession.class, session.getId());
         }
+        // Locked before counting: a Place Order or payment holds the row FOR SHARE (RegisterGate), so it
+        // either commits first and is counted, or waits and then finds the register closed.
+        jdbc.queryForObject("SELECT id FROM register_session WHERE id = ? FOR UPDATE", Long.class, session.getId());
         long openOrders = countOpenOrders(terminal.outletId());
         if (openOrders > 0) {
-            throw new BusinessRuleException(openOrders == 1
-                    ? "1 order is still open. Pay or void it in Past Orders before closing the register."
-                    : openOrders + " orders are still open. Pay or void them in Past Orders before closing the register.");
+            throw new BusinessRuleException(openOrders + (openOrders == 1 ? " open order" : " open orders"));
         }
         String note = request.note() == null || request.note().isBlank() ? null : request.note().strip();
         session.close(activeStaff(staffId), note, clock.instant());

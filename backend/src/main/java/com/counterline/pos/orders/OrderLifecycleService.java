@@ -65,16 +65,19 @@ public class OrderLifecycleService {
         if (order.getStatus() != OrderStatus.OPEN) {
             throw new BusinessRuleException("Order " + order.getDisplayNumber() + " is not awaiting payment");
         }
-        registerGate.requireOpenForPayment(terminal.outletId());
         Staff staff = activeStaff(staffId);
         Instant now = clock.instant();
         // Placing an order checks nothing, so paying it checks everything (the member's points, locked,
         // as they stand now). A comp a manager hasn't approved is paid through Edit Order, which asks.
         if (order.getDiscounts().stream().anyMatch(discount -> discount.getDiscount().isRequiresApproval()
                 && discount.getApprovedBy() == null)) {
-            throw new BusinessRuleException("A manager has to approve this order's discount: pay it with Edit Order");
+            throw new BusinessRuleException("Manager approval needed: use Edit Order");
         }
+        voucherService.requireStillValidFor(order.getId());
+        // The member's points account before the register, as at checkout: the same lock order
+        // everywhere, so a payment and a sale for one member can't deadlock with a register close.
         int pointsBalance = order.getCustomer() == null ? 0 : loyaltyService.lock(order.getCustomer().getId(), now);
+        registerGate.requireOpenForPayment(terminal.outletId());
         promotionRules.requireSatisfied(order, pointsBalance, now, order.getId());
         paymentRecorder.addPayments(order, request.payments(), staff, now);
         order.closeWithPaymentRequest(request.clientRequestId(), now);

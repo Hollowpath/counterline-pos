@@ -6,6 +6,7 @@ import { formatDateTime } from '../../lib/dates'
 import { formatRM, toSen } from '../../lib/money'
 import { maskEmail, maskPhone } from '../../lib/privacy'
 import type { Order } from '../checkout/types'
+import { PrintReceiptButton } from '../receipts/PrintReceiptButton'
 import { ManagerActionDialog } from './ManagerActionDialog'
 import { ordersPaths, refundOrder, voidOrder } from './ordersApi'
 import { detail } from '../../styles/ui'
@@ -54,7 +55,8 @@ export function OrderDetail({ orderId, staff, onChanged, onVoided, onEdit }: Ord
         <h2 className="text-2xl font-bold tracking-tight text-zinc-900">
           {order.receiptCode} – {formatRM(totalSen)}
         </h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <PrintReceiptButton orderId={order.id} />
           {order.status === 'OPEN' && (
             <>
               <button type="button" className="btn btn-primary" onClick={() => onEdit(order.id)}>

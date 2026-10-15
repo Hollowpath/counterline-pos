@@ -8,6 +8,6 @@ package com.counterline.pos.auth;
 public class TillNotSetUpException extends RuntimeException {
 
     public TillNotSetUpException() {
-        super("This iPad has been reset. A manager needs to set it up again.");
+        super("iPad reset");
     }
 }

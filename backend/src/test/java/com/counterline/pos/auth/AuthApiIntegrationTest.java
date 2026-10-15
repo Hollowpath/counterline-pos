@@ -93,7 +93,7 @@ class AuthApiIntegrationTest {
     void loginNeedsAnIPadThatIsStillSetUp() throws Exception {
         login(CASHIER_PIN, "not-a-device-key", "10.1.0.11")
                 .andExpect(status().isGone())
-                .andExpect(jsonPath("$.detail").value("This iPad has been reset. A manager needs to set it up again."));
+                .andExpect(jsonPath("$.detail").value("iPad reset"));
         mockMvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON).content("{\"pin\":\"123456\"}"))
                 .andExpect(status().isBadRequest());
 
@@ -198,11 +198,20 @@ class AuthApiIntegrationTest {
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().string(HttpHeaders.RETRY_AFTER, "300"))
                 .andExpect(jsonPath("$.title").value("Too many attempts"))
-                .andExpect(jsonPath("$.detail").value("Too many incorrect PINs. Try again in 300 seconds, "
-                        + "or ask a manager to unlock it on the dashboard."));
+                .andExpect(jsonPath("$.detail").value("Locked · 300s"));
 
         // The outlet's PIN pad is locked, from wherever it is tried.
         login(CASHIER_PIN, "10.1.0.9").andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void aStaffMembersOwnPinDoesNotClearTheWrongPinsBeforeIt() throws Exception {
+        // Otherwise anyone who knows their own PIN could guess everyone else's without ever being locked.
+        for (int i = 0; i < 9; i++) {
+            login("000000", "10.1.0.10").andExpect(status().isUnauthorized());
+        }
+        login(CASHIER_PIN, "10.1.0.10").andExpect(status().isOk());
+        login("000000", "10.1.0.10").andExpect(status().isTooManyRequests());
     }
 
     @Test

@@ -86,14 +86,13 @@ public class TimecardService {
     private Staff staffAt(String pin, Long outletId, String client) {
         String pad = PinPad.CLOCK.key(outletId);
         limiter.checkAllowed(pad);
-        Staff staff = staffRepository.findByPinHmacAndActiveTrue(pinHasher.hash(pin)).orElse(null);
+        // Another outlet's staff member is answered like a wrong PIN: the pad never confirms whose a PIN is.
+        Staff staff = staffRepository.findByPinHmacAndActiveTrue(pinHasher.hash(pin))
+                .filter(found -> found.worksAt(outletId))
+                .orElse(null);
         if (staff == null) {
             log.warn("Wrong Clock In/Out PIN at outlet {} from {}", outletId, client);
             throw new BusinessRuleException(limiter.withTriesLeft("Invalid PIN", limiter.recordFailure(pad)));
-        }
-        limiter.recordSuccess(pad);
-        if (!staff.worksAt(outletId)) {
-            throw new BusinessRuleException(staff.getFullName() + " works at another outlet");
         }
         return staff;
     }

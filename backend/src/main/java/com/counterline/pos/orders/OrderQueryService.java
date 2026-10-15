@@ -1,5 +1,6 @@
 package com.counterline.pos.orders;
 
+import com.counterline.pos.common.ConflictException;
 import com.counterline.pos.common.PageResponse;
 import com.counterline.pos.common.ResourceNotFoundException;
 import com.counterline.pos.orders.OrderDtos.CustomerAnalytics;
@@ -56,8 +57,17 @@ public class OrderQueryService {
                 .orElseThrow(() -> new ResourceNotFoundException("Order " + orderId + " not found"));
     }
 
-    public Optional<OrderResponse> findByClientRequestId(UUID clientRequestId) {
-        return orderRepository.findByClientRequestId(clientRequestId).map(OrderResponse::from);
+    /**
+     * The order a retried checkout already recorded. Only the outlet's own: a request id from another
+     * outlet's order is refused (the ids are random, so that is a misuse, not a retry).
+     */
+    public Optional<OrderResponse> findByClientRequestId(UUID clientRequestId, Long outletId) {
+        return orderRepository.findByClientRequestId(clientRequestId).map(order -> {
+            if (!outletId.equals(order.getOutletId())) {
+                throw new ConflictException("Request id already used");
+            }
+            return OrderResponse.from(order);
+        });
     }
 
     /** Past Orders: the outlet's orders in one status tab, newest first, optionally filtered by a search term. */

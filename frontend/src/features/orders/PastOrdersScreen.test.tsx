@@ -6,6 +6,7 @@ import type { Staff } from '../../auth/types'
 import type { Order, OrderStatus } from '../checkout/types'
 import type { OrderSummary } from './ordersApi'
 import { PastOrdersScreen } from './PastOrdersScreen'
+import { RegisterContext } from '../register/registerApi'
 
 const cashier: Staff = { id: 7, fullName: 'Aisyah Rahman', role: 'STAFF' }
 const manager: Staff = { id: 8, fullName: 'Daniel Lim', role: 'MANAGER' }
@@ -100,7 +101,7 @@ function fakeApi(orders: Order[], options: { managerPin?: string; pageSize?: num
       if (method === 'POST' && path === '/api/v1/auth/special-access') {
         return (body as { pin: string }).pin === options.managerPin
           ? json({ token: 'manager-token', expiresAt: '2999-01-01T00:00:00Z', staff: manager })
-          : json({ title: 'Special access required', detail: 'Enter a manager PIN to continue.' }, 403)
+          : json({ title: 'Special access required', detail: 'Manager PIN · 3 tries left' }, 403)
       }
 
       const match = /^\/api\/v1\/orders\/(\d+)(?:\/(void|refund|payments))?$/.exec(path)
@@ -223,7 +224,7 @@ describe('PastOrdersScreen', () => {
     const approval = screen.getByRole('dialog', { name: 'Special Access Required' })
     for (const digit of '111111') await user.click(within(approval).getByRole('button', { name: digit }))
 
-    expect(await within(approval).findByRole('alert')).toHaveTextContent('Enter a manager PIN to continue.')
+    expect(await within(approval).findByRole('alert')).toHaveTextContent('Manager PIN · 3 tries left')
     expect(calls.some((call) => call.url.pathname.endsWith('/void'))).toBe(false)
   })
 
@@ -260,5 +261,17 @@ describe('PastOrdersScreen', () => {
     await user.click(detail().getByRole('button', { name: 'Edit Order' }))
 
     expect(onEditOrder).toHaveBeenCalledWith(9)
+  })
+
+  it('counts the open orders on the Open tab', async () => {
+    fakeApi([makeOrder(1, 'OPEN'), makeOrder(2, 'OPEN'), makeOrder(3, 'CLOSED')])
+    render(
+      <RegisterContext.Provider value={{ open: true, openOrders: 2, refresh: () => {} }}>
+        <PastOrdersScreen staff={cashier} onOpenMenu={() => {}} onEditOrder={() => {}} />
+      </RegisterContext.Provider>,
+    )
+
+    expect(await screen.findByLabelText('2 open')).toHaveTextContent('2')
+    expect(screen.getByRole('tab', { name: /^Open/ })).toContainElement(screen.getByLabelText('2 open'))
   })
 })

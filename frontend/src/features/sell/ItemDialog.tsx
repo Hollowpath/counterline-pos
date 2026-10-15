@@ -17,7 +17,8 @@ interface ItemDialogProps {
   withOptions: boolean
   mode: 'add' | 'edit'
   /** The discount already elsewhere in the sale, if any: a sale takes only one. */
-  discountInSale: string | null
+  /** Another line or the order already has the sale's one discount. */
+  discountElsewhere: boolean
   onSave: (line: LineDraft) => void
   onRemove?: () => void
   onCancel: () => void
@@ -80,7 +81,7 @@ function Loading({ initial, onCancel, state }: ItemDialogProps & {
   )
 }
 
-function ItemForm({ initial, mode, groups, offeredDiscounts, discountInSale, onSave, onRemove, onCancel }: ItemDialogProps & {
+function ItemForm({ initial, mode, groups, offeredDiscounts, discountElsewhere, onSave, onRemove, onCancel }: ItemDialogProps & {
   groups: ModifierGroup[]
   offeredDiscounts: DiscountRule[]
 }) {
@@ -181,22 +182,14 @@ function ItemForm({ initial, mode, groups, offeredDiscounts, discountInSale, onS
           </div>
         </section>
 
-        {initial.promotion && (
-          <p className="rounded-xl bg-green-50 px-3 py-2 text-sm text-green-800 ring-1 ring-green-200 ring-inset" role="note">
-            Promotional item: free with {initial.promotion.name}
-            {initial.promotion.pointsCost > 0 && ` (${initial.promotion.pointsCost} points each)`}. It needs a member on
-            the sale and cannot take a discount.
-          </p>
-        )}
-
         {offeredDiscounts.length > 0 && !initial.promotion && (
           <section className={section} aria-label="Discounts">
             <h3>
               Discounts <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[0.65rem] text-zinc-500">Choose 1</span>
             </h3>
-            {discountInSale && (
+            {discountElsewhere && (
               <p className="mb-2 rounded-xl bg-orange-50 px-3 py-2 text-sm text-orange-800 ring-1 ring-orange-200 ring-inset" role="note">
-                This sale already has {discountInSale}. Only one discount can be applied to a sale.
+                1 discount per sale
               </p>
             )}
             <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
@@ -206,7 +199,7 @@ function ItemForm({ initial, mode, groups, offeredDiscounts, discountInSale, onS
                   type="button"
                   className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2.5 text-left text-sm font-medium text-zinc-700 ring-1 ring-zinc-200 transition ring-inset enabled:hover:ring-indigo-300 aria-pressed:bg-indigo-600 aria-pressed:text-white aria-pressed:shadow-md aria-pressed:shadow-indigo-600/25 aria-pressed:ring-indigo-600"
                   aria-pressed={discountId === discount.id}
-                  disabled={discountInSale !== null}
+                  disabled={discountElsewhere}
                   onClick={() => setDiscountId(discountId === discount.id ? null : discount.id)}
                 >
                   <span>{discount.name}</span>

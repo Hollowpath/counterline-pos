@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { CategoryItems, Tab } from '../catalog/types'
@@ -130,7 +130,11 @@ describe('SellScreen', () => {
       '/api/v1/catalog/tabs': () => jsonResponse(tabs),
       '/api/v1/catalog/categories/10/items': () => jsonResponse(pouchItems),
       '/api/v1/payment-methods': () => jsonResponse([{ id: 2, name: 'Visa', kind: 'CASHLESS' }]),
-      '/api/v1/orders': () => jsonResponse({ id: 1, orderNumber: 'R1', receiptCode: '261012ABCDEFG', total: 16 }, 201),
+      '/api/v1/orders': () => jsonResponse({
+        id: 1, orderNumber: 'R1', receiptCode: '261012ABCDEFG', status: 'CLOSED', subtotal: 16, discountTotal: 0, total: 16,
+        amountPaid: 16, note: null, staffName: 'Cashier', customer: null, createdAt: '2026-10-12T10:00:00Z',
+        lines: [], orderDiscounts: [], payments: [], voided: null, refund: null,
+      }, 201),
     })
     const user = userEvent.setup()
     const onSaleComplete = vi.fn()
@@ -156,14 +160,14 @@ describe('SellScreen', () => {
     expect(screen.getByRole('button', { name: /popcorn pouch/i })).toBeInTheDocument()
   })
 
-  it('blocks payment while the register is closed but still allows Place Order', async () => {
+  it('blocks Pay and Place Order while the register is closed', async () => {
     stubApi({
       '/api/v1/catalog/tabs': () => jsonResponse(tabs),
       '/api/v1/catalog/categories/10/items': () => jsonResponse(pouchItems),
     })
     const user = userEvent.setup()
     render(
-      <RegisterContext.Provider value={{ open: false, refresh: () => {} }}>
+      <RegisterContext.Provider value={{ open: false, openOrders: 0, refresh: () => {} }}>
         <SellScreen onOpenMenu={() => {}} />
       </RegisterContext.Provider>,
     )
@@ -172,8 +176,8 @@ describe('SellScreen', () => {
     await user.click(await products().findByRole('button', { name: /pouch caramel/i }))
 
     expect(screen.getByRole('button', { name: 'Pay' })).toBeDisabled()
-    expect(screen.getByText(/The register is closed/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Place Order' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Place Order' })).toBeDisabled()
+    expect(screen.getByText('Register closed')).toBeInTheDocument()
   })
 
   it('attaches a customer to the sale', async () => {
@@ -196,7 +200,7 @@ describe('SellScreen', () => {
     expect(cart.getByText('Nur Aisyah')).toBeInTheDocument()
     await user.click(cart.getByRole('button', { name: 'Place Order' }))
 
-    await screen.findByRole('status')
+    await cart.findByRole('heading', { name: 'No Sale' })
     const [, init] = fetchMock.mock.calls.find(([input]) => String(input) === '/api/v1/orders')!
     expect(JSON.parse(String(init!.body))).toMatchObject({ customerId: 5 })
     // The next sale starts without the customer.
@@ -212,15 +216,16 @@ describe('SellScreen', () => {
       '/api/v1/orders': () => jsonResponse({ id: 12, orderNumber: 'R12', status: 'OPEN', total: 16 }, 201),
     })
     const user = userEvent.setup()
-    const { rerender } = render(<SellScreen onOpenMenu={() => {}} />)
+    render(<SellScreen onOpenMenu={() => {}} />)
 
     await user.click(await screen.findByRole('button', { name: /popcorn pouch/i }))
     await user.click(await products().findByRole('button', { name: /pouch caramel/i }))
     await user.type(screen.getByLabelText('Order note'), 'Collect at 5pm')
     await user.click(screen.getByRole('button', { name: 'Place Order' }))
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Order R12 placed. Edit or pay it from Past Orders.')
-    expect(screen.getByRole('heading', { name: 'No Sale' })).toBeInTheDocument()
+    // No notice: the open-orders badge counts it.
+    expect(await screen.findByRole('heading', { name: 'No Sale' })).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
     const [, init] = fetchMock.mock.calls.find(([input]) => String(input) === '/api/v1/orders')!
     expect(JSON.parse(String(init!.body))).toMatchObject({
       mode: 'PLACE_ORDER',
@@ -228,9 +233,5 @@ describe('SellScreen', () => {
       lines: [{ itemId: 100, quantity: 1 }],
       payments: [],
     })
-
-    // Voided in Past Orders: the notice about it goes.
-    rerender(<SellScreen onOpenMenu={() => {}} voidedOrder={{ orderId: 12, seq: 1 }} />)
-    await waitFor(() => expect(screen.queryByText(/Order R12 placed/)).not.toBeInTheDocument())
   })
 })

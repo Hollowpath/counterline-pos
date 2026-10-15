@@ -36,7 +36,7 @@ function stubApi(quote: () => Quote, extra: Record<string, unknown> = {}) {
     if (path === '/api/v1/auth/special-access') {
       return JSON.parse(String(init!.body)).pin === '999999'
         ? new Response(JSON.stringify({ token: 'manager-token', expiresAt: '2999-01-01T00:00:00Z', staff: { id: 2, fullName: 'Daniel Lim', role: 'MANAGER' } }), { status: 200 })
-        : new Response(JSON.stringify({ title: 'Special access required', detail: 'Enter a manager PIN to continue.' }), { status: 403 })
+        : new Response(JSON.stringify({ title: 'Special access required', detail: 'Manager PIN · 3 tries left' }), { status: 403 })
     }
     if (path === '/api/v1/orders' && init?.method === 'POST') {
       return new Response(JSON.stringify({ id: 1, orderNumber: 'R1' }), { status: 201 })
@@ -106,7 +106,7 @@ describe('the staff discount', () => {
 
     await addMember(user)
     expect(cart().getByRole('alert', { name: /can’t be paid yet/ }))
-      .toHaveTextContent('Staff Discount can’t be given on a member’s sale. Remove Nur Aisyah or the discount.')
+      .toHaveTextContent('Staff Discount: not for members')
     expect(cart().getByRole('button', { name: 'Pay' })).toBeDisabled()
   })
 })
@@ -132,8 +132,7 @@ describe('Edit Order', () => {
     await user.click(await products().findByRole('button', { name: /PC Caramel/ }))
     await user.click(cart().getByRole('button', { name: 'Place Order' }))
 
-    expect(await cart().findByText('Order R9 saved. Edit or pay it from Past Orders.')).toBeInTheDocument()
-    expect(cart().getByRole('heading', { name: 'No Sale' })).toBeInTheDocument()
+    expect(await cart().findByRole('heading', { name: 'No Sale' })).toBeInTheDocument()
     const [, init] = fetchMock.mock.calls.find(([input, request]) => String(input) === '/api/v1/orders/9' && request?.method === 'PUT')!
     expect(JSON.parse(String(init!.body))).toMatchObject({ mode: 'PLACE_ORDER', lines: [{ itemId: 1, quantity: 3 }] })
   })
@@ -149,7 +148,7 @@ describe('promotional items', () => {
     expect(cart().getByText('Buy 3 Free 1 Promo −RM6.50')).toBeInTheDocument()
     expect(cart().getByTestId('cart-total')).toHaveTextContent('RM10.00')
 
-    expect(cart().getByRole('alert', { name: 'Why this sale can’t be paid yet' })).toHaveTextContent('Promotional items need a member')
+    expect(cart().getByRole('alert', { name: 'Why this sale can’t be paid yet' })).toHaveTextContent('Add member')
     expect(cart().getByRole('button', { name: 'Pay' })).toBeDisabled()
     // Placing the order is never blocked: the rules apply when it is paid.
     expect(cart().getByRole('button', { name: 'Place Order' })).toBeEnabled()
@@ -198,7 +197,7 @@ describe('promotional items', () => {
 
     await user.click(cart().getByRole('button', { name: 'Edit B3 F1 BC Caramel' }))
     const dialog = await screen.findByRole('dialog', { name: 'B3 F1 BC Caramel' })
-    expect(await within(dialog).findByRole('note')).toHaveTextContent('free with Buy 3 Free 1 Promo')
+    expect(await within(dialog).findByRole('region', { name: 'Notes and quantity' })).toBeInTheDocument()
     expect(within(dialog).queryByRole('region', { name: 'Discounts' })).not.toBeInTheDocument()
   })
 
@@ -218,8 +217,10 @@ describe('a member on the sale', () => {
     await addMember(user)
 
     expect(await cart().findByRole('img', { name: 'Birthday month' })).toBeInTheDocument()
-    expect(cart().getByText(/Birthday month: a free birthday can with every 3 items/)).toBeInTheDocument()
-    expect(cart().getByText(/New member gift: 1 free MRG MBP Classic Mix/)).toBeInTheDocument()
+    // The label shows its gift on a tap (a touchscreen has no hover).
+    expect(cart().queryByText(/MRG MBP Classic Mix/)).not.toBeInTheDocument()
+    await user.click(cart().getByRole('button', { name: 'New Member' }))
+    expect(cart().getByText(/MRG MBP Classic Mix · until/)).toBeInTheDocument()
     expect(cart().getByTestId('points-preview')).toHaveTextContent(
       /Current points\s*5\s*\+\s*Earned from this cart\s*0\s*=\s*Total after this purchase\s*5/,
     )
@@ -233,7 +234,7 @@ describe('a member on the sale', () => {
 
     expect(await cart().findByTestId('points-preview')).toHaveTextContent(/Total after this purchase\s*2/)
     expect(cart().queryByRole('img', { name: 'Birthday month' })).not.toBeInTheDocument()
-    expect(cart().queryByText(/New member gift/)).not.toBeInTheDocument()
+    expect(cart().queryByText('New Member')).not.toBeInTheDocument()
   })
 })
 
@@ -247,7 +248,7 @@ describe('a department comp', () => {
 
     // Place Order is never held up: the approval is asked for when the order is paid.
     await user.click(cart().getByRole('button', { name: 'Place Order' }))
-    await cart().findByText(/Order R1 placed/)
+    await cart().findByRole('heading', { name: 'No Sale' })
     expect(screen.queryByRole('dialog', { name: 'Special Access Required' })).not.toBeInTheDocument()
     const [, init] = fetchMock.mock.calls.find(([input, request]) => String(input) === '/api/v1/orders' && request?.method === 'POST')!
     expect(JSON.parse(String(init!.body))).toMatchObject({ discountIds: [9] })
@@ -260,7 +261,7 @@ describe('a department comp', () => {
     await user.click(await screen.findByRole('button', { name: /Marketing Department Special Approved/ }))
     await user.click(cart().getByRole('button', { name: 'Pay' }))
     const approval = await screen.findByRole('dialog', { name: 'Special Access Required' })
-    expect(approval).toHaveTextContent('approve Marketing Department Special Approved')
+    expect(approval).toHaveTextContent('Manager PIN · Marketing Department Special Approved')
     for (const digit of '999999') await user.click(within(approval).getByRole('button', { name: digit }))
     expect(await screen.findByText(/Total \(1 items\)/)).toBeInTheDocument()
   })
@@ -275,7 +276,7 @@ describe('a department comp', () => {
     await user.click(await screen.findByRole('button', { name: /Marketing Department Special Approved/ }))
 
     await user.click(cart().getByRole('button', { name: 'Place Order' }))
-    await cart().findByText(/Order R1 placed/)
+    await cart().findByRole('heading', { name: 'No Sale' })
     expect(screen.queryByRole('dialog', { name: 'Special Access Required' })).not.toBeInTheDocument()
   })
 })

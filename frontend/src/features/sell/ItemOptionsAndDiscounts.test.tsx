@@ -111,7 +111,7 @@ describe('item options and discounts', () => {
     // The order discounts are locked while a line has one...
     await user.click(screen.getByRole('button', { name: 'Order discounts' }))
     expect(await screen.findByRole('button', { name: /Order 10%/ })).toBeDisabled()
-    expect(screen.getByText(/already has Voucher RM10 on Pouch Cheese/)).toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent('1 discount per sale')
 
     // ...and so are the other lines'.
     await user.click(screen.getByRole('button', { name: 'Selling Items' }))
@@ -120,7 +120,7 @@ describe('item options and discounts', () => {
     await user.click(cart().getAllByRole('button', { name: 'Edit Pouch Cheese' })[1])
     dialog = await screen.findByRole('dialog', { name: 'Pouch Cheese' })
     expect(within(dialog).getByRole('button', { name: /Staff 30%/ })).toBeDisabled()
-    expect(within(dialog).getByRole('note')).toHaveTextContent('Only one discount can be applied to a sale')
+    expect(within(dialog).getByRole('note')).toHaveTextContent('1 discount per sale')
   })
 
   it('applies order discounts from the % tab and sends everything to checkout', async () => {
@@ -141,7 +141,7 @@ describe('item options and discounts', () => {
     expect(cart().getByTestId('cart-total')).toHaveTextContent('RM25.65')
 
     await user.click(cart().getByRole('button', { name: 'Place Order' }))
-    await cart().findByRole('status') // the "Order R1 placed" notice
+    await cart().findByRole('heading', { name: 'No Sale' })
     const [, init] = fetchMock.mock.calls.find(([input]) => String(input) === '/api/v1/orders')!
     expect(JSON.parse(String(init!.body))).toMatchObject({
       discountIds: [3],

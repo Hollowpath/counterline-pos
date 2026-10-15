@@ -136,7 +136,7 @@ public class VoucherService {
     @Transactional(readOnly = true)
     public VoucherView check(String code) {
         Voucher voucher = voucherRepository.findByCode(normalize(code))
-                .orElseThrow(() -> new ResourceNotFoundException("No voucher has the code " + code.strip()));
+                .orElseThrow(() -> new ResourceNotFoundException("Voucher not found"));
         VoucherBatch batch = voucher.getBatch();
         return new VoucherView(voucher.getCode(), batch.getName(), batch.getDiscount().getValue(), batch.getExpiresOn(),
                 voucher.statusOn(today()));
@@ -178,21 +178,21 @@ public class VoucherService {
 
     private Optional<String> problemWith(Voucher voucher) {
         return switch (voucher.statusOn(today())) {
-            case USED -> Optional.of("Voucher " + voucher.getCode() + " has already been used");
-            case EXPIRED -> Optional.of("Voucher " + voucher.getCode() + " expired on " + voucher.getBatch().getExpiresOn());
-            case CANCELLED -> Optional.of("Voucher " + voucher.getCode() + " has been cancelled");
+            case USED -> Optional.of("Voucher used");
+            case EXPIRED -> Optional.of("Voucher expired");
+            case CANCELLED -> Optional.of("Voucher cancelled");
             case UNUSED -> Optional.empty();
         };
     }
 
     private Optional<String> expiryProblem(Voucher voucher) {
         return today().isAfter(voucher.getBatch().getExpiresOn())
-                ? Optional.of("Voucher " + voucher.getCode() + " expired on " + voucher.getBatch().getExpiresOn())
+                ? Optional.of("Voucher expired")
                 : Optional.empty();
     }
 
     private static String unknown(String code) {
-        return "No voucher has the code " + code.strip();
+        return "Voucher not found: " + code.strip();
     }
 
     /** What the voucher takes off the sale. */
@@ -203,6 +203,18 @@ public class VoucherService {
     public void markUsed(Voucher voucher, Long orderId) {
         voucher.use(orderId, clock.instant());
         voucherRepository.save(voucher);
+    }
+
+    /**
+     * Paying a placed order: the voucher it was placed with must still be valid today (it may have
+     * expired since the order was placed).
+     */
+    public void requireStillValidFor(Long orderId) {
+        for (Voucher voucher : voucherRepository.findByUsedOrderId(orderId)) {
+            expiryProblem(voucher).ifPresent(problem -> {
+                throw new BusinessRuleException(problem);
+            });
+        }
     }
 
     /** The code of the voucher a (placed) order uses, if any. */

@@ -79,7 +79,7 @@ export function SalesOverview() {
         setOverview(next)
         setError(null)
       } catch (caught) {
-        if (!stopped) setError(caught instanceof ApiError ? caught.message : 'Could not load the figures. Try again.')
+        if (!stopped) setError(caught instanceof ApiError ? caught.message : 'Offline')
       }
       if (!stopped) timer = window.setTimeout(load, REFRESH_MS)
     }

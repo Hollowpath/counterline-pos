@@ -4,6 +4,7 @@ import { AppBar } from '../../app/AppBar'
 import { LoadState } from '../../components/LoadState'
 import { addDays, daysBetween, formatDate, formatDateTime, formatTime, todayIso } from '../../lib/dates'
 import { formatRM, formatSignedRM, toSen } from '../../lib/money'
+import { printScreen } from '../receipts/printReceipt'
 import { SalesSummaryView } from './SalesSummaryView'
 import {
   reportPath,
@@ -101,7 +102,7 @@ export function ReportsScreen({ outletName, onOpenMenu, pathFor = reportPath }: 
           <button type="button" className="grid size-9 place-items-center rounded-lg bg-white/15 text-lg text-white transition hover:bg-white/25" aria-label="Next period" onClick={() => shift(1)}>
             ›
           </button>
-          <button type="button" className="btn ml-auto py-2 text-indigo-700" onClick={() => window.print()}>
+          <button type="button" className="btn ml-auto py-2 text-indigo-700" onClick={printScreen}>
             Print
           </button>
         </div>

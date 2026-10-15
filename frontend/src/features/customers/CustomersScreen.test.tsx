@@ -159,7 +159,7 @@ describe('CustomersScreen', () => {
 
   it('edits with the loaded version and shows a conflict if someone saved first', async () => {
     const calls = fakeApi([makeCustomer(1, 'Nur', { version: 3, phone: '+60112345678' })], {
-      onPut: () => json({ title: 'Conflicting change', detail: 'This record was changed by someone else at the same time. Reload it and try again.' }, 409),
+      onPut: () => json({ title: 'Conflicting change', detail: 'Changed elsewhere. Reload.' }, 409),
     })
     const user = userEvent.setup()
     render(<CustomersScreen onOpenMenu={() => {}} />)
@@ -170,7 +170,7 @@ describe('CustomersScreen', () => {
     await user.type(within(form).getByLabelText(/Last name/), 'Aisyah')
     await user.click(within(form).getByRole('button', { name: 'Save' }))
 
-    expect(await within(form).findByRole('alert')).toHaveTextContent('changed by someone else')
+    expect(await within(form).findByRole('alert')).toHaveTextContent('Changed elsewhere')
     expect(calls.find((call) => call.method === 'PUT')!.body).toMatchObject({ version: 3, lastName: 'Aisyah', phone: '+60112345678' })
   })
 

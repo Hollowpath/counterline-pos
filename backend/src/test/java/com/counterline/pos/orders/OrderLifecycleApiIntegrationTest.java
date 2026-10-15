@@ -212,6 +212,18 @@ class OrderLifecycleApiIntegrationTest {
 
         mockMvc.perform(get("/api/v1/auth/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + cashierToken))
                 .andExpect(jsonPath("$.fullName").value("Test Cashier"));
+
+        // The approval was for that one void: not another, nor anything else.
+        long another = placeOrder(4, 1);
+        mockMvc.perform(post("/api/v1/orders/" + another + "/void")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + managerToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Again\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("Approval used"));
+        mockMvc.perform(get("/api/v1/dashboard/live").header(HttpHeaders.AUTHORIZATION, "Bearer " + managerToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/register").header(HttpHeaders.AUTHORIZATION, "Bearer " + managerToken))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -289,7 +301,7 @@ class OrderLifecycleApiIntegrationTest {
 
         pay(id, payBody(UUID.randomUUID(), "29.00"))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("The register is closed. Open it in Manage Register before taking payment."));
+                .andExpect(jsonPath("$.detail").value("Register closed"));
     }
 
     @Test

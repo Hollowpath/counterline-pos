@@ -24,7 +24,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-export const SESSION_ENDED_NOTICE = 'Your session has ended. Please log in again.'
+export const SESSION_ENDED_NOTICE = 'Session ended'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [restored] = useState(() => {
@@ -63,7 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setUpTerminal = useCallback(async (pin: string, outlet: Outlet) => {
     const response = await postJson<TerminalSetupResponse>(authPaths.terminalSetup, { pin, outletId: outlet.id })
-    const bound = { id: response.outlet.id, name: response.outlet.name, deviceKey: response.deviceKey, label: response.label }
+    const bound = {
+      id: response.outlet.id, name: response.outlet.name, deviceKey: response.deviceKey, label: response.label,
+      address: response.outlet.address,
+    }
     saveTerminal(bound)
     setSetUpNotice(null)
     setTerminal(bound)
@@ -84,6 +87,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw error
     }
     const outlet = { id: response.outlet.id, name: response.outlet.name }
+    // The outlet's details as they are now (a binding from before the address was kept gets it here).
+    if (terminal.address !== response.outlet.address || terminal.name !== response.outlet.name) {
+      const updated = { ...terminal, name: response.outlet.name, address: response.outlet.address }
+      saveTerminal(updated)
+      setTerminal(updated)
+    }
     setAuthToken(response.token)
     saveSession({ token: response.token, expiresAt: response.expiresAt, staff: response.staff, outlet })
     setState({ status: 'authenticated', staff: response.staff, outlet, welcome: true })

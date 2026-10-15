@@ -203,6 +203,26 @@ class CustomerDisplayIntegrationTest {
     }
 
     @Test
+    void signUpCannotBeUsedToFindOutWhichNumbersAreMembers() throws Exception {
+        String created = pos(post("/api/v1/displays"), null).andReturn().getResponse().getContentAsString();
+        Integer displayId = JsonPath.read(created, "$.id");
+        String token = token(JsonPath.read(created, "$.accessCode"));
+        pos(put("/api/v1/displays/" + displayId + "/cart"), NEW_SALE).andExpect(status().isNoContent());
+
+        // Member Login and Sign Up share the display's tries.
+        for (int i = 0; i < 5; i++) {
+            display(post("/api/v1/display/member-login"), token, "{\"phone\":\"0199999999\"}").andExpect(status().isNotFound());
+        }
+        String member = "{\"phone\":\"0112345678\",\"firstName\":\"Someone\",\"lastName\":\"Else\"}";
+        for (int i = 0; i < 4; i++) {
+            display(post("/api/v1/display/members"), token, member).andExpect(status().isConflict());
+        }
+        display(post("/api/v1/display/members"), token, member).andExpect(status().isTooManyRequests());
+        display(post("/api/v1/display/members"), token, """
+                {"phone":"0127778888","firstName":"Lim","lastName":"Wei"}""").andExpect(status().isTooManyRequests());
+    }
+
+    @Test
     void aDisconnectedDisplayIsLoggedOutAndOtherOutletsCannotReachIt() throws Exception {
         String created = pos(post("/api/v1/displays"), null).andReturn().getResponse().getContentAsString();
         Integer displayId = JsonPath.read(created, "$.id");

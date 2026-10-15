@@ -122,7 +122,7 @@ public class CheckoutService {
 
     /** Records the sale at the terminal's outlet, by the staff member logged in there. */
     public CheckoutResult checkout(CheckoutRequest request, Terminal terminal) {
-        Optional<OrderResponse> replay = orderQueries.findByClientRequestId(request.clientRequestId());
+        Optional<OrderResponse> replay = orderQueries.findByClientRequestId(request.clientRequestId(), terminal.outletId());
         if (replay.isPresent()) {
             return new CheckoutResult(replay.get(), false);
         }
@@ -134,7 +134,7 @@ public class CheckoutService {
             return new CheckoutResult(order, true);
         } catch (DataIntegrityViolationException e) {
             // Lost a race with a concurrent request carrying the same clientRequestId.
-            return orderQueries.findByClientRequestId(request.clientRequestId())
+            return orderQueries.findByClientRequestId(request.clientRequestId(), terminal.outletId())
                     .map(existing -> new CheckoutResult(existing, false))
                     .orElseThrow(() -> e);
         }
@@ -155,7 +155,7 @@ public class CheckoutService {
                         editedOrderId == null ? 0L : editedOrderId);
                 voucherDiscount = voucher.discount();
                 if (voucher.problem() != null) {
-                    problems.add(voucher.problem() + ".");
+                    problems.add(voucher.problem());
                 }
             }
             SaleOrder order = buildOrder(request, activeStaff(terminal.staffId()), terminal.outletId(), now, 0, "",
@@ -206,13 +206,14 @@ public class CheckoutService {
      */
     private void complete(SaleOrder order, CheckoutRequest request, Voucher voucher, Staff staff, Terminal terminal,
                           Instant now, UUID paymentRequestId) {
+        // Placing an order, like paying, needs the outlet's register open.
+        registerGate.requireOpenForPayment(terminal.outletId());
         if (request.modeOrDefault() == CheckoutMode.PLACE_ORDER) {
             paymentRecorder.addPayments(order, request.payments(), staff, now);
             order.place();
             orderRepository.saveAndFlush(order);
             useVoucher(voucher, order);
         } else {
-            registerGate.requireOpenForPayment(terminal.outletId());
             paymentRecorder.addPayments(order, request.payments(), staff, now);
             if (paymentRequestId == null) {
                 order.close(now);
@@ -354,7 +355,7 @@ public class CheckoutService {
         List<Discount> orderDiscounts = new ArrayList<>(discountService.resolve(request.discountIdsOrEmpty(), Discount.Scope.ORDER));
         if (voucherDiscount != null) {
             if (!orderDiscounts.isEmpty() || !order.getDiscounts().isEmpty()) {
-                throw new BusinessRuleException("A voucher is the sale's one discount: remove the other discount first");
+                throw new BusinessRuleException("1 discount per sale");
             }
             orderDiscounts.add(voucherDiscount);
         }

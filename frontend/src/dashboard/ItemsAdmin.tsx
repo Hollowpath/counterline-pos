@@ -8,7 +8,7 @@ import { dashboardPaths, type AdminCategory, type AdminItem } from './types'
 import { Page, Status } from './ui'
 
 function message(error: unknown) {
-  return error instanceof ApiError ? error.message : 'Could not reach the server. Try again.'
+  return error instanceof ApiError ? error.message : 'Offline'
 }
 
 const priceField = `${field} w-28`

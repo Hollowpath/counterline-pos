@@ -32,11 +32,9 @@ class AuthExceptionHandler {
     ResponseEntity<ProblemDetail> handleTooManyAttempts(TooManyLoginAttemptsException ex) {
         long seconds = ex.retryAfterSeconds();
         ProblemDetail body = problem(HttpStatus.TOO_MANY_REQUESTS, "Too many attempts",
-                "Too many incorrect PINs. Try again in " + seconds + " seconds"
-                        + (ex.managerCanUnlock() ? ", or ask a manager to unlock it on the dashboard." : "."));
+                "Locked · " + seconds + "s");
         // For a countdown on the PIN pad.
         body.setProperty("retryAfterSeconds", seconds);
-        body.setProperty("managerCanUnlock", ex.managerCanUnlock());
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(seconds))
                 .body(body);

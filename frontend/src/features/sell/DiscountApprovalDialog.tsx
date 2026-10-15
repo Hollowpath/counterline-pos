@@ -20,13 +20,13 @@ export function DiscountApprovalDialog({ discountName, onApproved, onCancel }: D
       const response = await requestSpecialAccess(pin)
       onApproved(response.token)
     } catch (caught) {
-      return pinLockout(caught) ?? (caught instanceof ApiError ? caught.message : 'Could not reach the server. Try again.')
+      return pinLockout(caught) ?? (caught instanceof ApiError ? caught.message : 'Offline')
     }
   }
 
   return (
     <Dialog title="Special Access Required">
-      <p className="mb-5 rounded-xl bg-orange-50 px-3 py-2.5 text-sm text-orange-800 ring-1 ring-orange-200 ring-inset">A manager must enter their PIN to approve <strong className="font-semibold">{discountName}</strong>.</p>
+      <p className="mb-5 rounded-xl bg-orange-50 px-3 py-2.5 text-sm text-orange-800 ring-1 ring-orange-200 ring-inset">Manager PIN · <strong className="font-semibold">{discountName}</strong></p>
       <PinEntry onSubmit={approve} lockStatus={tillLockStatus} />
       <div className={dialogActions}>
         <button type="button" className="btn" onClick={onCancel}>

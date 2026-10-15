@@ -14,12 +14,9 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.Month;
-import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -68,11 +65,10 @@ class PromotionRules {
     /** How long after signing up a new member may take the Registration Reward. */
     static final Duration REGISTRATION_REWARD_WINDOW = Duration.ofHours(24);
 
-    static final String NO_FREE_ITEMS_WITH_VOUCHER = "No Buy 3 Free 1, seasonal flavour or birthday free items "
-            + "with a voucher or discount: remove ";
+    /** The free items a sale with a voucher or discount may not give, listed after it. */
+    static final String NO_FREE_ITEMS_WITH_VOUCHER = "Discount on: remove ";
 
-    static final String NEEDS_MEMBER = "Promotional items need a member. Add the customer's membership to the sale, "
-            + "or remove the promotional items.";
+    static final String NEEDS_MEMBER = "Add member";
 
     private final SaleOrderRepository orderRepository;
     private final PromotionRepository promotionRepository;
@@ -112,7 +108,7 @@ class PromotionRules {
             problems.addAll(promotionProblems(order, null, now, editedOrderId));
             return problems.stream().filter(Objects::nonNull).distinct().toList();
         }
-        problems.addAll(discountProblems(order, member));
+        problems.addAll(discountProblems(order));
         problems.addAll(promotionProblems(order, member, now, editedOrderId));
         problems.addAll(pointsProblems(order, member, pointsBalance));
         return problems.stream().filter(Objects::nonNull).distinct().toList();
@@ -151,16 +147,15 @@ class PromotionRules {
 
     private static void throwIfAny(List<String> problems) {
         if (!problems.isEmpty()) {
-            throw new BusinessRuleException(String.join(" ", problems));
+            throw new BusinessRuleException(String.join(" · ", problems));
         }
     }
 
     /** The staff discount is for staff purchases, so it can't be given on a member's sale. */
-    private static List<String> discountProblems(SaleOrder order, Customer member) {
+    private static List<String> discountProblems(SaleOrder order) {
         return order.getDiscounts().stream()
                 .filter(applied -> applied.getDiscount().isNotForMembers())
-                .map(applied -> applied.getName() + " can't be given on a member's sale. Remove "
-                        + member.getFullName() + " or the discount.")
+                .map(applied -> applied.getName() + ": not for members")
                 .toList();
     }
 
@@ -174,7 +169,7 @@ class PromotionRules {
             Promotion promotion = applied.getPromotion();
             given.merge(promotion, applied.getLine().getQuantity(), Integer::sum);
             if (!promotion.isActive()) {
-                problems.add(applied.getLine().getItemName() + " is no longer on promotion.");
+                problems.add(applied.getLine().getItemName() + ": promo ended");
             }
         }
         // Items the member is owed (the staff forgot them last time) are free whatever this sale's
@@ -196,7 +191,7 @@ class PromotionRules {
                     .distinct()
                     .toList();
             if (!refused.isEmpty()) {
-                problems.add(NO_FREE_ITEMS_WITH_VOUCHER + String.join(", ", refused) + ".");
+                problems.add(NO_FREE_ITEMS_WITH_VOUCHER + String.join(", ", refused));
             }
             given.keySet().removeIf(promotion -> !allowedWithVoucher(promotion));
         }
@@ -209,33 +204,27 @@ class PromotionRules {
 
         given.forEach((promotion, quantity) -> {
             if (!promotion.runsOn(today)) {
-                problems.add(promotion.getName() + " runs from " + promotion.getStartsOn() + " to "
-                        + promotion.getEndsOn() + ".");
+                problems.add(promotion.getName() + ": " + promotion.getStartsOn() + " to " + promotion.getEndsOn());
             }
             if (promotion.getMaxPerSale() != null && quantity > promotion.getMaxPerSale()) {
-                problems.add(promotion.getName() + ": at most " + promotion.getMaxPerSale() + " per receipt.");
+                problems.add(promotion.getName() + ": max " + promotion.getMaxPerSale() + " per receipt");
             }
             switch (promotion.getType()) {
                 case MIN_SPEND -> {
                     int allowed = order.getTotal().divide(promotion.getMinSpend(), 0, RoundingMode.DOWN).intValueExact();
                     if (allowed == 0) {
-                        problems.add(promotion.getName() + " needs a sale of RM" + promotion.getMinSpend()
-                                + " or more (this sale is RM" + order.getTotal() + ").");
+                        problems.add(promotion.getName() + ": min RM" + promotion.getMinSpend());
                     } else if (quantity > allowed) {
-                        problems.add(promotion.getName() + ": 1 free for every RM" + promotion.getMinSpend()
-                                + " spent. This sale is RM" + order.getTotal() + ", so " + allowed
-                                + " free, but " + quantity + " given.");
+                        problems.add(removeSome(quantity - allowed, promotion.getName()));
                     }
                 }
                 case REGISTRATION_REWARD -> {
                     if (member == null) {
                         problems.add(NEEDS_MEMBER);
                     } else if (orderRepository.memberHasHadPromotion(member.getId(), promotion.getId(), editedOrderId)) {
-                        problems.add(member.getFullName() + " has already had the " + promotion.getName() + ".");
+                        problems.add(promotion.getName() + ": already used");
                     } else if (!now.isBefore(registrationRewardEnds(member))) {
-                        problems.add("The " + promotion.getName() + " is for new members, within 24 hours of "
-                                + "signing up. " + member.getFullName() + " signed up on "
-                                + LocalDate.ofInstant(member.getCreatedAt(), outlet.timeZone()) + ".");
+                        problems.add(promotion.getName() + ": expired");
                     }
                 }
                 case REVIEW_REWARD -> {
@@ -243,8 +232,7 @@ class PromotionRules {
                         problems.add(NEEDS_MEMBER);
                     } else if (orderRepository.memberHasHadPromotionAtOutlet(member.getId(), promotion.getId(),
                             order.getOutletId(), editedOrderId)) {
-                        problems.add(member.getFullName() + " has already had the " + promotion.getName()
-                                + " at this outlet.");
+                        problems.add(promotion.getName() + ": already used here");
                     }
                 }
                 case BIRTHDAY_REWARD -> {
@@ -277,17 +265,14 @@ class PromotionRules {
                 int allowed = order.getTotal().divide(promotion.getMinSpend(), 0, RoundingMode.DOWN).intValueExact();
                 int givenQuantity = givenById.getOrDefault(promotion.getId(), 0);
                 if (givenQuantity < allowed) {
-                    problems.add("Give the free gift: " + member.getFullName() + " spent RM" + order.getTotal()
-                            + ", so gets " + allowed + " free with " + promotion.getName() + " (1 for every RM"
-                            + promotion.getMinSpend() + " spent), " + givenQuantity + " given. Add "
-                            + (allowed - givenQuantity) + " more from the Promotional tab.");
+                    problems.add(selectMore(allowed - givenQuantity, givenQuantity, promotion.getName()));
                 }
             });
         }
 
         givenPerGroup.forEach((group, quantity) -> {
             if (quantity > 1) {
-                problems.add("Only one " + group + " per sale.");
+                problems.add("1 " + group + " only");
             }
         });
         return problems;
@@ -332,9 +317,9 @@ class PromotionRules {
                 order.getPointsToRedeem());
         if (settlement.redeemed() > 0) {
             try {
-                LoyaltyService.requireEnough(member.getFullName(), settlement);
+                LoyaltyService.requireEnough(settlement);
             } catch (BusinessRuleException e) {
-                return List.of(e.getMessage() + ".");
+                return List.of(e.getMessage());
             }
         }
         OptionalInt cost = redemptionCost();
@@ -342,10 +327,7 @@ class PromotionRules {
             return List.of();
         }
         int toRedeem = settlement.after() / cost.getAsInt();
-        return List.of(member.getFullName() + " will have " + settlement.after() + " points after this sale. "
-                + "Points can't be carried forward once they reach " + cost.getAsInt() + ": redeem " + toRedeem
-                + (settlement.redeemed() > 0 ? " more" : "") + " Member FOC item" + (toRedeem == 1 ? "" : "s")
-                + " from the Promotional tab.");
+        return List.of(selectMore(toRedeem, settlement.redeemed(), "Member FOC"));
     }
 
     /**
@@ -363,24 +345,19 @@ class PromotionRules {
                 .toList();
         int boughtCount = bought.stream().mapToInt(SaleOrderLine::getQuantity).sum();
         int allowed = boughtCount / allowance.buyQuantity();
-        String per = allowance.buyQuantity() == 1 ? "item bought" : allowance.buyQuantity() + " items bought";
-        String boughtText = boughtCount + " bought";
         if (allowance.seasonalItemsOnly()) {
             int seasonal = bought.stream()
                     .filter(line -> line.getItem().isSeasonalOn(today))
                     .mapToInt(SaleOrderLine::getQuantity)
                     .sum();
             allowed = Math.min(allowed, seasonal);
-            per += " with a seasonal flavour among them";
-            boughtText += ", " + seasonal + " of them seasonal";
         }
         int givenTotal = promotions.stream().mapToInt(promotion -> givenById.getOrDefault(promotion.getId(), 0)).sum();
         if (givenTotal > allowed) {
             List<Promotion> givenOnes = promotions.stream()
                     .filter(promotion -> givenById.getOrDefault(promotion.getId(), 0) > 0)
                     .toList();
-            return Optional.of(names(givenOnes, " and ") + ": 1 free item for every " + per + ". This sale has "
-                    + boughtText + ", so " + allowed + " free, but " + givenTotal + " given.");
+            return Optional.of(removeSome(givenTotal - allowed, names(givenOnes, " / ")));
         }
         if (member != null && givenTotal < allowed) {
             // The birthday can is only an option in the member's birth month.
@@ -389,11 +366,19 @@ class PromotionRules {
                             || birthdayProblem(member, promotion, today).isEmpty())
                     .toList();
             int missing = allowed - givenTotal;
-            return Optional.of("Give the free gift: " + member.getFullName() + " gets " + allowed + " free with "
-                    + names(choices.isEmpty() ? promotions : choices, " or ") + " (1 for every "
-                    + per + "), " + givenTotal + " given. Add " + missing + " more from the Promotional tab.");
+            return Optional.of(selectMore(missing, givenTotal, names(choices.isEmpty() ? promotions : choices, " / ")));
         }
         return Optional.empty();
+    }
+
+    /** "Select 2 Buy 3 Free 1 Promo", or "Select 1 more …" when some are in the sale already. */
+    private static String selectMore(int missing, int alreadyGiven, String what) {
+        return "Select " + missing + (alreadyGiven > 0 ? " more " : " ") + what;
+    }
+
+    /** "Remove 1 Birthday Reward": more given than the sale earns. */
+    private static String removeSome(int extra, String what) {
+        return "Remove " + extra + " " + what;
     }
 
     private static String names(List<Promotion> promotions, String separator) {
@@ -404,17 +389,12 @@ class PromotionRules {
     private Optional<String> birthdayProblem(Customer member, Promotion promotion, LocalDate today) {
         LocalDate birthday = member.getDateOfBirth();
         if (birthday == null) {
-            return Optional.of(member.getFullName() + " has no date of birth on file for the "
-                    + promotion.getName() + ".");
+            return Optional.of(promotion.getName() + ": no birth date");
         }
         if (birthday.getMonth() != today.getMonth()) {
-            return Optional.of("The " + promotion.getName() + " is given in " + member.getFullName()
-                    + "'s birthday month (" + monthName(birthday.getMonth()) + ").");
+            return Optional.of(promotion.getName() + ": not birth month");
         }
         return Optional.empty();
     }
 
-    private static String monthName(Month month) {
-        return month.getDisplayName(TextStyle.FULL, Locale.ENGLISH);
-    }
 }

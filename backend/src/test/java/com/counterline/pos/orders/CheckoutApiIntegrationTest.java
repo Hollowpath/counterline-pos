@@ -131,25 +131,26 @@ class CheckoutApiIntegrationTest {
                 .andExpect(jsonPath("$.detail").value("A sale takes one cashless payment; the rest can be paid in cash"));
         checkout(request(List.of(new LineRequest(4L, 1)), List.of(new PaymentRequest(VISA, new BigDecimal("29.00"), null))))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Enter the Visa reference from the terminal"));
+                .andExpect(jsonPath("$.detail").value("Visa reference needed"));
 
         assertRowCounts(0, 0, 0);
     }
 
     @Test
-    void paymentIsRefusedWhileTheRegisterIsClosedButAnOrderCanStillBePlaced() throws Exception {
+    void payingAndPlacingAreRefusedWhileTheRegisterIsClosed() throws Exception {
         TestRegister.close(jdbc);
 
         checkout(request(List.of(new LineRequest(4L, 1)), List.of(new PaymentRequest(VISA, new BigDecimal("29.00"), "ref"))))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("The register is closed. Open it in Manage Register before taking payment."));
+                .andExpect(jsonPath("$.detail").value("Register closed"));
         assertRowCounts(0, 0, 0);
 
         checkout("""
                 {"clientRequestId":"%s","mode":"PLACE_ORDER","lines":[{"itemId":4,"quantity":1}],"payments":[]}
                 """.formatted(UUID.randomUUID()))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status").value("OPEN"));
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value("Register closed"));
+        assertRowCounts(0, 0, 0);
     }
 
     @Test

@@ -30,7 +30,7 @@ export function DisplayApp() {
     clearConnection()
     setAuthToken(null)
     setConnection(null)
-    setNotice('This display was disconnected from the till. Enter a new access code.')
+    setNotice('Disconnected')
   }, [])
 
   async function connect(accessCode: string) {
@@ -43,7 +43,7 @@ export function DisplayApp() {
     } catch (error) {
       return pinLockout(error) ?? (error instanceof ApiError && (error.status === 422 || error.status === 429)
         ? error.message
-        : 'Could not reach the server. Check the connection and try again.')
+        : 'Offline')
     }
   }
 
@@ -51,7 +51,7 @@ export function DisplayApp() {
     return (
       <main className="flex h-dvh flex-col items-center justify-center gap-1 overflow-hidden bg-linear-to-b from-white to-zinc-100 px-4 py-3 text-center">
         <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Customer Display</h1>
-        <p className="mb-2 max-w-[26rem] text-sm text-zinc-500">On the till, open ☰ → Customer Display and enter the access code shown there.</p>
+        <p className="mb-2 max-w-[26rem] text-sm text-zinc-500">Access code</p>
         <PinEntry onSubmit={connect} notice={notice} fitScreen />
       </main>
     )
@@ -101,11 +101,14 @@ function CustomerScreen({ outletName, onDisconnected }: { outletName: string; on
     )
   }
   return (
-    <div className="grid min-h-dvh grid-cols-[minmax(0,3fr)_minmax(18rem,2fr)] bg-zinc-100 max-md:grid-cols-[minmax(0,1fr)]">
-      <section className="flex min-w-0 flex-col p-8 max-md:p-4">
+    // One screen: the heading and totals stay in place and only the list of items scrolls (the
+    // membership side scrolls on its own if a form is taller than the screen). A phone-width
+    // screen stacks the two and scrolls as a page.
+    <div className="grid h-dvh grid-cols-[minmax(0,3fr)_minmax(18rem,2fr)] grid-rows-[minmax(0,1fr)] bg-zinc-100 max-md:h-auto max-md:min-h-dvh max-md:grid-cols-[minmax(0,1fr)] max-md:grid-rows-none">
+      <section className="flex min-h-0 min-w-0 flex-col p-8 max-md:p-4">
         <CartLines cart={cart} />
       </section>
-      <aside className="flex flex-col gap-4 bg-zinc-800 p-8 text-white shadow-[-8px_0_32px_-12px_rgb(24_24_27/0.4)] max-md:p-4 max-md:shadow-[0_-8px_32px_-12px_rgb(24_24_27/0.4)]" aria-label="Membership">
+      <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto bg-zinc-800 p-8 text-white shadow-[-8px_0_32px_-12px_rgb(24_24_27/0.4)] max-md:p-4 max-md:shadow-[0_-8px_32px_-12px_rgb(24_24_27/0.4)]" aria-label="Membership">
         <MemberPanel state={state} memberName={cart.memberName} />
       </aside>
     </div>
@@ -124,7 +127,7 @@ function CartLines({ cart }: { cart: CartView }) {
       ) : (
         <ul
           className={[
-            'flex-1 list-none divide-y divide-zinc-100 overflow-y-auto rounded-3xl bg-white shadow-sm ring-1 ring-zinc-900/5',
+            'min-h-0 flex-1 list-none divide-y divide-zinc-100 overflow-y-auto rounded-3xl bg-white shadow-sm ring-1 ring-zinc-900/5',
             '[&_li]:grid [&_li]:grid-cols-[3rem_1fr_auto] [&_li]:items-center [&_li]:gap-3 [&_li]:px-5 [&_li]:py-4 [&_li]:text-lg',
           ].join(' ')}
           aria-label="Your order">

@@ -39,7 +39,7 @@ const ENTRY_TEXT: Record<string, string> = {
 }
 
 function message(error: unknown) {
-  return error instanceof ApiError ? error.message : 'Could not reach the server. Try again.'
+  return error instanceof ApiError ? error.message : 'Offline'
 }
 
 /**

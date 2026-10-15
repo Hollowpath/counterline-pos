@@ -1,5 +1,6 @@
 package com.counterline.pos.orders;
 
+import com.counterline.pos.auth.ApprovalTokens;
 import com.counterline.pos.auth.Terminal;
 import com.counterline.pos.orders.CheckoutService.CheckoutResult;
 import com.counterline.pos.orders.OrderDtos.CheckoutRequest;
@@ -41,11 +42,14 @@ class OrderController {
     private final CheckoutService checkoutService;
     private final OrderLifecycleService lifecycle;
     private final OrderQueryService orderQueries;
+    private final ApprovalTokens approvalTokens;
 
-    OrderController(CheckoutService checkoutService, OrderLifecycleService lifecycle, OrderQueryService orderQueries) {
+    OrderController(CheckoutService checkoutService, OrderLifecycleService lifecycle, OrderQueryService orderQueries,
+                    ApprovalTokens approvalTokens) {
         this.checkoutService = checkoutService;
         this.lifecycle = lifecycle;
         this.orderQueries = orderQueries;
+        this.approvalTokens = approvalTokens;
     }
 
     @Operation(summary = "Check out the cart: pay now (CLOSED) or place the order unpaid (OPEN)",
@@ -118,6 +122,7 @@ class OrderController {
     @PostMapping("/orders/{orderId}/void")
     OrderResponse voidOrder(@PathVariable Long orderId, @Valid @RequestBody ReasonRequest request,
                             @AuthenticationPrincipal Jwt jwt) {
+        approvalTokens.useOnce(jwt);
         return lifecycle.voidOrder(orderId, request.reason(), Terminal.of(jwt));
     }
 
@@ -126,6 +131,7 @@ class OrderController {
     @PostMapping("/orders/{orderId}/refund")
     OrderResponse refundOrder(@PathVariable Long orderId, @Valid @RequestBody ReasonRequest request,
                               @AuthenticationPrincipal Jwt jwt) {
+        approvalTokens.useOnce(jwt);
         return lifecycle.refund(orderId, request.reason(), Terminal.of(jwt));
     }
 

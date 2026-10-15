@@ -41,7 +41,7 @@ export function PinEntry({ onSubmit, notice, lockStatus, fitScreen = false }: Pi
   const [pin, setPin] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [locked, setLocked] = useState<{ until: number; managerCanUnlock: boolean } | null>(null)
+  const [locked, setLocked] = useState<{ until: number } | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
   // The latest check, so a parent re-render doesn't restart the polling.
@@ -51,10 +51,10 @@ export function PinEntry({ onSubmit, notice, lockStatus, fitScreen = false }: Pi
   })
 
   /** Locks the pad for `seconds` (a manager can unlock the outlets' pads), or frees it at 0. */
-  function lockFor(seconds: number, managerCanUnlock = true) {
+  function lockFor(seconds: number) {
     const time = Date.now()
     setNow(time)
-    setLocked(seconds > 0 ? { until: time + seconds * 1000, managerCanUnlock } : null)
+    setLocked(seconds > 0 ? { until: time + seconds * 1000 } : null)
   }
 
   // A lock from before this screen opened (e.g. the page was reloaded).
@@ -101,7 +101,7 @@ export function PinEntry({ onSubmit, notice, lockStatus, fitScreen = false }: Pi
         setLocked(null)
       } else {
         setError(null)
-        lockFor(failure.seconds, failure.managerCanUnlock)
+        lockFor(failure.seconds)
       }
       setPin('')
       setSubmitting(false)
@@ -144,9 +144,7 @@ export function PinEntry({ onSubmit, notice, lockStatus, fitScreen = false }: Pi
       {locked ? (
         // A timer, not an alert: it changes every second.
         <p className={message} role="timer">
-          Too many incorrect PINs. Try again in{' '}
-          <strong className="tabular-nums">{minutesAndSeconds(Math.ceil((locked.until - now) / 1000))}</strong>
-          {locked.managerCanUnlock ? ', or ask a manager to unlock it on the dashboard.' : '.'}
+          Locked · <strong className="tabular-nums">{minutesAndSeconds(Math.ceil((locked.until - now) / 1000))}</strong>
         </p>
       ) : (
         <p className={message} role="alert">

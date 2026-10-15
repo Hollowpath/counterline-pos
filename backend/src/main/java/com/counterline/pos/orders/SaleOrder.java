@@ -260,7 +260,7 @@ public class SaleOrder {
     /** At most one discount per sale, whether on a line or on the whole order (outlet rule). */
     private BigDecimal recordDiscounts(SaleOrderLine line, BigDecimal base, List<Discount> toApply) {
         if (discounts.size() + toApply.size() > MAX_DISCOUNTS_PER_SALE) {
-            throw new BusinessRuleException("Only one discount can be applied to a sale");
+            throw new BusinessRuleException("1 discount per sale");
         }
         List<BigDecimal> amounts = DiscountCalculator.amounts(base, toApply);
         for (int i = 0; i < toApply.size(); i++) {
@@ -282,7 +282,7 @@ public class SaleOrder {
             }
         } else {
             if (reference == null || reference.isBlank()) {
-                throw new BusinessRuleException("Enter the " + method.getName() + " reference from the terminal");
+                throw new BusinessRuleException(method.getName() + " reference needed");
             }
             if (cashTendered != null) {
                 throw new BusinessRuleException("Cash received only applies to cash payments");

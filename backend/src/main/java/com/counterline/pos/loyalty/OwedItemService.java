@@ -6,6 +6,7 @@ import com.counterline.pos.promotions.Promotion;
 import com.counterline.pos.promotions.PromotionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,10 +29,12 @@ public class OwedItemService {
 
     private final MemberOwedItemRepository owedRepository;
     private final PromotionRepository promotionRepository;
+    private final JdbcTemplate jdbc;
 
-    OwedItemService(MemberOwedItemRepository owedRepository, PromotionRepository promotionRepository) {
+    OwedItemService(MemberOwedItemRepository owedRepository, PromotionRepository promotionRepository, JdbcTemplate jdbc) {
         this.owedRepository = owedRepository;
         this.promotionRepository = promotionRepository;
+        this.jdbc = jdbc;
     }
 
     /** One record of items owed. */
@@ -73,15 +76,34 @@ public class OwedItemService {
         return owed;
     }
 
-    /** A paid sale gave the member {@code quantity} owed items of the promotion: use them up, oldest first. */
+    /**
+     * Paid sale {@code orderId} gave the member {@code quantity} owed items of the promotion: use them
+     * up, oldest first, noting which, so a refund can give them back.
+     */
     @Transactional(propagation = Propagation.MANDATORY)
-    public void use(Long customerId, Long promotionId, int quantity) {
+    public void use(Long customerId, Long promotionId, int quantity, Long orderId) {
         int left = quantity;
         for (MemberOwedItem item : owedRepository.lockOpen(customerId, promotionId)) {
             if (left == 0) {
                 break;
             }
-            left -= item.use(left);
+            int used = item.use(left);
+            left -= used;
+            jdbc.update("INSERT INTO member_owed_item_use (order_id, owed_item_id, quantity) VALUES (?, ?, ?)",
+                    orderId, item.getId(), used);
+        }
+        owedRepository.flush();
+    }
+
+    /** Sale {@code orderId} was refunded: the owed items it used up are owed again. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void giveBack(Long orderId) {
+        owedRepository.flush();
+        int items = jdbc.update("UPDATE member_owed_item i SET quantity_used = i.quantity_used - u.quantity "
+                + "FROM member_owed_item_use u WHERE u.owed_item_id = i.id AND u.order_id = ?", orderId);
+        jdbc.update("DELETE FROM member_owed_item_use WHERE order_id = ?", orderId);
+        if (items > 0) {
+            log.info("Owed items used by order {} are owed again after its refund", orderId);
         }
     }
 

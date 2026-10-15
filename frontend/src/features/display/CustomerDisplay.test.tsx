@@ -89,7 +89,7 @@ describe('Customer Display on the till', () => {
     current = { ...current, waitingMember: { customerId: 5, fullName: 'Nur Aisyah', phone: '+60112345678', newMember: true } }
     const cartPanel = screen.getByRole('complementary', { name: 'Current sale' })
     expect(await within(cartPanel).findByText('Nur Aisyah', {}, WAIT)).toBeInTheDocument()
-    expect(within(cartPanel).getByText('Nur Aisyah signed up on the customer display.')).toBeInTheDocument()
+    expect(within(cartPanel).getByText('Nur Aisyah signed up')).toBeInTheDocument()
     expect(within(cartPanel).queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
     current = { ...current, waitingMember: null }
     expect(calls.some((call) => call.key === 'POST /api/v1/displays/4/member/confirm' &&

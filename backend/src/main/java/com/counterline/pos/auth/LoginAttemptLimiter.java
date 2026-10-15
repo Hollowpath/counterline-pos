@@ -20,9 +20,10 @@ import java.util.Optional;
  * unlimited guessing would find a valid one quickly.
  *
  * <p>Counted per key: an outlet's PIN pad ({@link PinPad#key}), or a client address where there is
- * nothing better. The {@code maxFailures}th wrong attempt in a row locks the key for {@code window};
- * a success clears the count, and so does a gap of {@code window} since the last wrong attempt. The
- * last few tries before the lock are warned about.
+ * nothing better. The {@code maxFailures}th wrong attempt locks the key for {@code window}; a gap of
+ * {@code window} since the last wrong attempt clears the count, and so does an unlock. A right PIN
+ * does not: the pads are shared, so anyone who knows their own PIN could otherwise clear the count
+ * between guesses at everyone else's. The last few tries before the lock are warned about.
  *
  * <p>Kept in PostgreSQL, so every API task sees the same count and an unlock from the dashboard
  * reaches them all. Failures are recorded in a transaction of their own: the request that made them
@@ -100,13 +101,9 @@ public class LoginAttemptLimiter {
         return maxFailures - row.failures();
     }
 
-    public void recordSuccess(String key) {
-        ownTransaction.executeWithoutResult(status -> jdbc.update("DELETE FROM login_throttle WHERE throttle_key = ?", key));
-    }
-
     /** Unlocks the key at once, and forgets its wrong attempts. */
     public void unlock(String key) {
-        recordSuccess(key);
+        ownTransaction.executeWithoutResult(status -> jdbc.update("DELETE FROM login_throttle WHERE throttle_key = ?", key));
     }
 
     /** The keys starting with {@code prefix} that are locked now. */
@@ -123,8 +120,7 @@ public class LoginAttemptLimiter {
         if (left > WARN_WHEN_LEFT) {
             return message;
         }
-        return message + (message.endsWith(".") ? " " : ". ") + left + (left == 1 ? " try" : " tries")
-                + " left before the PIN pad locks for " + minutes(window) + ".";
+        return message + " · " + left + (left == 1 ? " try" : " tries") + " left";
     }
 
     private Optional<Row> find(String key, boolean forUpdate) {
@@ -140,7 +136,7 @@ public class LoginAttemptLimiter {
     }
 
     private TooManyLoginAttemptsException locked(String key, Instant lockedUntil, Instant now) {
-        return new TooManyLoginAttemptsException(Duration.between(now, lockedUntil), PinPad.isPadKey(key));
+        return new TooManyLoginAttemptsException(Duration.between(now, lockedUntil));
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {
@@ -148,8 +144,4 @@ public class LoginAttemptLimiter {
         return value == null ? null : value.toInstant();
     }
 
-    private static String minutes(Duration duration) {
-        long minutes = Math.max(1, duration.toMinutes());
-        return minutes + (minutes == 1 ? " minute" : " minutes");
-    }
 }

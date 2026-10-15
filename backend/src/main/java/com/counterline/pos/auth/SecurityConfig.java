@@ -10,6 +10,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -18,6 +19,8 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import com.counterline.pos.auth.TokenService.Channel;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
@@ -31,7 +34,8 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.util.function.Supplier;
+import java.util.Arrays;
+import java.util.Set;
 
 /**
  * Stateless bearer-token security. The SPA keeps the token and sends it in the Authorization
@@ -64,13 +68,20 @@ class SecurityConfig {
                                 "/assets/**", "/favicon.ico").permitAll()
                         // A customer display's token opens its own API and nothing else...
                         .requestMatchers("/api/v1/display/**").hasRole(TokenService.DISPLAY_ROLE)
+                        // A manager's approval at a till: one void or refund (ApprovalTokens), nothing else.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/orders/*/void", "/api/v1/orders/*/refund")
+                                .access(allow(Set.of(Channel.TILL, Channel.APPROVAL)))
                         // The dashboard: the catalogue is head office's; sales for head office and managers.
                         .requestMatchers("/api/v1/dashboard/catalog/**", "/api/v1/dashboard/discounts/**",
                                 "/api/v1/dashboard/vouchers/**")
-                                .hasRole(TokenService.ADMIN_ROLE)
-                        .requestMatchers("/api/v1/dashboard/**").hasAnyRole(TokenService.ADMIN_ROLE, "MANAGER")
-                        // ...and the rest of the API is for staff.
-                        .anyRequest().access(SecurityConfig::staffOnly))
+                                .access(allow(Set.of(Channel.TILL, Channel.DASHBOARD), TokenService.ADMIN_ROLE))
+                        .requestMatchers("/api/v1/dashboard/**")
+                                .access(allow(Set.of(Channel.TILL, Channel.DASHBOARD), TokenService.ADMIN_ROLE, "MANAGER"))
+                        // Customers are managed on the dashboard as well as found at the till.
+                        .requestMatchers("/api/v1/customers", "/api/v1/customers/**")
+                                .access(allow(Set.of(Channel.TILL, Channel.DASHBOARD)))
+                        // ...and the rest of the API is the till's: not a dashboard session or an approval.
+                        .anyRequest().access(allow(Set.of(Channel.TILL))))
                 .oauth2ResourceServer(resourceServer -> resourceServer
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
                         .authenticationEntryPoint(errors)
@@ -107,14 +118,26 @@ class SecurityConfig {
         return decoder;
     }
 
-    /** Any authenticated session except a customer display's. */
-    private static AuthorizationDecision staffOnly(Supplier<? extends Authentication> authentication,
-                                                   RequestAuthorizationContext context) {
-        Authentication auth = authentication.get();
-        boolean staff = auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken)
-                && auth.getAuthorities().stream()
-                .noneMatch(authority -> ("ROLE_" + TokenService.DISPLAY_ROLE).equals(authority.getAuthority()));
-        return new AuthorizationDecision(staff);
+    /**
+     * A signed-in session, not a customer display's, issued through one of {@code channels} (a token
+     * without a channel is a till's) and, when {@code roles} are given, holding one of them.
+     */
+    private static AuthorizationManager<RequestAuthorizationContext> allow(Set<Channel> channels, String... roles) {
+        return (authentication, context) -> {
+            Authentication auth = authentication.get();
+            boolean signedIn = auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken);
+            if (!signedIn || hasRole(auth, TokenService.DISPLAY_ROLE)) {
+                return new AuthorizationDecision(false);
+            }
+            Object channel = auth.getPrincipal() instanceof Jwt jwt ? jwt.getClaim(TokenService.CHANNEL_CLAIM) : null;
+            boolean allowed = channels.contains(Channel.of(channel))
+                    && (roles.length == 0 || Arrays.stream(roles).anyMatch(role -> hasRole(auth, role)));
+            return new AuthorizationDecision(allowed);
+        };
+    }
+
+    private static boolean hasRole(Authentication auth, String role) {
+        return auth.getAuthorities().stream().anyMatch(authority -> ("ROLE_" + role).equals(authority.getAuthority()));
     }
 
     /** Maps the token's "role" claim (e.g. MANAGER) to the authority ROLE_MANAGER. */

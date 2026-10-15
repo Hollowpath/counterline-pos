@@ -106,6 +106,9 @@ export const customerRow = {
   contact: 'text-sm text-zinc-500',
 }
 
+/** A count beside a menu item or tab, e.g. the open orders on Past Orders. */
+export const countBadge = 'inline-grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1.5 text-[0.7rem] leading-none font-bold text-white tabular-nums'
+
 /** A small rounded label: a status, a count, a tag. */
 export const pill = {
   base: 'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset whitespace-nowrap',

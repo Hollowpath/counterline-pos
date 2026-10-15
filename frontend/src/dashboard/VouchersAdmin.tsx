@@ -116,7 +116,7 @@ function IssueForm({ onIssued }: { onIssued: (batch: BatchSummary, codes: string
       })
       onIssued(created.batch, created.codes)
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not reach the server. Try again.')
+      setError(caught instanceof ApiError ? caught.message : 'Offline')
     } finally {
       setSending(false)
     }

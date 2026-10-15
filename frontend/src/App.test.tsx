@@ -106,8 +106,7 @@ describe('staff PIN login', () => {
         logins += 1
         if (logins > 1) return loggedIn()
         locked = true
-        return json({ title: 'Too many attempts', detail: 'Too many incorrect PINs. Try again in 120 seconds.', retryAfterSeconds: 120,
-          managerCanUnlock: true }, 429)
+        return json({ title: 'Too many attempts', detail: 'Locked · 120s', retryAfterSeconds: 120 }, 429)
       },
     })
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
@@ -117,7 +116,7 @@ describe('staff PIN login', () => {
     await user.keyboard('000000')
 
     const timer = await screen.findByRole('timer')
-    expect(timer).toHaveTextContent('Too many incorrect PINs. Try again in 2:00, or ask a manager to unlock it on the dashboard.')
+    expect(timer).toHaveTextContent('Locked · 2:00')
     // It ticks down by itself, and the keys do nothing meanwhile.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000)
@@ -168,7 +167,7 @@ describe('terminal set-up', () => {
       ...baseRoutes,
       'POST /api/v1/auth/terminal-setup': (init) => JSON.parse(String(init.body)).pin === '999999'
         ? json({ deviceKey: 'key-2', label: 'iPad 2', outlet })
-        : json({ title: 'Special access required', detail: 'Enter a manager PIN to continue.' }, 403),
+        : json({ title: 'Special access required', detail: 'Manager PIN · 3 tries left' }, 403),
     })
     const user = userEvent.setup()
     render(<App />)
@@ -176,12 +175,12 @@ describe('terminal set-up', () => {
     expect(await screen.findByRole('heading', { name: 'Set up this iPad' })).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: /Demo Outlet/ }))
     await enterPin(user, '111111')
-    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a manager PIN')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Manager PIN · 3 tries left')
 
     await enterPin(user, '999999')
     expect(await screen.findByRole('heading', { name: 'Demo Outlet' })).toBeInTheDocument()
     expect(screen.getByText('Enter your staff PIN')).toBeInTheDocument()
-    expect(JSON.parse(localStorage.getItem(TERMINAL_KEY)!)).toEqual({ id: 2, name: 'Demo Outlet', deviceKey: 'key-2', label: 'iPad 2' })
+    expect(JSON.parse(localStorage.getItem(TERMINAL_KEY)!)).toEqual({ id: 2, name: 'Demo Outlet', deviceKey: 'key-2', label: 'iPad 2', address: null })
     const setUp = calls.filter((call) => call.key === 'POST /api/v1/auth/terminal-setup').at(-1)!
     expect(JSON.parse(String(setUp.init.body))).toEqual({ pin: '999999', outletId: 2 })
   })
@@ -238,7 +237,7 @@ describe('session', () => {
     })
     render(<App />)
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Your session has ended')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Session ended')
     await waitFor(() => expect(sessionStorage.getItem(SESSION_KEY)).toBeNull())
   })
 })

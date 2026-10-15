@@ -9,7 +9,8 @@ import { useDebouncedValue } from '../../lib/useDebouncedValue'
 import type { OrderStatus } from '../checkout/types'
 import { OrderDetail } from './OrderDetail'
 import { ordersPaths, type OrderSummary } from './ordersApi'
-import { appBarTitle, pill, rowList, segmented, splitScreen } from '../../styles/ui'
+import { useRegister } from '../register/registerApi'
+import { appBarTitle, countBadge, pill, rowList, segmented, splitScreen } from '../../styles/ui'
 
 const TABS: { status: OrderStatus; label: string }[] = [
   { status: 'OPEN', label: 'Open' },
@@ -33,6 +34,7 @@ export function PastOrdersScreen({ staff, onOpenMenu, onEditOrder, onOrderVoided
   const query = useDebouncedValue(searchInput.trim(), 300)
   const { state, hasMore, loadMore, refresh } = usePagedList<OrderSummary>((page) => ordersPaths.search(status, query, page))
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const { openOrders } = useRegister()
 
   return (
     <div className={splitScreen.screen} data-detail={selectedId !== null}>
@@ -50,6 +52,9 @@ export function PastOrdersScreen({ staff, onOpenMenu, onEditOrder, onOrderVoided
               }}
             >
               {tab.label}
+              {tab.status === 'OPEN' && openOrders > 0 && (
+                <span className={`${countBadge} ml-1.5 align-[1px]`} aria-label={`${openOrders} open`}>{openOrders}</span>
+              )}
             </button>
           ))}
         </div>

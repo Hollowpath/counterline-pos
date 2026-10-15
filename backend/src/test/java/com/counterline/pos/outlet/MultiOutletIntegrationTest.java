@@ -84,7 +84,7 @@ class MultiOutletIntegrationTest {
 
         // The second outlet can't take payment until its own register is open...
         sell(second, 1, "16.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("The register is closed. Open it in Manage Register before taking payment."));
+                .andExpect(jsonPath("$.detail").value("Register closed"));
         // ...and opening it doesn't clash with the first outlet's.
         open(second).andExpect(status().isCreated());
         open(second).andExpect(status().isConflict());
@@ -130,12 +130,28 @@ class MultiOutletIntegrationTest {
     }
 
     @Test
+    void aRequestIdFromAnotherOutletsOrderDoesNotReplayIt() throws Exception {
+        open(FIRST);
+        open(second);
+        String body = """
+                {"clientRequestId":"%s","mode":"PAY","lines":[{"itemId":1,"quantity":1}],
+                 "payments":[{"paymentMethodId":2,"reference":"ref","amount":16.00}]}""".formatted(UUID.randomUUID());
+        perform(post("/api/v1/orders"), cashier(second), body).andExpect(status().isCreated());
+
+        perform(post("/api/v1/orders"), cashier(FIRST), body)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("Request id already used"));
+        // The outlet's own retry still gets its order back.
+        perform(post("/api/v1/orders"), cashier(second), body).andExpect(status().isOk());
+    }
+
+    @Test
     void staffClockInOnlyAtTheirOwnOutletAndItIsReportedThere() throws Exception {
         perform(post("/api/v1/timecards/clock"), cashier(second), "{\"pin\":\"222222\",\"type\":\"IN\"}")
                 .andExpect(status().isOk()).andExpect(jsonPath("$.type").value("IN"));
         perform(post("/api/v1/timecards/clock"), cashier(second), "{\"pin\":\"123456\",\"type\":\"IN\"}")
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Test Cashier works at another outlet"));
+                .andExpect(jsonPath("$.detail").value("Invalid PIN"));
 
         mockMvc.perform(get("/api/v1/reports/timecards").param("from", TODAY).param("to", TODAY).with(cashier(FIRST)))
                 .andExpect(jsonPath("$.entries").isEmpty());
@@ -147,7 +163,7 @@ class MultiOutletIntegrationTest {
     void staffLogInOnlyAtTheirOwnOutlet() throws Exception {
         login("222222", second).andExpect(status().isOk()).andExpect(jsonPath("$.staff.fullName").value("Second Cashier"));
         login("222222", FIRST).andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.detail").value("Second Cashier works at another outlet"));
+                .andExpect(jsonPath("$.detail").value("Invalid PIN"));
         // Only the outlet's own managers can set up its terminals or approve there.
         perform(post("/api/v1/auth/terminal-setup"), anonymous(), "{\"pin\":\"888888\",\"outletId\":" + FIRST + "}")
                 .andExpect(status().isForbidden());

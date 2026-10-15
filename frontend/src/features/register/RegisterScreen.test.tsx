@@ -96,7 +96,7 @@ describe('RegisterScreen', () => {
   })
 
   it('keeps the dialog open and explains a conflicting close', async () => {
-    fakeApi(true, () => json({ title: 'Conflicting change', detail: 'This record was changed by someone else at the same time. Reload it and try again.' }, 409))
+    fakeApi(true, () => json({ title: 'Conflicting change', detail: 'Changed elsewhere. Reload.' }, 409))
     const user = userEvent.setup()
     render(<RegisterScreen onOpenMenu={() => {}} />)
 
@@ -104,6 +104,6 @@ describe('RegisterScreen', () => {
     const dialog = screen.getByRole('dialog', { name: 'Close Register' })
     await user.click(within(dialog).getByRole('button', { name: 'Close Register' }))
 
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('changed by someone else')
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Changed elsewhere')
   })
 })

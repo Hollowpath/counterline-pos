@@ -31,7 +31,7 @@ class OrderLoyalty {
         if (member == null) {
             return;
         }
-        Settlement settlement = loyaltyService.settle(member.getId(), member.getFullName(), order.getId(),
+        Settlement settlement = loyaltyService.settle(member.getId(), order.getId(),
                 order.getAmountPaid(), order.getPointsToRedeem(), at);
         order.recordLoyalty(settlement.before(), settlement.earned(), settlement.redeemed());
         useOwedItems(member, order);
@@ -49,14 +49,18 @@ class OrderLoyalty {
         given.forEach((promotionId, quantity) -> {
             int used = Math.min(quantity, owed.getOrDefault(promotionId, 0));
             if (used > 0) {
-                owedItems.use(member.getId(), promotionId, used);
+                owedItems.use(member.getId(), promotionId, used, order.getId());
             }
         });
     }
 
-    /** A full refund undoes what the sale did to the member's points. */
+    /** A full refund undoes what the sale did to the member's points and owed items. */
     void reverse(SaleOrder order, Instant at) {
-        if (order.getCustomer() == null || order.getLoyaltyPointsEarned() == null) {
+        if (order.getCustomer() == null) {
+            return;
+        }
+        owedItems.giveBack(order.getId());
+        if (order.getLoyaltyPointsEarned() == null) {
             return;
         }
         loyaltyService.reverse(order.getCustomer().getId(), order.getId(),

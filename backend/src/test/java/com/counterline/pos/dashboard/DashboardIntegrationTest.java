@@ -117,8 +117,8 @@ class DashboardIntegrationTest {
                 admin, null).andExpect(status().isOk()).andExpect(jsonPath("$.orderCount").value(0));
         // Customers moved to the dashboard.
         call(get("/api/v1/customers"), admin, null).andExpect(status().isOk());
-        // Head office has no till: the POS API that needs one turns it away.
-        call(get("/api/v1/register"), admin, null).andExpect(status().isUnauthorized());
+        // Head office has no till: the dashboard's token doesn't open the POS API.
+        call(get("/api/v1/register"), admin, null).andExpect(status().isForbidden());
     }
 
     @Test
@@ -141,6 +141,10 @@ class DashboardIntegrationTest {
         // The catalogue is head office's.
         call(get("/api/v1/dashboard/catalog/items"), manager, null).andExpect(status().isForbidden());
         call(get("/api/v1/dashboard/discounts"), manager, null).andExpect(status().isForbidden());
+        // A dashboard login opens customers, but not the till's API: that needs a PIN on the outlet's iPad.
+        call(get("/api/v1/customers"), manager, null).andExpect(status().isOk());
+        call(get("/api/v1/register"), manager, null).andExpect(status().isForbidden());
+        call(get("/api/v1/orders").param("status", "OPEN"), manager, null).andExpect(status().isForbidden());
     }
 
     @Test
@@ -269,12 +273,11 @@ class DashboardIntegrationTest {
         }
         // The 7th to 9th say how many tries are left; the 10th locks the pad.
         tillLogin(firstKey, "000000").andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.detail").value("Invalid PIN. 3 tries left before the PIN pad locks for 5 minutes."));
+                .andExpect(jsonPath("$.detail").value("Invalid PIN · 3 tries left"));
         tillLogin(firstKey, "000000").andExpect(jsonPath("$.detail").value(containsString("2 tries left")));
         tillLogin(firstKey, "000000").andExpect(jsonPath("$.detail").value(containsString("1 try left")));
         tillLogin(firstKey, "000000").andExpect(status().isTooManyRequests())
-                .andExpect(jsonPath("$.retryAfterSeconds").value(300))
-                .andExpect(jsonPath("$.managerCanUnlock").value(true));
+                .andExpect(jsonPath("$.retryAfterSeconds").value(300));
         tillLogin(firstKey, "123456").andExpect(status().isTooManyRequests());
         // The login screen asks whether it is still locked (and blocks the keypad meanwhile).
         pinLock("{\"deviceKey\":\"" + firstKey + "\"}").andExpect(jsonPath("$.lockedForSeconds").value(300));

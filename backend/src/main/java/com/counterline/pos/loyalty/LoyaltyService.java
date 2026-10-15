@@ -71,11 +71,11 @@ public class LoyaltyService {
 
     /** Records the points a paid sale earns and spends. */
     @Transactional(propagation = Propagation.MANDATORY)
-    public Settlement settle(Long customerId, String memberName, Long orderId, BigDecimal amountPaid,
+    public Settlement settle(Long customerId, Long orderId, BigDecimal amountPaid,
                              int pointsToRedeem, Instant at) {
         LoyaltyAccount account = lockAccount(customerId, at);
         Settlement settlement = new Settlement(account.getPointsBalance(), pointsEarned(amountPaid), pointsToRedeem);
-        requireEnough(memberName, settlement);
+        requireEnough(settlement);
         record(account, customerId, orderId, Type.EARN, settlement.earned(), at);
         record(account, customerId, orderId, Type.REDEEM, -settlement.redeemed(), at);
         return settlement;
@@ -85,8 +85,9 @@ public class LoyaltyService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void reverse(Long customerId, Long orderId, int earned, int redeemed, Instant at) {
         LoyaltyAccount account = lockAccount(customerId, at);
-        record(account, customerId, orderId, Type.REVERSE_EARN, -earned, at);
         record(account, customerId, orderId, Type.REVERSE_REDEEM, redeemed, at);
+        // Points the sale earned may have been spent since: take back what is there, never below zero.
+        record(account, customerId, orderId, Type.REVERSE_EARN, -Math.min(earned, account.getPointsBalance()), at);
     }
 
     /** One line of a member's points history. {@code orderNumber} for a sale's entries, {@code reason} for an adjustment. */
@@ -131,10 +132,10 @@ public class LoyaltyService {
     }
 
     /** Throws when the member cannot afford the redemption, even counting what the sale earns. */
-    public static void requireEnough(String memberName, Settlement settlement) {
+    public static void requireEnough(Settlement settlement) {
         if (settlement.after() < 0) {
-            throw new BusinessRuleException("Member Redemption needs " + settlement.redeemed() + " points; "
-                    + memberName + " has " + settlement.before() + " and this sale earns " + settlement.earned());
+            throw new BusinessRuleException("Not enough points (" + settlement.redeemed() + " needed, "
+                    + (settlement.before() + settlement.earned()) + " available)");
         }
     }
 

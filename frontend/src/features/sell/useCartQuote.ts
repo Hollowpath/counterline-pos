@@ -41,7 +41,7 @@ export function useCartQuote(cart: Cart): QuoteState {
       .then((quote) => current && setState({ key: debouncedKey, value: { status: 'ready', quote } }))
       .catch((error: unknown) => {
         if (!current) return
-        const message = error instanceof ApiError ? error.message : 'Could not check the promotions. Pay will check again.'
+        const message = error instanceof ApiError ? error.message : 'Promotions not checked'
         setState({ key: debouncedKey, value: { status: 'error', message } })
       })
     return () => {

@@ -28,8 +28,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.format.TextStyle;
-import java.util.Locale;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,8 +56,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PromotionsAndLoyaltyIntegrationTest {
 
     private static final ZoneId OUTLET = ZoneId.of("Asia/Kuala_Lumpur");
-    private static final String NEEDS_MEMBER = "Promotional items need a member. Add the customer's membership "
-            + "to the sale, or remove the promotional items.";
+    private static final String NEEDS_MEMBER = "Add member";
 
     @Autowired
     MockMvc mockMvc;
@@ -123,7 +120,7 @@ class PromotionsAndLoyaltyIntegrationTest {
         // An order discount (the % tab) gives no Buy 3 Free 1 can; without it, it is 10% of 87.00.
         checkout(memberId, "PAY", lines(4, 3, 21, 1), "[" + discountId + "]", "78.30")
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(containsString("with a voucher or discount: remove B3 F1 BC Caramel")));
+                .andExpect(jsonPath("$.detail").value(containsString("Discount on: remove B3 F1 BC Caramel")));
         checkout(memberId, "PAY", lines(4, 3, null, 0), "[" + discountId + "]", "78.30")
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.orderDiscounts[0].amount").value(8.7));
@@ -141,8 +138,7 @@ class PromotionsAndLoyaltyIntegrationTest {
 
         sell(memberId, "[{\"itemId\":1,\"quantity\":2},{\"itemId\":5,\"quantity\":1},{\"itemId\":21,\"quantity\":1}]", "58.00")
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Buy 3 Free 1 Promo: 1 free item for every 3 items bought. "
-                        + "This sale has 2 bought, so 0 free, but 1 given."));
+                .andExpect(jsonPath("$.detail").value("Remove 1 Buy 3 Free 1 Promo"));
 
         sell(memberId, lines(4, 6, 21, 2), "174.00").andExpect(status().isCreated());
         sell(memberId, lines(4, 5, 21, 2), "145.00").andExpect(status().isUnprocessableContent());
@@ -153,22 +149,20 @@ class PromotionsAndLoyaltyIntegrationTest {
         pointsAccumulate();
         toteBagNotRunning();
         sell(memberId, lines(4, 6, 21, 1), "174.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Give the free gift: Nur Aisyah gets 2 free with Buy 3 Free 1 Promo "
-                        + "(1 for every 3 items bought), 1 given. Add 1 more from the Promotional tab."));
-        quote(memberId, lines(4, 3, null, 0)).andExpect(jsonPath("$.problems[0]").value(startsWith("Give the free gift")));
+                .andExpect(jsonPath("$.detail").value("Select 1 more Buy 3 Free 1 Promo"));
+        quote(memberId, lines(4, 3, null, 0)).andExpect(jsonPath("$.problems[0]").value("Select 1 Buy 3 Free 1 Promo"));
         // Placed as it is; the gift is due when it's paid.
         place(memberId, lines(4, 3, null, 0)).andExpect(status().isCreated());
 
         // In the birth month, the birthday can is the other choice.
         Long birthdayMember = member("Ahmad Faiz", LocalDate.now(OUTLET).withYear(1990).withDayOfMonth(1));
         sell(birthdayMember, lines(4, 3, null, 0), "87.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(containsString("gets 1 free with Buy 3 Free 1 Promo or Birthday Reward")));
+                .andExpect(jsonPath("$.detail").value(containsString("Select 1 Buy 3 Free 1 Promo / Birthday Reward")));
 
         // The seasonal flavour's free baby can too.
         sell(memberId, "[{\"itemId\":4,\"quantity\":2},{\"itemId\":30,\"quantity\":1},{\"itemId\":21,\"quantity\":1}]", "72.00")
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(containsString("gets 1 free with Seasonal Flavour Promo "
-                        + "(1 for every 3 items bought with a seasonal flavour among them), 0 given")));
+                .andExpect(jsonPath("$.detail").value("Select 1 Seasonal Flavour Promo"));
 
         // Without a member there is nothing to give; the bags, tote bag and once-only rewards are optional.
         sell(null, lines(4, 3, null, 0), "87.00").andExpect(status().isCreated());
@@ -185,8 +179,7 @@ class PromotionsAndLoyaltyIntegrationTest {
                 """, Long.class);
         checkout(memberId, "PAY", lines(1, 1, null, 0), "[" + staffDiscount + "]", "11.20")
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Staff Discount can't be given on a member's sale. "
-                        + "Remove Nur Aisyah or the discount."));
+                .andExpect(jsonPath("$.detail").value("Staff Discount: not for members"));
         checkout(null, "PAY", lines(1, 1, null, 0), "[" + staffDiscount + "]", "11.20").andExpect(status().isCreated());
         mockMvc.perform(get("/api/v1/discounts").param("scope", "ORDER").with(cashier()))
                 .andExpect(jsonPath("$[?(@.name == 'Staff Discount')].notForMembers").value(contains(true)));
@@ -198,17 +191,16 @@ class PromotionsAndLoyaltyIntegrationTest {
     void spendPromotionsNeedTheSaleTotalAndGiveOneFreeBagAtMost() throws Exception {
         pointsAccumulate();
         sell(memberId, lines(1, 2, 26, 1), "32.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Spend RM50 Free Bag (S) needs a sale of RM50.00 or more "
-                        + "(this sale is RM32.00)."));
+                .andExpect(jsonPath("$.detail").value("Spend RM50 Free Bag (S): min RM50.00"));
 
         // RM50 → the small bag; RM80 → the medium one; never both. (4 pouches also earn the Buy 3
         // Free 1 baby can, item 21, which must be given.)
         sell(memberId, pouches(4, 26, 1, 21, 1), "64.00").andExpect(status().isCreated());
         sell(memberId, pouches(4, 27, 1, 21, 1), "64.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(containsString("Spend RM80 Free Bag (M) needs a sale of RM80.00")));
+                .andExpect(jsonPath("$.detail").value(containsString("Spend RM80 Free Bag (M): min RM80.00")));
         sell(memberId, bought(3, 21, 1, 26, 1, 27, 1), "87.00")
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Only one free recycle bag per sale."));
+                .andExpect(jsonPath("$.detail").value("1 free recycle bag only"));
         sell(memberId, bought(3, 21, 1, 27, 1), "87.00").andExpect(status().isCreated());
     }
 
@@ -217,7 +209,7 @@ class PromotionsAndLoyaltyIntegrationTest {
         sell(null, lines(1, 4, 26, 1), "64.00").andExpect(status().isCreated())
                 .andExpect(jsonPath("$.lines[1].discounts[0].name").value("Spend RM50 Free Bag (S)"));
         sell(null, lines(1, 2, 26, 1), "32.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Spend RM50 Free Bag (S) needs a sale of RM50.00 or more (this sale is RM32.00)."));
+                .andExpect(jsonPath("$.detail").value("Spend RM50 Free Bag (S): min RM50.00"));
         // The tote bag and every other promotion still need one.
         sell(null, bought(6, 28, 1), "174.00").andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value(NEEDS_MEMBER));
@@ -233,7 +225,7 @@ class PromotionsAndLoyaltyIntegrationTest {
         // 61.00 earns 6: not enough for a 7-point redemption with an empty balance.
         sell(memberId, "[{\"itemId\":1,\"quantity\":2},{\"itemId\":4,\"quantity\":1},{\"itemId\":23,\"quantity\":1}]", "61.00")
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Member Redemption needs 7 points; Nur Aisyah has 0 and this sale earns 6."));
+                .andExpect(jsonPath("$.detail").value("Not enough points (7 needed, 6 available)"));
 
         // 87.00 earns 8: previous 0, redeemed 7, earned 8, current 1 (as on the outlet's receipts).
         sell(memberId, lines(4, 3, 23, 1), "87.00").andExpect(status().isCreated())
@@ -265,7 +257,7 @@ class PromotionsAndLoyaltyIntegrationTest {
 
         assertThat(balance()).isZero();
         assertThat(jdbc.queryForList("SELECT type FROM loyalty_entry ORDER BY id", String.class))
-                .containsExactly("EARN", "REDEEM", "REVERSE_EARN", "REVERSE_REDEEM");
+                .containsExactly("EARN", "REDEEM", "REVERSE_REDEEM", "REVERSE_EARN");
     }
 
     @Test
@@ -291,11 +283,9 @@ class PromotionsAndLoyaltyIntegrationTest {
         setBalance(6);
         // 6 + 8 earned = 14: two Member FOC items must be redeemed on the spot.
         sell(memberId, lines(4, 3, null, 0), "87.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Nur Aisyah will have 14 points after this sale. Points can't be "
-                        + "carried forward once they reach 7: redeem 2 Member FOC items from the Promotional tab."));
+                .andExpect(jsonPath("$.detail").value("Select 2 Member FOC"));
         sell(memberId, lines(4, 3, 23, 1), "87.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(containsString("will have 7 points after this sale")))
-                .andExpect(jsonPath("$.detail").value(containsString("redeem 1 more Member FOC item from")));
+                .andExpect(jsonPath("$.detail").value("Select 1 more Member FOC"));
         quote(memberId, lines(4, 3, null, 0)).andExpect(jsonPath("$.problems", hasSize(1)))
                 .andExpect(jsonPath("$.loyalty.after").value(14));
 
@@ -317,7 +307,7 @@ class PromotionsAndLoyaltyIntegrationTest {
                         .content("{\"clientRequestId\":\"%s\",\"payments\":[{\"paymentMethodId\":2,\"reference\":\"ref\",\"amount\":16.00}]}"
                                 .formatted(UUID.randomUUID())))
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(containsString("will have 7 points after this sale")));
+                .andExpect(jsonPath("$.detail").value(containsString("Member FOC")));
         assertThat(balance()).isEqualTo(6);
     }
 
@@ -328,12 +318,11 @@ class PromotionsAndLoyaltyIntegrationTest {
         sell(memberId, lines(1, 1, 24, 1), "16.00").andExpect(status().isCreated());
 
         sell(memberId, lines(1, 1, 24, 1), "16.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Nur Aisyah has already had the Registration Reward Promo."));
+                .andExpect(jsonPath("$.detail").value("Registration Reward Promo: already used"));
 
         Long lateMember = member("Lim Wei", LocalDate.of(1990, 1, 1), Instant.now().minus(Duration.ofHours(25)));
         sell(lateMember, lines(1, 1, 24, 1), "16.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(containsString(
-                        "The Registration Reward Promo is for new members, within 24 hours of signing up.")));
+                .andExpect(jsonPath("$.detail").value("Registration Reward Promo: expired"));
     }
 
     @Test
@@ -343,7 +332,7 @@ class PromotionsAndLoyaltyIntegrationTest {
                 .andExpect(jsonPath("$.lines[1].discounts[0].name").value("Google Review Reward"));
 
         sell(longTimeMember, lines(1, 1, 31, 1), "16.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Lim Wei has already had the Google Review Reward at this outlet."));
+                .andExpect(jsonPath("$.detail").value("Google Review Reward: already used here"));
 
         // Each outlet is reviewed on its own.
         jdbc.update("INSERT INTO outlet (code, name) VALUES ('O2', 'Outlet 2') ON CONFLICT (code) DO NOTHING");
@@ -455,16 +444,14 @@ class PromotionsAndLoyaltyIntegrationTest {
         sell(birthdayMember, bought(6, 25, 2), "174.00").andExpect(status().isCreated());
         // ...but they share the allowance with Buy 3 Free 1.
         sell(birthdayMember, bought(6, 21, 1, 25, 2), "174.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Buy 3 Free 1 Promo and Birthday Reward: 1 free item for every "
-                        + "3 items bought. This sale has 6 bought, so 2 free, but 3 given."));
+                .andExpect(jsonPath("$.detail").value("Remove 1 Buy 3 Free 1 Promo / Birthday Reward"));
         // 9 bought: 1 baby can and 2 birthday cans; never more than 2 birthday cans a receipt.
         sell(birthdayMember, bought(9, 21, 1, 25, 2), "261.00").andExpect(status().isCreated());
         sell(birthdayMember, bought(9, 25, 3), "261.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Birthday Reward: at most 2 per receipt."));
+                .andExpect(jsonPath("$.detail").value("Birthday Reward: max 2 per receipt"));
 
-        String month = LocalDate.now(OUTLET).plusMonths(6).getMonth().getDisplayName(TextStyle.FULL, Locale.ENGLISH);
         sell(memberId, bought(3, 25, 1), "87.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(containsString("is given in Nur Aisyah's birthday month (" + month + ")")));
+                .andExpect(jsonPath("$.detail").value(containsString("Birthday Reward: not birth month")));
     }
 
     @Test
@@ -473,12 +460,10 @@ class PromotionsAndLoyaltyIntegrationTest {
         // 11 × 29.00 = 319.00: two tote bags, not three...
         sell(memberId, bought(11, 28, 2, 21, 3), "319.00").andExpect(status().isCreated());
         sell(memberId, bought(11, 28, 3, 21, 3), "319.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Spend RM150 Free Tote Bag: 1 free for every RM150.00 spent. "
-                        + "This sale is RM319.00, so 2 free, but 3 given."));
+                .andExpect(jsonPath("$.detail").value("Remove 1 Spend RM150 Free Tote Bag"));
         // ...and not fewer.
         sell(memberId, bought(11, 28, 1, 21, 3), "319.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Give the free gift: Nur Aisyah spent RM319.00, so gets 2 free with "
-                        + "Spend RM150 Free Tote Bag (1 for every RM150.00 spent), 1 given. Add 1 more from the Promotional tab."));
+                .andExpect(jsonPath("$.detail").value("Select 1 more Spend RM150 Free Tote Bag"));
         // Below RM150 there is none to give; without a member, none at all.
         sell(memberId, bought(5, 21, 1), "145.00").andExpect(status().isCreated());
         sell(null, bought(11), "319.00").andExpect(status().isCreated());
@@ -498,21 +483,19 @@ class PromotionsAndLoyaltyIntegrationTest {
         // 2 PC Curry alone are not 3 items: nothing free.
         sell(memberId, curry(2), "28.00").andExpect(status().isCreated());
         sell(memberId, curry(2, 29, 1), "28.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Seasonal Flavour Promo: 1 free item for every 3 items bought with a "
-                        + "seasonal flavour among them. This sale has 2 bought, 2 of them seasonal, so 0 free, but 1 given."));
+                .andExpect(jsonPath("$.detail").value("Remove 1 Seasonal Flavour Promo"));
         // 5 Tin Caramel + 1 PC Curry = 6: 2 Buy 3 baby cans, but only 1 seasonal one.
         String fiveAndOne = "[{\"itemId\":4,\"quantity\":5},{\"itemId\":30,\"quantity\":1},"
                 + "{\"itemId\":21,\"quantity\":2},{\"itemId\":29,\"quantity\":%d}]";
         sell(memberId, fiveAndOne.formatted(1), "159.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(startsWith("Give the free gift: Nur Aisyah spent RM159.00")));
+                .andExpect(jsonPath("$.detail").value(startsWith("Select 1 Spend RM150 Free Tote Bag")));
         toteBagNotRunning();
         sell(memberId, fiveAndOne.formatted(1), "159.00").andExpect(status().isCreated());
         sell(memberId, fiveAndOne.formatted(2), "159.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(containsString("This sale has 6 bought, 1 of them seasonal, "
-                        + "so 1 free, but 2 given.")));
+                .andExpect(jsonPath("$.detail").value("Remove 1 Seasonal Flavour Promo"));
         // No seasonal flavour among them: no seasonal baby can.
         sell(memberId, bought(3, 21, 1, 29, 1), "87.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(containsString("This sale has 3 bought, 0 of them seasonal")));
+                .andExpect(jsonPath("$.detail").value(containsString("Remove 1 Seasonal Flavour Promo")));
     }
 
     @Test
@@ -522,7 +505,7 @@ class PromotionsAndLoyaltyIntegrationTest {
         // 3 PC Curry earn only the Buy 3 baby can now.
         sell(memberId, curry(3, 21, 1), "42.00").andExpect(status().isCreated());
         sell(memberId, curry(3, 21, 1, 29, 1), "42.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value(containsString("3 bought, 0 of them seasonal")));
+                .andExpect(jsonPath("$.detail").value("Remove 1 Seasonal Flavour Promo"));
 
         // And before its first day.
         jdbc.update("UPDATE item SET seasonal_from = ?, seasonal_until = ? WHERE id = 30",
@@ -544,8 +527,8 @@ class PromotionsAndLoyaltyIntegrationTest {
                 .andExpect(jsonPath("$.total").value(16.0))
                 .andExpect(jsonPath("$.problems", hasSize(3)))
                 .andExpect(jsonPath("$.problems", hasItem(containsString("Buy 3 Free 1 Promo"))))
-                .andExpect(jsonPath("$.problems", hasItem(containsString("Spend RM50 Free Bag (S) needs a sale of RM50.00"))))
-                .andExpect(jsonPath("$.problems", hasItem(containsString("Member Redemption needs 7 points"))))
+                .andExpect(jsonPath("$.problems", hasItem("Spend RM50 Free Bag (S): min RM50.00")))
+                .andExpect(jsonPath("$.problems", hasItem(containsString("Not enough points"))))
                 .andExpect(jsonPath("$.loyalty.earned").value(1))
                 .andExpect(jsonPath("$.loyalty.redeemed").value(7));
 

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 
 /**
  * Counts down from `seconds` while `running`, then calls `onElapsed` once. Returns the seconds left,
- * for showing "Closing in 4s". Restarts whenever `running` turns true again.
+ * for showing "Closing in 4s". Restarts whenever `running` turns true again, or `restartKey` changes.
  */
-export function useCountdown(seconds: number, running: boolean, onElapsed: () => void): number {
+export function useCountdown(seconds: number, running: boolean, onElapsed: () => void, restartKey = 0): number {
   const [left, setLeft] = useState(seconds)
   // The latest callback, so a parent re-render doesn't restart the countdown.
   const onElapsedRef = useRef(onElapsed)
@@ -25,7 +25,7 @@ export function useCountdown(seconds: number, running: boolean, onElapsed: () =>
       }
     }, 1000)
     return () => window.clearInterval(timer)
-  }, [seconds, running])
+  }, [seconds, running, restartKey])
 
   return left
 }

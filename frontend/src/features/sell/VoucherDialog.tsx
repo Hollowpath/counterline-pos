@@ -42,7 +42,7 @@ export function VoucherDialog({ onApply, onCancel }: VoucherDialogProps) {
     try {
       setVoucher(await getJson<VoucherView>(`/api/v1/vouchers/${encodeURIComponent(code.trim())}`))
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not reach the server. Try again.')
+      setError(caught instanceof ApiError ? caught.message : 'Offline')
     } finally {
       setChecking(false)
     }

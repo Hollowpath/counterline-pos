@@ -6,7 +6,7 @@ package com.counterline.pos.auth;
  */
 public class SpecialAccessDeniedException extends RuntimeException {
 
-    static final String MESSAGE = "Enter a manager PIN to continue.";
+    static final String MESSAGE = "Manager PIN";
 
     public SpecialAccessDeniedException() {
         super(MESSAGE);

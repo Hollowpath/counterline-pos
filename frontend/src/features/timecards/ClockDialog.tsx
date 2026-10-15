@@ -41,7 +41,7 @@ function statusText({ clockedIn, since }: ClockStatus): string {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof ApiError ? error.message : 'Could not reach the server. Try again.'
+  return error instanceof ApiError ? error.message : 'Offline'
 }
 
 /**

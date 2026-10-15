@@ -68,7 +68,7 @@ public class DashboardAuthService {
                 .filter(staff -> staff.getRole() == StaffRole.MANAGER)
                 .orElse(null);
         requirePassword(password, manager == null ? null : manager.getPasswordHash(), client);
-        IssuedToken token = tokenService.issue(manager, manager.getOutletId());
+        IssuedToken token = tokenService.issueDashboard(manager);
         log.info("Manager {} logged in to the dashboard", manager.getId());
         return new DashboardLoginResponse(token.value(), token.expiresAt(), manager.getFullName(), StaffRole.MANAGER.name(),
                 outletService.get(manager.getOutletId()));
@@ -82,6 +82,5 @@ public class DashboardAuthService {
             log.warn("Failed dashboard login from {}", client);
             throw new InvalidPinException("Wrong email or password");
         }
-        limiter.recordSuccess(DASHBOARD + client);
     }
 }

@@ -74,7 +74,7 @@ class SaleOrderTest {
         order.addLine(item("Tin Cheese", "29.00"), 1);
 
         assertThatThrownBy(() -> order.addPayment(visa, new BigDecimal("29.00"), "  ", null, cashier, NOW))
-                .hasMessage("Enter the Visa reference from the terminal");
+                .hasMessage("Visa reference needed");
     }
 
     @Test
@@ -93,9 +93,9 @@ class SaleOrderTest {
         order.addItemLine(item("Tin Cheese", "29.00"), List.of(), Map.of(), 1, null, List.of(staff));
 
         assertThatThrownBy(() -> order.addItemLine(item("Tin Caramel", "29.00"), List.of(), Map.of(), 1, null, List.of(staff)))
-                .hasMessage("Only one discount can be applied to a sale");
+                .hasMessage("1 discount per sale");
         assertThatThrownBy(() -> order.applyOrderDiscounts(List.of(staff)))
-                .hasMessage("Only one discount can be applied to a sale");
+                .hasMessage("1 discount per sale");
     }
 
     @Test

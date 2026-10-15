@@ -1,6 +1,7 @@
 package com.counterline.pos.common;
 
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -25,7 +26,15 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(OptimisticLockingFailureException.class)
     ProblemDetail handleConcurrentChange(OptimisticLockingFailureException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
-                "This record was changed by someone else at the same time. Reload it and try again.");
+                "Changed elsewhere. Reload.");
+        problem.setTitle("Conflicting change");
+        return problem;
+    }
+
+    /** Two transactions waited on each other (or a lock wait gave up): the database aborted one. Retrying is safe. */
+    @ExceptionHandler(PessimisticLockingFailureException.class)
+    ProblemDetail handleLockFailure(PessimisticLockingFailureException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Busy. Retry.");
         problem.setTitle("Conflicting change");
         return problem;
     }

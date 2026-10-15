@@ -12,6 +12,8 @@ export interface TerminalBinding extends TerminalOutlet {
   deviceKey: string
   /** "iPad 1", as the dashboard lists it. */
   label: string
+  /** For the receipt header; undefined in a binding saved before it was kept. */
+  address?: string | null
 }
 
 const KEY = 'counterline.terminal'

@@ -26,7 +26,7 @@ export function LiveSales() {
           setError(null)
         }
       } catch {
-        if (!stopped) setError('Could not refresh. Showing the last figures.')
+        if (!stopped) setError('Offline · last figures')
       }
       if (!stopped) timer = window.setTimeout(refresh, LIVE_REFRESH_MS)
     }

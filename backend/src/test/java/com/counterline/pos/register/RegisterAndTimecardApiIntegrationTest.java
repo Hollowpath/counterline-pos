@@ -131,7 +131,7 @@ class RegisterAndTimecardApiIntegrationTest {
         perform(post("/api/v1/register/close"), "{\"version\":0}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value(
-                        "1 order is still open. Pay or void it in Past Orders before closing the register."));
+                        "1 open order"));
 
         jdbc.update("UPDATE sale_order SET status = 'VOIDED', void_reason = 'test', voided_by = ?, voided_at = now()", cashierId);
         perform(post("/api/v1/register/close"), "{\"version\":0}").andExpect(status().isOk());

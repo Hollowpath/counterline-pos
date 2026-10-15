@@ -33,7 +33,7 @@ export function ManagerActionDialog({ title, confirmLabel, description, needsApp
       const response = await requestSpecialAccess(pin)
       setApproval({ token: response.token, managerName: response.staff.fullName })
     } catch (caught) {
-      return pinLockout(caught) ?? (caught instanceof ApiError ? caught.message : 'Could not reach the server. Try again.')
+      return pinLockout(caught) ?? (caught instanceof ApiError ? caught.message : 'Offline')
     }
   }
 
@@ -44,7 +44,7 @@ export function ManagerActionDialog({ title, confirmLabel, description, needsApp
     try {
       await onConfirm(reason.trim(), approval?.token)
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not reach the server. Try again.')
+      setError(caught instanceof ApiError ? caught.message : 'Offline')
       setSubmitting(false)
     }
   }
@@ -52,7 +52,7 @@ export function ManagerActionDialog({ title, confirmLabel, description, needsApp
   if (needsApproval && !approval) {
     return (
       <Dialog title="Special Access Required">
-        <p className="mb-5 rounded-xl bg-orange-50 px-3 py-2.5 text-sm text-orange-800 ring-1 ring-orange-200 ring-inset">A manager must enter their PIN to {confirmLabel.toLowerCase()}.</p>
+        <p className="mb-5 rounded-xl bg-orange-50 px-3 py-2.5 text-sm text-orange-800 ring-1 ring-orange-200 ring-inset">Manager PIN</p>
         <PinEntry onSubmit={approve} lockStatus={tillLockStatus} />
         <div className={dialogActions}>
           <button type="button" className="btn" onClick={onCancel}>

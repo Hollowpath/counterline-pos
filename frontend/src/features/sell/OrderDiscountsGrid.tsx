@@ -9,7 +9,7 @@ import { discountTile, tileGrid, tilePrice } from './styles'
 interface OrderDiscountsGridProps {
   selected: DiscountRule[]
   /** A line discount already in the sale, if any: a sale takes only one discount. */
-  lineDiscount: string | null
+  lineDiscount: boolean
   onChange: (discounts: DiscountRule[]) => void
 }
 
@@ -30,7 +30,7 @@ export function OrderDiscountsGrid({ selected, lineDiscount, onChange }: OrderDi
     <>
       {lineDiscount && (
         <p className="mb-4 rounded-2xl bg-orange-50 px-4 py-3 text-center text-sm font-medium text-orange-800 ring-1 ring-orange-200 ring-inset" role="note">
-          This sale already has {lineDiscount}. Only one discount can be applied to a sale.
+          1 discount per sale
         </p>
       )}
       <div className={tileGrid}>
@@ -38,7 +38,7 @@ export function OrderDiscountsGrid({ selected, lineDiscount, onChange }: OrderDi
           type="button"
           className={discountTile}
           aria-pressed={voucher !== undefined}
-          disabled={lineDiscount !== null || (selected.length > 0 && voucher === undefined)}
+          disabled={lineDiscount || (selected.length > 0 && voucher === undefined)}
           onClick={() => (voucher ? onChange([]) : setKeyingVoucher(true))}
         >
           <span>{voucher ? voucher.name : 'Voucher'}</span>
@@ -50,7 +50,7 @@ export function OrderDiscountsGrid({ selected, lineDiscount, onChange }: OrderDi
             type="button"
             className={discountTile}
             aria-pressed={selected.some((d) => d.id === discount.id)}
-            disabled={lineDiscount !== null || voucher !== undefined}
+            disabled={lineDiscount || voucher !== undefined}
             onClick={() => toggle(discount)}
           >
             <span>{discount.name}</span>

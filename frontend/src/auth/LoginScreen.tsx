@@ -7,8 +7,8 @@ import { loginStyles } from '../styles/ui'
 
 function loginErrorMessage(error: unknown): string {
   if (error instanceof ApiError && (error.status === 401 || error.status === 429)) return error.message
-  if (error instanceof ApiError && error.status === 404) return 'This outlet is closed. Ask head office to reset this iPad.'
-  return 'Could not reach the server. Check the connection and try again.'
+  if (error instanceof ApiError && error.status === 404) return 'Outlet closed'
+  return 'Offline'
 }
 
 interface LoginScreenProps {

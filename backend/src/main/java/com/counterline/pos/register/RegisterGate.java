@@ -22,14 +22,14 @@ public class RegisterGate {
         this.jdbc = jdbc;
     }
 
-    /** The outlet's register must be open. Must run inside the transaction that records the payment. */
+    /** The outlet's register must be open (to pay or place an order). Must run inside the transaction that records it. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void requireOpenForPayment(Long outletId) {
         boolean open = !jdbc.queryForList(
                 "SELECT id FROM register_session WHERE outlet_id = ? AND closed_at IS NULL FOR SHARE",
                 Long.class, outletId).isEmpty();
         if (!open) {
-            throw new BusinessRuleException("The register is closed. Open it in Manage Register before taking payment.");
+            throw new BusinessRuleException("Register closed");
         }
     }
 }

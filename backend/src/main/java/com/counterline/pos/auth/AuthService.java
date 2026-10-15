@@ -70,10 +70,10 @@ public class AuthService {
         if (!staff.worksAt(outlet.id())) {
             // Counted as a failure, like a wrong PIN.
             log.warn("Staff {} tried to log in at outlet {} from {}", staff.getId(), outlet.id(), client);
-            throw new InvalidPinException(limiter.withTriesLeft(staff.getFullName() + " works at another outlet",
+            // Answered like a wrong PIN, so the pad never confirms that a PIN is someone's.
+            throw new InvalidPinException(limiter.withTriesLeft("Invalid PIN",
                     limiter.recordFailure(pad)));
         }
-        limiter.recordSuccess(pad);
         IssuedToken token = tokenService.issue(staff, outlet.id());
         log.info("Staff {} logged in at outlet {}", staff.getId(), outlet.id());
         return new LoginResponse(token.value(), token.expiresAt(), StaffResponse.from(staff), outlet);
@@ -107,7 +107,7 @@ public class AuthService {
      */
     public LoginResponse specialAccess(String pin, String client, Terminal requestedBy) {
         Staff manager = requireManager(pin, requestedBy.outletId(), PinPad.TILL, client);
-        IssuedToken token = tokenService.issue(manager, requestedBy.outletId(), specialAccessTtl);
+        IssuedToken token = tokenService.issueApproval(manager, requestedBy.outletId(), specialAccessTtl);
         log.info("Manager {} granted special access to the session of staff {}", manager.getId(), requestedBy.staffId());
         return new LoginResponse(token.value(), token.expiresAt(), StaffResponse.from(manager),
                 outletService.get(requestedBy.outletId()));
@@ -132,7 +132,6 @@ public class AuthService {
             throw new SpecialAccessDeniedException(limiter.withTriesLeft(SpecialAccessDeniedException.MESSAGE,
                     limiter.recordFailure(key)));
         }
-        limiter.recordSuccess(key);
         return manager;
     }
 }

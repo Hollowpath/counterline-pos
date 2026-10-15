@@ -121,7 +121,7 @@ describe('ClockDialog', () => {
     render(<ClockDialog onClose={() => {}} />)
 
     // Locked before the dialog opened: it says so at once, and the keys do nothing.
-    expect(await screen.findByRole('timer')).toHaveTextContent('Try again in 2:00, or ask a manager to unlock it on the dashboard.')
+    expect(await screen.findByRole('timer')).toHaveTextContent('Locked · 2:00')
     const dialog = screen.getByRole('dialog', { name: 'Clock In/Out' })
     expect(within(dialog).getByRole('button', { name: '1' })).toBeDisabled()
 

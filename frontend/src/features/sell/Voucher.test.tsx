@@ -59,7 +59,7 @@ describe('a physical voucher', () => {
     expect(screen.getByRole('button', { name: /Order 10%/ })).toBeDisabled()
 
     await user.click(cart().getByRole('button', { name: 'Place Order' }))
-    await cart().findByText(/Order R1 placed/)
+    await cart().findByRole('heading', { name: 'No Sale' })
     const [, init] = fetchMock.mock.calls.find(([input]) => String(input) === '/api/v1/orders')!
     expect(JSON.parse(String(init!.body))).toMatchObject({ discountIds: [], voucherCode: 'K7MPQ2XW9A' })
   })

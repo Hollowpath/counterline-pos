@@ -58,7 +58,7 @@ export function CustomerDisplayScreen({ displayId, onDisplayChange, onOpenMenu }
       setStatus(created)
       onDisplayChange(created.id)
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not reach the server. Try again.')
+      setError(caught instanceof ApiError ? caught.message : 'Offline')
     } finally {
       setBusy(false)
     }
@@ -90,11 +90,6 @@ export function CustomerDisplayScreen({ displayId, onDisplayChange, onOpenMenu }
         <h2 className="text-2xl font-bold tracking-tight text-zinc-900">Customer Display</h2>
         {displayId === null ? (
           <>
-            <p className="text-sm leading-relaxed text-zinc-600">
-              A second iPad facing the customer shows posters until you open a sale (New Sale, or the first item),
-              then their order. While a sale is open, members log in or sign up there by phone number and are added
-              to the sale straight away.
-            </p>
             <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void setUp()}>
               Set up a customer display
             </button>
@@ -113,11 +108,9 @@ export function CustomerDisplayScreen({ displayId, onDisplayChange, onOpenMenu }
           </>
         ) : (
           <>
-            <p className="text-sm leading-relaxed text-zinc-600">
-              On the customer iPad, open <strong>{displayUrl}</strong> and enter this access code:
-            </p>
+            <p className="text-sm font-medium text-zinc-600">{displayUrl}</p>
             <p className="w-full rounded-2xl bg-zinc-900 py-6 text-center font-mono text-[3rem] font-bold tracking-[0.35em] text-white shadow-inner" aria-label="Access code">{current.accessCode}</p>
-            <p className="flex items-center gap-2 text-sm text-zinc-500" role="status"><span className="size-4 animate-spin rounded-full border-2 border-zinc-200 border-t-indigo-600" aria-hidden="true" />Waiting for the display to connect…</p>
+            <p className="flex items-center gap-2 text-sm text-zinc-500" role="status"><span className="size-4 animate-spin rounded-full border-2 border-zinc-200 border-t-indigo-600" aria-hidden="true" />Waiting…</p>
             <button type="button" className="btn" disabled={busy} onClick={() => void disconnect()}>
               Cancel
             </button>

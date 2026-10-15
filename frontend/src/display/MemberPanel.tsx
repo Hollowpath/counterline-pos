@@ -14,7 +14,7 @@ interface Waiting {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof ApiError ? error.message : 'Could not reach the server. Please try again.'
+  return error instanceof ApiError ? error.message : 'Offline'
 }
 
 /** After the till adds the member, how long until their name is on the order the till publishes. */

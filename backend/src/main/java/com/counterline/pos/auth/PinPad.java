@@ -51,8 +51,4 @@ public enum PinPad {
                     }
                 });
     }
-
-    static boolean isPadKey(String key) {
-        return parse(key).isPresent();
-    }
 }

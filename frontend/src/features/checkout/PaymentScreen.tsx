@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ApiError } from '../../api/http'
 import { useApi } from '../../api/useApi'
 import { Dialog } from '../../components/Dialog'
@@ -6,6 +6,8 @@ import { LoadState } from '../../components/LoadState'
 import { formatRM, parseRM, senToInput, toSen } from '../../lib/money'
 import { newRequestId } from '../../lib/requestId'
 import { useCountdown } from '../../lib/useCountdown'
+import { PrintReceiptButton } from '../receipts/PrintReceiptButton'
+import { printReceipt } from '../receipts/printReceipt'
 import { checkoutPaths, type Order, type PaymentInput, type PaymentMethod } from './types'
 import { dialogActions } from '../../styles/ui'
 
@@ -86,7 +88,7 @@ export function PaymentScreen({ amountDueSen, totalLabel, onSubmit, onCancel, on
       const rejected = error instanceof ApiError && error.status >= 400 && error.status < 500
       setPhase({
         name: 'failed',
-        message: rejected ? error.message : 'The sale could not be confirmed. Check the connection and retry.',
+        message: rejected ? error.message : 'Not confirmed. Retry.',
         retryable: !rejected,
       })
     }
@@ -228,9 +230,6 @@ export function PaymentScreen({ amountDueSen, totalLabel, onSubmit, onCancel, on
               </button>
             ))}
           </fieldset>
-          {kindTaken('CASHLESS') && !kindTaken('CASH') && (
-            <p className="text-sm text-zinc-500">The rest can be paid in cash.</p>
-          )}
 
           {method && (
             <>
@@ -284,7 +283,23 @@ const SALE_COMPLETE_SECONDS = 5
 function SaleComplete({ order, changeSen, onDone, doneLabel }: {
   order: Order; changeSen: number; onDone: (order: Order) => void; doneLabel: string
 }) {
-  const secondsLeft = useCountdown(SALE_COMPLETE_SECONDS, true, () => onDone(order))
+  // Each print gives the dialog its full time again: when the receipt is asked for, and once it has printed.
+  const [prints, setPrints] = useState(0)
+  const secondsLeft = useCountdown(SALE_COMPLETE_SECONDS, true, () => onDone(order), prints)
+  const restart = () => setPrints((count) => count + 1)
+
+  // The receipt prints by itself; Print Receipt is another copy, for a customer who wants one.
+  const printed = useRef(false)
+  useEffect(() => {
+    if (printed.current) return
+    printed.current = true
+    void printReceipt(order).catch(() => {})
+  }, [order])
+  useEffect(() => {
+    const afterPrint = () => setPrints((count) => count + 1)
+    window.addEventListener('afterprint', afterPrint)
+    return () => window.removeEventListener('afterprint', afterPrint)
+  }, [])
   return (
     <Dialog title="Sale complete">
       <div className="mb-5 flex flex-col items-center gap-1 text-center">
@@ -301,9 +316,12 @@ function SaleComplete({ order, changeSen, onDone, doneLabel }: {
       <p className="mb-3 text-center text-xs font-medium text-zinc-400" aria-live="polite">
         Closing in {secondsLeft}s
       </p>
-      <button type="button" className={`${primaryButton} w-full py-3.5`} onClick={() => onDone(order)} autoFocus>
-        {doneLabel}
-      </button>
+      <div className="grid grid-cols-2 gap-2">
+        <PrintReceiptButton orderId={order.id} className="btn py-3.5" onPrint={restart} />
+        <button type="button" className={`${primaryButton} py-3.5`} onClick={() => onDone(order)} autoFocus>
+          {doneLabel}
+        </button>
+      </div>
     </Dialog>
   )
 }
@@ -316,6 +334,6 @@ function CashChange({ enteredInput, remainingSen }: { enteredInput: string; rema
       Change {formatRM(enteredSen - remainingSen)}
     </p>
   ) : (
-    <p className="rounded-xl bg-orange-50 px-3 py-2 text-sm font-medium text-orange-800 ring-1 ring-orange-200 ring-inset">{formatRM(remainingSen - enteredSen)} will remain for a card or QR payment.</p>
+    <p className="rounded-xl bg-orange-50 px-3 py-2 text-sm font-medium text-orange-800 ring-1 ring-orange-200 ring-inset">{formatRM(remainingSen - enteredSen)} left</p>
   )
 }

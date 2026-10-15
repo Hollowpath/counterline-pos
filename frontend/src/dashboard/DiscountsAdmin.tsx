@@ -19,7 +19,7 @@ function toDraft(discount: AdminDiscount): Draft {
 }
 
 function message(error: unknown) {
-  return error instanceof ApiError ? error.message : 'Could not reach the server. Try again.'
+  return error instanceof ApiError ? error.message : 'Offline'
 }
 
 /** Head office: the discounts every till offers (one per sale), which need a manager, and which are not for members. */

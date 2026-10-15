@@ -6,6 +6,7 @@ import { Dialog } from '../../components/Dialog'
 import { LoadState } from '../../components/LoadState'
 import { formatTime } from '../../lib/dates'
 import { formatRM, parseRM, toSen } from '../../lib/money'
+import { printScreen } from '../receipts/printReceipt'
 import { SalesSummaryView } from '../reports/SalesSummaryView'
 import { registerPath as PATH, useRegister, type RegisterStatus, type Session } from './registerApi'
 import { appBarTitle, detail, dialogActions, input, segmented } from '../../styles/ui'
@@ -48,7 +49,7 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
       status.reload()
       register.refresh()
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not reach the server. Try again.')
+      setError(caught instanceof ApiError ? caught.message : 'Offline')
       throw caught
     }
   }
@@ -96,8 +97,7 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
         )}
         {openOrders > 0 && (
           <p className="mt-6 rounded-2xl bg-zinc-950/25 px-4 py-3 text-sm font-semibold ring-1 ring-white/20" role="status">
-            {openOrders === 1 ? '1 order is' : `${openOrders} orders are`} still open. Pay or void{' '}
-            {openOrders === 1 ? 'it' : 'them'} in Past Orders before closing the register.
+            {openOrders} open {openOrders === 1 ? 'order' : 'orders'}
           </p>
         )}
         </div>
@@ -163,7 +163,7 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
             <SessionDetails session={summarised} />
           </div>
           <div className={dialogActions}>
-            <button type="button" className="btn" onClick={() => window.print()}>
+            <button type="button" className="btn" onClick={printScreen}>
               Print
             </button>
             <button type="button" className="btn btn-primary" onClick={() => setDialog(null)}>

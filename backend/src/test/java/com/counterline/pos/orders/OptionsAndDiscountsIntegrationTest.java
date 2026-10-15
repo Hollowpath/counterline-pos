@@ -99,7 +99,7 @@ class OptionsAndDiscountsIntegrationTest {
 
         payNothing("[5]", null)
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.detail").value("A manager must approve this discount"));
+                .andExpect(jsonPath("$.detail").value("Manager approval needed"));
         payNothing("[5]", "not-a-token").andExpect(status().isForbidden());
         // A cashier's own token is not an approval.
         String cashierToken = tokenService.issue(staffRepository.findById(cashierId).orElseThrow(), 1L).value();
@@ -111,7 +111,7 @@ class OptionsAndDiscountsIntegrationTest {
                 .andExpect(jsonPath("$.status").value("OPEN"));
 
         // The manager's special-access token approves it; the sale stays the cashier's.
-        String approval = tokenService.issue(manager, 1L, Duration.ofMinutes(5)).value();
+        String approval = tokenService.issueApproval(manager, 1L, Duration.ofMinutes(5)).value();
         payNothing("[5]", approval)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.total").value(0.0))
@@ -171,10 +171,10 @@ class OptionsAndDiscountsIntegrationTest {
     void aSaleTakesOneDiscountAndItNeverExceedsTheLine() throws Exception {
         checkout("[{\"itemId\":1,\"quantity\":1,\"discountIds\":[4,1]}]", "[]", null)
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Only one discount can be applied to a sale"));
+                .andExpect(jsonPath("$.detail").value("1 discount per sale"));
         checkout("[{\"itemId\":1,\"quantity\":1,\"discountIds\":[1]},{\"itemId\":4,\"quantity\":1}]", "[3]", null)
                 .andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Only one discount can be applied to a sale"));
+                .andExpect(jsonPath("$.detail").value("1 discount per sale"));
 
         checkout("[{\"itemId\":1,\"quantity\":1,\"discountIds\":[2]}]", "[]", null) // RM10 voucher on a 16.00 line
                 .andExpect(status().isCreated())

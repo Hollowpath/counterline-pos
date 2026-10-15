@@ -34,6 +34,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -113,8 +114,8 @@ class VouchersAndAdjustmentsIntegrationTest {
                 .andExpect(jsonPath("$.total").value(19.0))
                 .andExpect(jsonPath("$.orderDiscounts[0].amount").value(10.0));
         checkout("PAY", 4, code, "[]", "19.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Voucher " + code + " has already been used"));
-        quote(code).andExpect(jsonPath("$.problems", hasItem("Voucher " + code + " has already been used.")))
+                .andExpect(jsonPath("$.detail").value("Voucher used"));
+        quote(code).andExpect(jsonPath("$.problems", hasItem("Voucher used")))
                 .andExpect(jsonPath("$.total").value(29.0));
 
         call(get("/api/v1/dashboard/vouchers"), admin(), null)
@@ -136,7 +137,7 @@ class VouchersAndAdjustmentsIntegrationTest {
                 + "VALUES ('Voucher Test 10%', 'PERCENT', 10, 'ORDER', 50) "
                 + "ON CONFLICT (name) DO UPDATE SET active = TRUE RETURNING id", Long.class);
         checkout("PAY", 4, codes.get(0), "[" + discountId + "]", "21.10").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("A voucher is the sale's one discount: remove the other discount first"));
+                .andExpect(jsonPath("$.detail").value("1 discount per sale"));
 
         // Placed with the voucher, then voided: the voucher can be used again.
         String placed = checkout("PLACE_ORDER", 4, codes.get(0), "[]", null).andExpect(status().isCreated())
@@ -157,7 +158,7 @@ class VouchersAndAdjustmentsIntegrationTest {
         // Valid to the end of its expiry day, not after.
         jdbc.update("UPDATE voucher_batch SET expires_on = ?", Date.valueOf(TODAY.minusDays(1)));
         checkout("PAY", 4, codes.get(1), "[]", "24.00").andExpect(status().isUnprocessableContent())
-                .andExpect(jsonPath("$.detail").value("Voucher " + codes.get(1) + " expired on " + TODAY.minusDays(1)));
+                .andExpect(jsonPath("$.detail").value("Voucher expired"));
         call(post("/api/v1/dashboard/vouchers"), admin(),
                 "{\"name\":\"Old\",\"value\":5,\"expiresOn\":\"" + TODAY.minusDays(1) + "\",\"quantity\":1}")
                 .andExpect(status().isBadRequest());
@@ -171,20 +172,19 @@ class VouchersAndAdjustmentsIntegrationTest {
         // 3 Pouch Caramel (43.50): without a voucher, the member's Buy 3 Free 1 can is due...
         String threeBought = "{\"itemId\":2,\"quantity\":3}";
         memberQuote(null, threeBought)
-                .andExpect(jsonPath("$.problems", hasItem(containsString("Give the free gift"))));
+                .andExpect(jsonPath("$.problems", hasItem(startsWith("Select"))));
         // ...with one, no free gift is due, and none may be given.
         memberQuote(code, threeBought)
                 .andExpect(jsonPath("$.total").value(33.5))
                 .andExpect(jsonPath("$.problems").isEmpty());
         memberQuote(code, threeBought + ",{\"itemId\":21,\"quantity\":1}")
-                .andExpect(jsonPath("$.problems").value(contains("No Buy 3 Free 1, seasonal flavour or birthday free items "
-                        + "with a voucher or discount: remove B3 F1 BC Caramel.")));
+                .andExpect(jsonPath("$.problems").value(contains("Discount on: remove B3 F1 BC Caramel")));
 
         // Points are still earned, and redeemed once they reach 7: the Member FOC item is allowed.
         call(post("/api/v1/dashboard/customers/" + memberId + "/points"), admin(),
                 "{\"points\":7,\"reason\":\"Points from last month\"}").andExpect(status().isOk());
         memberQuote(code, threeBought)
-                .andExpect(jsonPath("$.problems", hasItem(containsString("redeem 1 Member FOC item"))));
+                .andExpect(jsonPath("$.problems", hasItem("Select 1 Member FOC")));
         memberQuote(code, threeBought + ",{\"itemId\":23,\"quantity\":1}")
                 .andExpect(jsonPath("$.problems").isEmpty())
                 .andExpect(jsonPath("$.loyalty.after").value(3));
@@ -206,11 +206,10 @@ class VouchersAndAdjustmentsIntegrationTest {
                 .andExpect(jsonPath("$.total").value(164.0))
                 .andExpect(jsonPath("$.problems", not(hasItem(containsString("Buy 3 Free 1 Promo")))))
                 .andExpect(jsonPath("$.problems", hasItem(containsString("Spend RM150 Free Tote Bag"))))
-                .andExpect(jsonPath("$.problems", hasItem(containsString("Member FOC item"))));
+                .andExpect(jsonPath("$.problems", hasItem(containsString("Member FOC"))));
         // ...and a Buy 3 Free 1 can may not be given; the tote and the recycle bag may.
         memberQuote(null, twelveBought + ",{\"itemId\":21,\"quantity\":1},{\"itemId\":28,\"quantity\":1},{\"itemId\":26,\"quantity\":1}")
-                .andExpect(jsonPath("$.problems", hasItem("No Buy 3 Free 1, seasonal flavour or birthday free items "
-                        + "with a voucher or discount: remove B3 F1 BC Caramel.")))
+                .andExpect(jsonPath("$.problems", hasItem("Discount on: remove B3 F1 BC Caramel")))
                 .andExpect(jsonPath("$.problems", not(hasItem(containsString("Tote")))))
                 .andExpect(jsonPath("$.problems", not(hasItem(containsString("Recycle Bag")))));
     }
@@ -226,12 +225,10 @@ class VouchersAndAdjustmentsIntegrationTest {
         // On the order (the % tab): no free can is due, and none may be given.
         orderDiscountQuote(tenPercent, threeBought).andExpect(jsonPath("$.problems").isEmpty());
         orderDiscountQuote(tenPercent, threeBought + b3f1)
-                .andExpect(jsonPath("$.problems").value(contains("No Buy 3 Free 1, seasonal flavour or birthday free items "
-                        + "with a voucher or discount: remove B3 F1 BC Caramel.")));
+                .andExpect(jsonPath("$.problems").value(contains("Discount on: remove B3 F1 BC Caramel")));
         // The same with a discount on a line (the item's own discount).
         memberQuote(null, "{\"itemId\":2,\"quantity\":3,\"discountIds\":[" + tenPercent + "]}" + b3f1)
-                .andExpect(jsonPath("$.problems").value(contains("No Buy 3 Free 1, seasonal flavour or birthday free items "
-                        + "with a voucher or discount: remove B3 F1 BC Caramel.")));
+                .andExpect(jsonPath("$.problems").value(contains("Discount on: remove B3 F1 BC Caramel")));
         // The Member FOC items and the FOC Other Items are still allowed.
         memberQuote(null, "{\"itemId\":2,\"quantity\":3,\"discountIds\":[" + tenPercent + "]},{\"itemId\":26,\"quantity\":1}")
                 .andExpect(jsonPath("$.problems", not(hasItem(containsString("remove")))));
@@ -279,10 +276,34 @@ class VouchersAndAdjustmentsIntegrationTest {
                 .andExpect(jsonPath("$.owedItems[0].items[0]").value("Birthday Reward PC Caramel"))
                 .andExpect(jsonPath("$.owedItems[0].reason").value("Forgot the birthday can on R40"));
 
-        sellBirthdayCan().andExpect(status().isCreated());
+        Integer orderId = JsonPath.read(sellBirthdayCan().andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(), "$.id");
         call(get("/api/v1/dashboard/customers/" + memberId + "/owed-items"), admin(), null).andExpect(jsonPath("$").isEmpty());
         // Given once.
         sellBirthdayCan().andExpect(status().isUnprocessableContent());
+
+        // A refund of that sale: the can is owed again.
+        call(post("/api/v1/orders/" + orderId + "/refund"), manager(), "{\"reason\":\"Damaged\"}").andExpect(status().isOk());
+        call(get("/api/v1/dashboard/customers/" + memberId + "/owed-items"), admin(), null)
+                .andExpect(jsonPath("$[0].remaining").value(1));
+        sellBirthdayCan().andExpect(status().isCreated());
+    }
+
+    @Test
+    void payingAPlacedOrderChecksItsVoucherHasNotExpiredSince() throws Exception {
+        List<String> codes = JsonPath.read(call(post("/api/v1/dashboard/vouchers"), admin(),
+                        "{\"name\":\"RM3 Voucher\",\"value\":3,\"expiresOn\":\"" + TODAY + "\",\"quantity\":1}")
+                .andReturn().getResponse().getContentAsString(), "$.codes");
+        Integer orderId = JsonPath.read(checkout("PLACE_ORDER", 1, codes.getFirst(), "[]", null)
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.id");
+        // The next day the voucher has expired.
+        jdbc.update("UPDATE voucher_batch SET expires_on = ? WHERE name = 'RM3 Voucher'", java.sql.Date.valueOf(TODAY.minusDays(1)));
+
+        call(post("/api/v1/orders/" + orderId + "/payments"), cashier(), """
+                {"clientRequestId":"%s","payments":[{"paymentMethodId":2,"reference":"ref","amount":13.00}]}"""
+                .formatted(UUID.randomUUID()))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value("Voucher expired"));
     }
 
     // ---- helpers ----

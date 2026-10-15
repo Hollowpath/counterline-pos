@@ -3,6 +3,7 @@ package com.counterline.pos.auth;
 import com.counterline.pos.staff.Staff;
 import com.counterline.pos.staff.StaffRepository;
 import com.counterline.pos.staff.StaffRole;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Component;
@@ -34,16 +35,21 @@ public class ManagerApproval {
             return staff;
         }
         if (approvalToken == null || approvalToken.isBlank()) {
-            throw new SpecialAccessDeniedException("A manager must approve this discount");
+            throw new SpecialAccessDeniedException("Manager approval needed");
         }
         Long managerId;
         try {
-            managerId = Long.valueOf(jwtDecoder.decode(approvalToken).getSubject());
+            Jwt approval = jwtDecoder.decode(approvalToken);
+            // Only a manager's PIN at a till approves: not, say, a dashboard session's token.
+            if (TokenService.Channel.of(approval.getClaim(TokenService.CHANNEL_CLAIM)) != TokenService.Channel.APPROVAL) {
+                throw new SpecialAccessDeniedException("Manager approval needed");
+            }
+            managerId = Long.valueOf(approval.getSubject());
         } catch (JwtException | NumberFormatException e) {
-            throw new SpecialAccessDeniedException("The manager's approval has expired. Ask the manager to approve again");
+            throw new SpecialAccessDeniedException("Approval expired");
         }
         return staffRepository.findByIdAndActiveTrue(managerId)
                 .filter(manager -> manager.getRole() == StaffRole.MANAGER && manager.worksAt(staff.getOutletId()))
-                .orElseThrow(() -> new SpecialAccessDeniedException("A manager must approve this discount"));
+                .orElseThrow(() -> new SpecialAccessDeniedException("Manager approval needed"));
     }
 }

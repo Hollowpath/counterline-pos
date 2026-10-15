@@ -1,7 +1,6 @@
 /** A PIN pad locked by too many wrong PINs: seconds until it unlocks, and whether a manager can unlock it sooner. */
 export interface Lockout {
   seconds: number
-  managerCanUnlock: boolean
 }
 
 /** Error carrying the RFC 9457 problem detail returned by the API, when there is one. */
@@ -22,7 +21,6 @@ interface ProblemDetail {
   title?: string
   detail?: string
   retryAfterSeconds?: number
-  managerCanUnlock?: boolean
 }
 
 // The bearer token for the current session. Kept here (set by AuthProvider) so every request
@@ -55,7 +53,7 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string):
     // Only a rejected *session* ends the session; a stale override token does not.
     if (response.status === 401 && sentToken && sentToken === authToken) onUnauthorized?.()
     const lockout: Lockout | undefined = response.status === 429 && typeof problem.retryAfterSeconds === 'number'
-      ? { seconds: problem.retryAfterSeconds, managerCanUnlock: problem.managerCanUnlock === true }
+      ? { seconds: problem.retryAfterSeconds }
       : undefined
     throw new ApiError(response.status, problem.detail ?? problem.title ?? `Request failed (${response.status})`, lockout)
   }

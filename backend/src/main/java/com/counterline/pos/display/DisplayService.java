@@ -144,7 +144,6 @@ public class DisplayService {
             limiter.recordFailure(CODE_THROTTLE + client);
             throw new BusinessRuleException("Wrong access code. Check the code on the POS under Customer Display.");
         }
-        limiter.recordSuccess(CODE_THROTTLE + client);
         display.connect(clock.instant());
         IssuedToken token = tokenService.issueDisplay(display.getId(), display.getOutletId(), DISPLAY_TOKEN_TTL);
         log.info("Customer display {} connected from {}", display.getId(), client);
@@ -168,23 +167,32 @@ public class DisplayService {
      */
     public MemberState memberLogin(DisplaySession session, String phone) {
         requireSaleOpen(session);
-        String key = "display-member:" + session.displayId();
+        String key = memberThrottleKey(session);
         limiter.checkAllowed(key);
         Customer member = customerService.findByPhone(phone).orElse(null);
         if (member == null) {
             limiter.recordFailure(key);
             throw new ResourceNotFoundException("No member has this phone number. Tap Register Member to join.");
         }
-        limiter.recordSuccess(key);
         lockActive(session).memberWaiting(member.getId(), false);
         return new MemberState(MemberStatus.WAITING, member.getFirstName());
+    }
+
+    /** Member Login and Sign Up share one throttle per display. */
+    private static String memberThrottleKey(DisplaySession session) {
+        return "display-member:" + session.displayId();
     }
 
     /** Member Sign Up on the display; the new member then waits for the cashier like a login. */
     public MemberState signUp(DisplaySession session, SignUpRequest request) {
         requireSaleOpen(session);
-        // The screen faces the shop: never show whose number or email it is.
+        // The screen faces the shop: never show whose number or email it is. A number that is already a
+        // member counts against the same throttle as Member Login, so sign-up can't be used to find
+        // out which numbers are members either.
+        String key = memberThrottleKey(session);
+        limiter.checkAllowed(key);
         if (customerService.findByPhone(request.phone()).isPresent()) {
+            limiter.recordFailure(key);
             throw new ConflictException("This phone number is already a member. Tap Login instead.");
         }
         CustomerResponse created;

@@ -113,7 +113,7 @@ export function CustomerForm({ customer, onSaved, onDeleted, onCancel }: Custome
     try {
       await action()
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not reach the server. Try again.')
+      setError(caught instanceof ApiError ? caught.message : 'Offline')
       setBusy(false)
     }
   }

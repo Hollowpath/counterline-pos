@@ -37,18 +37,20 @@ export interface RegisterStatus {
 export const registerPath = '/api/v1/register'
 
 /**
- * Whether the register is open, for screens that take payment. `open` is null while unknown
- * (loading or unreachable): the server still refuses payment when the register is closed.
+ * Whether the register is open, for screens that take payment or place orders. `open` is null
+ * while unknown (loading or unreachable): the server still refuses both when it is closed.
+ * `openOrders`: the outlet's placed, unpaid orders, counted on Past Orders.
  */
 export interface RegisterState {
   open: boolean | null
+  openOrders: number
   refresh: () => void
 }
 
-export const RegisterContext = createContext<RegisterState>({ open: null, refresh: () => {} })
+export const RegisterContext = createContext<RegisterState>({ open: null, openOrders: 0, refresh: () => {} })
 
 export function useRegister(): RegisterState {
   return useContext(RegisterContext)
 }
 
-export const REGISTER_CLOSED_MESSAGE = 'The register is closed. Open it in Manage Register to take payment.'
+export const REGISTER_CLOSED_MESSAGE = 'Register closed'

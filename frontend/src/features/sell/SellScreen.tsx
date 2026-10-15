@@ -19,6 +19,7 @@ import { ItemDialog } from './ItemDialog'
 import { OrderDiscountsGrid } from './OrderDiscountsGrid'
 import { cartItemCount, cartReducer, cartTotalSen, discountInSale, emptyCart, needsDiscountApproval, type CartLine } from './cart'
 import { useCartQuote } from './useCartQuote'
+import { useRegister } from '../register/registerApi'
 import { appBarTab } from '../../styles/ui'
 
 /** What the left side shows: a product tab, the order discounts (%), or the custom amount keypad. */
@@ -55,13 +56,14 @@ export function SellScreen({
   const [openFolder, setOpenFolder] = useState<Folder | null>(null)
   const [cart, dispatch] = useReducer(cartReducer, emptyCart)
   const quote = useCartQuote(cart)
+  const register = useRegister()
   const [editing, setEditing] = useState<Editing | null>(null)
   const [paying, setPaying] = useState(false)
   // A member who logged in or signed up on the customer display joins the sale (not mid-payment).
   const display = useCustomerDisplay(displayId, cart, (member) => {
     if (paying) return false
     dispatch({ type: 'setCustomer', customer: { id: member.customerId, name: member.fullName, phone: member.phone } })
-    setNotice({ tone: 'info', text: `${member.fullName} ${member.newMember ? 'signed up' : 'logged in'} on the customer display.` })
+    setNotice({ tone: 'info', text: `${member.fullName} ${member.newMember ? 'signed up' : 'logged in'}` })
     return true
   }, onDisplayGone)
   const [placing, setPlacing] = useState(false)
@@ -84,17 +86,17 @@ export function SellScreen({
         setPaying(false)
         setOpenFolder(null)
         setApprovalToken(undefined)
-        setNotice({ tone: 'info', text: `Editing order ${order.orderNumber}. Pay it, or Place Order to save the changes.`, orderId: order.id })
+        setNotice(null)
       })
       .catch((error: unknown) => {
-        if (current) setNotice({ tone: 'error', text: error instanceof ApiError ? error.message : 'Could not open the order. Try again.' })
+        if (current) setNotice({ tone: 'error', text: error instanceof ApiError ? error.message : 'Order not loaded' })
       })
     return () => {
       current = false
     }
   }, [editRequest])
 
-  // A voided order can't be edited or paid any more: drop it from the cart, and the notice about it.
+  // A voided order can't be edited or paid any more: drop it from the cart.
   const editingOrder = useRef(cart.editing)
   useEffect(() => {
     editingOrder.current = cart.editing
@@ -106,9 +108,7 @@ export function SellScreen({
       dispatch({ type: 'clear' })
       setPaying(false)
       setApprovalToken(undefined)
-      setNotice({ tone: 'info', text: `Order ${editing.orderNumber} was voided, so it is no longer in the sale.` })
-    } else {
-      setNotice((current) => (current?.orderId === voidedOrder.orderId ? null : current))
+      setNotice({ tone: 'info', text: `${editing.orderNumber} voided` })
     }
   }, [voidedOrder])
 
@@ -164,16 +164,12 @@ export function SellScreen({
     setPlacing(true)
     setNotice(null)
     try {
-      const order = await submitCheckout(cart, 'PLACE_ORDER', [], placeRequestId, token)
-      const edited = cart.editing !== null
+      await submitCheckout(cart, 'PLACE_ORDER', [], placeRequestId, token)
+      // No notice: the open-orders badge counts it.
       startNewSale()
-      setNotice({
-        tone: 'info',
-        text: `Order ${order.orderNumber} ${edited ? 'saved' : 'placed'}. Edit or pay it from Past Orders.`,
-        orderId: order.id,
-      })
+      register.refresh()
     } catch (error) {
-      setNotice({ tone: 'error', text: error instanceof ApiError ? error.message : 'Could not place the order. Try again.' })
+      setNotice({ tone: 'error', text: error instanceof ApiError ? error.message : 'Place Order failed' })
     } finally {
       setPlacing(false)
     }
@@ -184,7 +180,7 @@ export function SellScreen({
     catalog = (
       <OrderDiscountsGrid
         selected={cart.orderDiscounts}
-        lineDiscount={discountInSale({ ...cart, orderDiscounts: [] })}
+        lineDiscount={discountInSale({ ...cart, orderDiscounts: [] }) !== null}
         onChange={(discounts) => dispatch({ type: 'setOrderDiscounts', discounts })}
       />
     )
@@ -222,7 +218,7 @@ export function SellScreen({
         <ItemDialog
           initial={editing.line}
           mode={editing.mode}
-          discountInSale={discountInSale(cart, editing.mode === 'edit' ? editing.line.key : undefined)}
+          discountElsewhere={discountInSale(cart, editing.mode === 'edit' ? editing.line.key : undefined) !== null}
           withOptions={editing.mode === 'add' ? editing.withOptions : editing.line.modifiers.length > 0}
           onSave={(line) => {
             if (editing.mode === 'add') dispatch({ type: 'addLine', line })

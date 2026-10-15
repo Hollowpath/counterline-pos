@@ -189,7 +189,7 @@ function DashboardLogin({ notice, onLoggedIn }: { notice?: string; onLoggedIn: (
     try {
       onLoggedIn(await postJson<DashboardSession>(dashboardPaths.login, { email, password }))
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Could not reach the server. Try again.')
+      setError(caught instanceof ApiError ? caught.message : 'Offline')
       setSending(false)
     }
   }

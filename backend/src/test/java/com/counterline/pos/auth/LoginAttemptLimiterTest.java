@@ -53,10 +53,8 @@ class LoginAttemptLimiterTest {
 
         // The 10th is refused as a lock-out itself, not only the attempt after it.
         assertThatThrownBy(() -> limiter.recordFailure("till:1"))
-                .isInstanceOfSatisfying(TooManyLoginAttemptsException.class, ex -> {
-                    assertThat(ex.retryAfterSeconds()).isEqualTo(300);
-                    assertThat(ex.managerCanUnlock()).isTrue();
-                });
+                .isInstanceOfSatisfying(TooManyLoginAttemptsException.class,
+                        ex -> assertThat(ex.retryAfterSeconds()).isEqualTo(300));
         assertThatThrownBy(() -> limiter.checkAllowed("till:1")).isInstanceOf(TooManyLoginAttemptsException.class);
     }
 
@@ -95,12 +93,8 @@ class LoginAttemptLimiterTest {
     }
 
     @Test
-    void aSuccessOrAnUnlockStartsTheCountAgain() {
-        failTimes("till:1", 8);
-        limiter.recordSuccess("till:1");
-        assertThat(limiter.recordFailure("till:1")).isEqualTo(9);
-
-        failTimes("till:1", 8);
+    void anUnlockStartsTheCountAgain() {
+        failTimes("till:1", 9);
         failTimesAndLock("till:1");
         assertThat(limiter.locked("till:")).extracting(LoginAttemptLimiter.Lock::key).containsExactly("till:1");
         limiter.unlock("till:1");
@@ -112,16 +106,8 @@ class LoginAttemptLimiterTest {
     void theLastThreeTriesAreWarnedAbout() {
         assertThat(limiter.withTriesLeft("Invalid PIN", 4)).isEqualTo("Invalid PIN");
         assertThat(limiter.withTriesLeft("Invalid PIN", 3))
-                .isEqualTo("Invalid PIN. 3 tries left before the PIN pad locks for 5 minutes.");
-        assertThat(limiter.withTriesLeft("Enter a manager PIN to continue.", 1))
-                .isEqualTo("Enter a manager PIN to continue. 1 try left before the PIN pad locks for 5 minutes.");
-    }
-
-    @Test
-    void aClientAddressIsNotAPadAManagerCanUnlock() {
-        failTimes("dashboard:10.0.0.1", 9);
-        assertThatThrownBy(() -> limiter.recordFailure("dashboard:10.0.0.1"))
-                .isInstanceOfSatisfying(TooManyLoginAttemptsException.class, ex -> assertThat(ex.managerCanUnlock()).isFalse());
+                .isEqualTo("Invalid PIN · 3 tries left");
+        assertThat(limiter.withTriesLeft(SpecialAccessDeniedException.MESSAGE, 1)).isEqualTo("Manager PIN · 1 try left");
     }
 
     private void failTimes(String key, int times) {

@@ -61,7 +61,7 @@ export function PhoneInput({
           onChange={(event) => phone.type(event.target.value)}
         />
       </span>
-      {phone.invalid && <span className="text-xs text-orange-700">Check the number: it isn’t a valid {phone.country} number.</span>}
+      {phone.invalid && <span className="text-xs text-orange-700">Invalid {phone.country} number</span>}
     </div>
   )
 }

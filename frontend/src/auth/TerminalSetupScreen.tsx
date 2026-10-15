@@ -25,7 +25,7 @@ export function TerminalSetupScreen({ notice }: { notice?: string }) {
     } catch (error) {
       return pinLockout(error) ?? (error instanceof ApiError && (error.status === 403 || error.status === 409 || error.status === 429)
         ? error.message
-        : 'Could not reach the server. Check the connection and try again.')
+        : 'Offline')
     }
   }
 
@@ -65,7 +65,7 @@ export function TerminalSetupScreen({ notice }: { notice?: string }) {
         ) : (
           <>
             <p className={loginStyles.prompt}>
-              A manager enters their PIN to set this iPad to <strong>{chosen.name}</strong>
+              Manager PIN · <strong>{chosen.name}</strong>
             </p>
             <PinEntry key={chosen.id} onSubmit={confirm} lockStatus={pinLockStatus.setUp(chosen.id)} />
             <button type="button" className={loginStyles.link} onClick={() => setChosen(null)}>
