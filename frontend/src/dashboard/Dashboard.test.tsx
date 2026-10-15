@@ -28,7 +28,8 @@ const live = (forOutlets: typeof outlets): LiveSales => ({
 })
 
 const figures = (netSales: number, orders: number) => ({
-  netSales, orders, averageOrder: orders === 0 ? 0 : netSales / orders, itemsSold: orders * 2, memberOrders: 1, refunds: 0,
+  netSales, orders, averageOrder: orders === 0 ? 0 : netSales / orders, itemsSold: orders * 2, memberOrders: 1, newMembers: 1,
+  freeItems: 2, freeItemsValue: 13, discounts: 1.6, refundCount: 0, refunds: 0,
 })
 
 const overview = (forOutlets: typeof outlets): SalesOverview => ({
@@ -41,6 +42,8 @@ const overview = (forOutlets: typeof outlets): SalesOverview => ({
   topItems: [{ name: 'WSP Caramel', quantity: 4, sales: 64 }],
   categories: [{ name: 'White Stand Pouch', amount: 64 }],
   paymentMethods: [{ name: 'Visa', amount: 45 }, { name: 'Cash', amount: 16 }],
+  promotions: [{ name: 'Buy 3 Free 1 Promo', count: 2, amount: 13 }],
+  discounts: [{ name: 'Staff 10%', count: 1, amount: 1.6 }],
   generatedAt: '2026-10-13T02:00:00Z',
 })
 
@@ -122,7 +125,14 @@ describe('back-office dashboard', () => {
     expect(within(sales).getByRole('img', { name: 'Net sales by day' })).toBeInTheDocument()
     expect(within(sales).getByRole('list', { name: 'Net sales by outlet' })).toHaveTextContent(/Counterline Bukit Bintang.*Counterline Cheras/)
     expect(within(sales).getByRole('list', { name: 'Top items by units sold' })).toHaveTextContent('WSP Caramel')
-    expect(within(sales).getByRole('img', { name: 'Collected by payment method' })).toBeInTheDocument()
+    expect(within(sales).getByRole('list', { name: 'Collected by payment method' })).toHaveTextContent(/Visa74%RM45.00.*Cash26%RM16.00/)
+    // What the promotions and discounts gave away, beside the sales.
+    expect(within(sales).getByText('Free items').closest('div')).toHaveTextContent('Free items2worth RM13.00')
+    expect(within(sales).getByText('Member orders').closest('div')).toHaveTextContent('1 of 3 orders · 1 new member')
+    expect(within(sales).getByRole('list', { name: 'Free items by promotion' })).toHaveTextContent('Buy 3 Free 1 Promoworth RM13.002 free')
+    expect(within(sales).getByRole('list', { name: 'Discounts and vouchers used' })).toHaveTextContent('Staff 10%× 1RM1.60')
+    expect(within(sales).getByText(/^Best day:/)).toHaveTextContent('Best day: 13 Oct · RM16.00 · 1 order')
+    expect(within(sales).getByText(/^Busiest:/)).toHaveTextContent('Busiest: 3pm · RM61.00 · 3 orders')
 
     await user.click(nav().getByRole('button', { name: 'Live Sales' }))
     expect(await screen.findByRole('article', { name: 'Counterline Cheras' })).toBeInTheDocument()

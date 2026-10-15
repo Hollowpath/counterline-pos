@@ -3,6 +3,7 @@ package com.counterline.pos.orders;
 import com.counterline.pos.TestRegister;
 import com.counterline.pos.TestcontainersConfiguration;
 import com.counterline.pos.auth.PinHasher;
+import com.counterline.pos.auth.TokenService;
 import com.counterline.pos.staff.Staff;
 import com.counterline.pos.staff.StaffRepository;
 import com.counterline.pos.staff.StaffRole;
@@ -70,6 +71,9 @@ class PromotionsAndLoyaltyIntegrationTest {
     @Autowired
     PinHasher pinHasher;
 
+    @Autowired
+    TokenService tokenService;
+
     private Long cashierId;
     private Long managerId;
     private Long memberId;
@@ -124,6 +128,22 @@ class PromotionsAndLoyaltyIntegrationTest {
         checkout(memberId, "PAY", lines(4, 3, null, 0), "[" + discountId + "]", "78.30")
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.orderDiscounts[0].amount").value(8.7));
+
+        // The dashboard counts what was given away: the free can and the discount, each on its own.
+        String today = LocalDate.now(OUTLET).toString();
+        String manager = tokenService.issueDashboard(staffRepository.findById(managerId).orElseThrow()).value();
+        mockMvc.perform(get("/api/v1/dashboard/overview").param("from", today).param("to", today)
+                        .header("Authorization", "Bearer " + manager))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.current.freeItems").value(1))
+                .andExpect(jsonPath("$.current.freeItemsValue").value(6.5))
+                .andExpect(jsonPath("$.current.discounts").value(8.7))
+                .andExpect(jsonPath("$.current.newMembers").value(1))
+                .andExpect(jsonPath("$.promotions[0].name").value("Buy 3 Free 1 Promo"))
+                .andExpect(jsonPath("$.promotions[0].count").value(1))
+                .andExpect(jsonPath("$.discounts[0].name").value("Test 10%"))
+                .andExpect(jsonPath("$.discounts[0].count").value(1))
+                .andExpect(jsonPath("$.discounts[0].amount").value(8.7));
     }
 
     // ---- Buy 3 Free 1 ----

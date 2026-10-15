@@ -54,7 +54,7 @@ export function LiveSales() {
           <span className="text-sm font-semibold tracking-wider text-zinc-400 uppercase">All outlets</span>
           <span className="flex items-baseline gap-3">
             <span className="text-sm text-zinc-400">{live.orderCount} orders</span>
-            <strong className="text-[1.75rem] font-bold tracking-tight tabular-nums" data-testid="chain-net">{rm(live.netSales)}</strong>
+            <strong className="text-[1.75rem] font-bold tracking-tight" data-testid="chain-net">{rm(live.netSales)}</strong>
           </span>
         </div>
       )}
@@ -68,7 +68,7 @@ export function LiveSales() {
             </p>
             <div className="p-5">
               <h2 className="text-base font-semibold text-zinc-900">{outlet.name}</h2>
-              <p className="mt-2 mb-1 text-[2rem] leading-tight font-bold tracking-tight tabular-nums">{rm(outlet.netSales)}</p>
+              <p className="mt-2 mb-1 text-[2rem] leading-tight font-bold tracking-tight">{rm(outlet.netSales)}</p>
               <p className="m-0 text-sm text-zinc-500">
                 {outlet.orderCount} {outlet.orderCount === 1 ? 'order' : 'orders'}
                 {outlet.openOrders > 0 && ` · ${outlet.openOrders} unpaid`}

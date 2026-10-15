@@ -50,10 +50,14 @@ public class SalesOverviewService {
 
     /**
      * Headline figures for a period. {@code memberOrders}: orders with a member on them;
-     * {@code itemsSold}: units charged for (free items not counted).
+     * {@code itemsSold}: units charged for (free items not counted); {@code freeItems} and
+     * {@code freeItemsValue}: units given free by the promotions, and what they would have cost;
+     * {@code discounts}: what discounts and vouchers took off; {@code newMembers}: members who signed
+     * up in the period and bought at these outlets in it.
      */
     public record Figures(BigDecimal netSales, long orders, BigDecimal averageOrder, long itemsSold, long memberOrders,
-                          BigDecimal refunds) {
+                          long newMembers, long freeItems, BigDecimal freeItemsValue, BigDecimal discounts,
+                          long refundCount, BigDecimal refunds) {
     }
 
     public record DayTotal(LocalDate date, long orders, BigDecimal netSales) {
@@ -72,6 +76,10 @@ public class SalesOverviewService {
     public record NamedTotal(String name, BigDecimal amount) {
     }
 
+    /** A promotion's free items ({@code count}: units) or a discount's uses ({@code count}: times applied). */
+    public record GivenTotal(String name, long count, BigDecimal amount) {
+    }
+
     /**
      * {@code previous}: the same figures for the period just before, as long, for comparison.
      * {@code outletId}: the one outlet shown, or null for all the user can see.
@@ -79,7 +87,7 @@ public class SalesOverviewService {
     public record Overview(LocalDate from, LocalDate to, Long outletId, Figures current, Figures previous,
                            List<DayTotal> days, List<OutletTotal> outlets, List<HourTotal> hours,
                            List<ItemTotal> topItems, List<NamedTotal> categories, List<NamedTotal> paymentMethods,
-                           Instant generatedAt) {
+                           List<GivenTotal> promotions, List<GivenTotal> discounts, Instant generatedAt) {
     }
 
     public Overview overview(DashboardUser user, LocalDate from, LocalDate to, Long outletId) {
@@ -102,9 +110,10 @@ public class SalesOverviewService {
         }
         List<Long> ids = visible.stream().map(OutletResponse::id).toList();
         if (ids.isEmpty()) {
-            Figures none = new Figures(money(BigDecimal.ZERO), 0, money(BigDecimal.ZERO), 0, 0, money(BigDecimal.ZERO));
+            BigDecimal zero = money(BigDecimal.ZERO);
+            Figures none = new Figures(zero, 0, zero, 0, 0, 0, 0, zero, zero, 0, zero);
             return new Overview(start, end, outletId, none, none, List.of(), List.of(), List.of(), List.of(), List.of(),
-                    List.of(), clock.instant());
+                    List.of(), List.of(), List.of(), clock.instant());
         }
 
         MapSqlParameterSource params = params(ids, start, end.plusDays(1), zone);
@@ -117,6 +126,8 @@ public class SalesOverviewService {
                 topItems(params),
                 categories(params),
                 paymentMethods(params),
+                promotions(params),
+                discounts(params),
                 clock.instant());
     }
 
@@ -132,6 +143,17 @@ public class SalesOverviewService {
                        (SELECT count(*) FROM sale_order o WHERE %1$s AND o.customer_id IS NOT NULL) AS member_orders,
                        (SELECT coalesce(sum(l.quantity), 0) FROM sale_order o JOIN sale_order_line l ON l.order_id = o.id
                         WHERE %1$s AND l.line_total > 0) AS items,
+                       (SELECT count(*) FROM customer c WHERE c.deleted_at IS NULL
+                          AND c.created_at >= :start AND c.created_at < :end
+                          AND EXISTS (SELECT 1 FROM sale_order o WHERE %1$s AND o.customer_id = c.id)) AS new_members,
+                       (SELECT coalesce(sum(l.quantity), 0) FROM sale_order o
+                          JOIN sale_order_promotion sp ON sp.order_id = o.id JOIN sale_order_line l ON l.id = sp.line_id
+                        WHERE %1$s) AS free_items,
+                       (SELECT coalesce(sum(sp.amount), 0) FROM sale_order o JOIN sale_order_promotion sp ON sp.order_id = o.id
+                        WHERE %1$s) AS free_value,
+                       (SELECT coalesce(sum(d.amount), 0) FROM sale_order o JOIN sale_order_discount d ON d.order_id = o.id
+                        WHERE %1$s) AS discounts,
+                       (SELECT count(*) FROM sale_order o WHERE %2$s) AS refund_count,
                        (SELECT coalesce(sum(p.amount), 0) FROM sale_order o JOIN payment p ON p.order_id = o.id
                         WHERE %2$s) AS refunds
                 """.formatted(PAID_IN_RANGE, REFUNDED_IN_RANGE), params, (rs, i) -> {
@@ -141,7 +163,9 @@ public class SalesOverviewService {
                     BigDecimal average = orders == 0 ? BigDecimal.ZERO
                             : sales.divide(BigDecimal.valueOf(orders), 2, RoundingMode.HALF_UP);
                     return new Figures(money(sales.subtract(refunds)), orders, money(average), rs.getLong("items"),
-                            rs.getLong("member_orders"), money(refunds));
+                            rs.getLong("member_orders"), rs.getLong("new_members"), rs.getLong("free_items"),
+                            money(rs.getBigDecimal("free_value")), money(rs.getBigDecimal("discounts")),
+                            rs.getLong("refund_count"), money(refunds));
                 });
     }
 
@@ -256,6 +280,32 @@ public class SalesOverviewService {
                 ORDER BY amount DESC, m.sort_order
                 """.formatted(PAID_IN_RANGE, REFUNDED_IN_RANGE), params,
                 (rs, i) -> new NamedTotal(rs.getString("name"), money(rs.getBigDecimal("amount"))));
+    }
+
+    /** The free items each promotion gave (units), and what they would have cost. */
+    private List<GivenTotal> promotions(MapSqlParameterSource params) {
+        return jdbc.query("""
+                SELECT sp.name, sum(l.quantity) AS count, sum(sp.amount) AS amount
+                FROM sale_order o
+                JOIN sale_order_promotion sp ON sp.order_id = o.id
+                JOIN sale_order_line l ON l.id = sp.line_id
+                WHERE %s
+                GROUP BY sp.name
+                ORDER BY count DESC, amount DESC
+                """.formatted(PAID_IN_RANGE), params,
+                (rs, i) -> new GivenTotal(rs.getString("name"), rs.getLong("count"), money(rs.getBigDecimal("amount"))));
+    }
+
+    /** What each discount (vouchers included) took off, and how many times it was applied. */
+    private List<GivenTotal> discounts(MapSqlParameterSource params) {
+        return jdbc.query("""
+                SELECT d.name, count(*) AS count, sum(d.amount) AS amount
+                FROM sale_order o JOIN sale_order_discount d ON d.order_id = o.id
+                WHERE %s
+                GROUP BY d.name
+                ORDER BY amount DESC, count DESC
+                """.formatted(PAID_IN_RANGE), params,
+                (rs, i) -> new GivenTotal(rs.getString("name"), rs.getLong("count"), money(rs.getBigDecimal("amount"))));
     }
 
     /** {@code [startDay, endDay)} as instants in the outlets' time zone. */

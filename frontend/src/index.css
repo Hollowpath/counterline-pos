@@ -75,6 +75,19 @@
   html {
     @apply bg-zinc-100 text-zinc-900 antialiased;
     font-feature-settings: 'cv11', 'ss01';
+    /* Touch screens, not documents: no text is highlighted by a drag or a long press, and no
+       copy menu pops up over a button. */
+    @apply select-none;
+    -webkit-touch-callout: none;
+  }
+
+  /* Except what is typed: a field's text can still be selected, edited and pasted (iPad Safari
+     won't let a field be typed in at all when it can't be selected). */
+  input,
+  textarea,
+  [contenteditable='true'] {
+    @apply select-text;
+    -webkit-touch-callout: default;
   }
 
   body {

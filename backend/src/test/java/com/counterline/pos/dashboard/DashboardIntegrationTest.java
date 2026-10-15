@@ -215,7 +215,14 @@ class DashboardIntegrationTest {
                 .andExpect(jsonPath("$.hours.length()").value(24))
                 .andExpect(jsonPath("$.topItems[0].name").value("Pouch Cheese"))
                 .andExpect(jsonPath("$.topItems[0].quantity").value(2))
-                .andExpect(jsonPath("$.paymentMethods[0].amount").value(32.0));
+                .andExpect(jsonPath("$.paymentMethods[0].amount").value(32.0))
+                // Nothing given away, no members, no refunds.
+                .andExpect(jsonPath("$.current.freeItems").value(0))
+                .andExpect(jsonPath("$.current.discounts").value(0.0))
+                .andExpect(jsonPath("$.current.newMembers").value(0))
+                .andExpect(jsonPath("$.current.refundCount").value(0))
+                .andExpect(jsonPath("$.promotions").isEmpty())
+                .andExpect(jsonPath("$.discounts").isEmpty());
         // Seven days by default, every day listed.
         call(get("/api/v1/dashboard/overview"), admin, null).andExpect(jsonPath("$.days.length()").value(7));
 

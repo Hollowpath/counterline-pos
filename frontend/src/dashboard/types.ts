@@ -112,7 +112,23 @@ export interface SalesFigures {
   itemsSold: number
   /** Orders with a member on them. */
   memberOrders: number
+  /** Members who signed up in the period and bought at these outlets in it. */
+  newMembers: number
+  /** Units the promotions gave free, and what they would have cost. */
+  freeItems: number
+  freeItemsValue: number
+  /** What discounts and vouchers took off. */
+  discounts: number
+  /** Orders refunded in the period, and what was paid back. */
+  refundCount: number
   refunds: number
+}
+
+/** A promotion's free items (count: units) or a discount's uses (count: times applied). */
+export interface GivenTotal {
+  name: string
+  count: number
+  amount: number
 }
 
 /** The dashboard's charts for a period (mirrors SalesOverviewService.Overview). */
@@ -130,6 +146,8 @@ export interface SalesOverview {
   topItems: { name: string; quantity: number; sales: number }[]
   categories: { name: string; amount: number }[]
   paymentMethods: { name: string; amount: number }[]
+  promotions: GivenTotal[]
+  discounts: GivenTotal[]
   generatedAt: string
 }
 

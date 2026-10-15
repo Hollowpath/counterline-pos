@@ -72,7 +72,7 @@ export function Tile({ label, value, children }: { label: string; value: string;
   return (
     <div className="relative flex min-w-0 flex-col gap-1 overflow-hidden rounded-2xl bg-white px-5 pt-5 pb-4 shadow-sm ring-1 ring-zinc-900/5 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-linear-to-r before:from-indigo-500 before:to-fuchsia-500 before:content-['']">
       <dt className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">{label}</dt>
-      <dd className="text-[1.75rem] leading-tight font-bold tracking-tight text-zinc-900 tabular-nums max-md:text-[1.35rem]">{value}</dd>
+      <dd className="text-[1.75rem] leading-tight font-bold tracking-tight text-zinc-900 max-md:text-[1.35rem]">{value}</dd>
       {children}
     </div>
   )
