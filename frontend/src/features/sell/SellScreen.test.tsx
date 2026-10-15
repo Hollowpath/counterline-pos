@@ -44,6 +44,28 @@ function stubApi(routes: Record<string, () => Response>) {
 }
 
 describe('SellScreen', () => {
+  it('tells the app while a sale is open, so the register can’t be closed under it', async () => {
+    stubApi({
+      '/api/v1/catalog/tabs': () => jsonResponse(tabs),
+      '/api/v1/catalog/categories/10/items': () => jsonResponse(pouchItems),
+    })
+    const onSaleOpenChange = vi.fn()
+    const user = userEvent.setup()
+    render(<SellScreen onOpenMenu={() => {}} onSaleOpenChange={onSaleOpenChange} />)
+    await screen.findByRole('button', { name: /popcorn pouch/i })
+    expect(onSaleOpenChange).toHaveBeenLastCalledWith(false)
+
+    await user.click(screen.getByRole('button', { name: 'New Sale' }))
+    expect(onSaleOpenChange).toHaveBeenLastCalledWith(true)
+    await user.click(screen.getByRole('button', { name: 'Clear sale' }))
+    expect(onSaleOpenChange).toHaveBeenLastCalledWith(false)
+
+    // Items open a sale too.
+    await user.click(screen.getByRole('button', { name: /popcorn pouch/i }))
+    await user.click(await products().findByRole('button', { name: /pouch caramel/i }))
+    expect(onSaleOpenChange).toHaveBeenLastCalledWith(true)
+  })
+
   it('builds a sale by opening a folder and tapping items', async () => {
     stubApi({
       '/api/v1/catalog/tabs': () => jsonResponse(tabs),
@@ -167,7 +189,7 @@ describe('SellScreen', () => {
     })
     const user = userEvent.setup()
     render(
-      <RegisterContext.Provider value={{ open: false, openOrders: 0, refresh: () => {} }}>
+      <RegisterContext.Provider value={{ open: false, openOrders: 0, saleOpen: false, refresh: () => {} }}>
         <SellScreen onOpenMenu={() => {}} />
       </RegisterContext.Provider>,
     )

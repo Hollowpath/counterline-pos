@@ -266,7 +266,7 @@ describe('PastOrdersScreen', () => {
   it('counts the open orders on the Open tab', async () => {
     fakeApi([makeOrder(1, 'OPEN'), makeOrder(2, 'OPEN'), makeOrder(3, 'CLOSED')])
     render(
-      <RegisterContext.Provider value={{ open: true, openOrders: 2, refresh: () => {} }}>
+      <RegisterContext.Provider value={{ open: true, openOrders: 2, saleOpen: false, refresh: () => {} }}>
         <PastOrdersScreen staff={cashier} onOpenMenu={() => {}} onEditOrder={() => {}} />
       </RegisterContext.Provider>,
     )

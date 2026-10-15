@@ -42,6 +42,8 @@ interface SellScreenProps {
   voidedOrder?: { orderId: number; seq: number } | null
   /** A sale was paid and the cashier saw it through (or it closed itself). */
   onSaleComplete?: () => void
+  /** Whether the cart holds a sale: the register can't be closed until it is cleared. */
+  onSaleOpenChange?: (open: boolean) => void
 }
 
 const noop = () => {}
@@ -49,12 +51,14 @@ const noop = () => {}
 /** Point of Sale screen: quickgrid on the left, current sale on the right, tab bar at the bottom. */
 export function SellScreen({
   onOpenMenu, isManager = false, displayId = null, onDisplayGone = noop, editRequest = null, voidedOrder = null,
-  onSaleComplete = noop,
+  onSaleComplete = noop, onSaleOpenChange = noop,
 }: SellScreenProps) {
   const tabs = useApi<Tab[]>(catalogPaths.tabs)
   const [view, setView] = useState<View>({ kind: 'tab', tabId: null })
   const [openFolder, setOpenFolder] = useState<Folder | null>(null)
   const [cart, dispatch] = useReducer(cartReducer, emptyCart)
+  const saleOpen = cart.open || cart.lines.length > 0
+  useEffect(() => onSaleOpenChange(saleOpen), [saleOpen, onSaleOpenChange])
   const quote = useCartQuote(cart)
   const register = useRegister()
   const [editing, setEditing] = useState<Editing | null>(null)

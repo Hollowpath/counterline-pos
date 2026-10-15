@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { RegisterContext } from './registerApi'
 import { RegisterScreen } from './RegisterScreen'
 
 const emptySales = { from: '2026-10-12', to: '2026-10-12', orderCount: 0, grossSales: 0, discounts: 0, refundCount: 0, refunds: 0, netSales: 0, paymentMethods: [], totalCollected: 0, orderStatuses: [], diningOptions: [] }
@@ -93,6 +94,18 @@ describe('RegisterScreen', () => {
 
     expect(await screen.findByRole('button', { name: 'Open Register' })).toBeInTheDocument()
     expect(calls.find((call) => call.path === '/api/v1/register/close')!.body).toEqual({ version: 0, note: null })
+  })
+
+  it('can’t be closed while a sale is open in the cart', async () => {
+    fakeApi(true)
+    render(
+      <RegisterContext.Provider value={{ open: true, openOrders: 0, saleOpen: true, refresh: () => {} }}>
+        <RegisterScreen onOpenMenu={() => {}} />
+      </RegisterContext.Provider>,
+    )
+
+    expect(await screen.findByRole('button', { name: 'Close Register' })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent('Sale open')
   })
 
   it('keeps the dialog open and explains a conflicting close', async () => {

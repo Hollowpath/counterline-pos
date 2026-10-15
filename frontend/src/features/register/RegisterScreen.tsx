@@ -60,6 +60,11 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
   } else if (status.data.open && status.data.session) {
     const session = status.data.session
     const { openOrders } = status.data
+    // Closing waits for placed orders to be paid or voided, and for the sale in the cart to be cleared.
+    const blockers = [
+      ...(openOrders > 0 ? [`${openOrders} open ${openOrders === 1 ? 'order' : 'orders'}`] : []),
+      ...(register.saleOpen ? ['Sale open'] : []),
+    ]
     content = (
       <div className={`${banner} bg-linear-to-br from-green-400 via-green-500 to-green-600`}>
         <span className={glow} aria-hidden="true" />
@@ -78,7 +83,7 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
           by {session.openedBy}
         </p>
         <div className="mt-8 grid grid-cols-[auto_auto] justify-center gap-3">
-          <button type="button" className={bannerButton} disabled={openOrders > 0} onClick={() => setDialog('close')}>
+          <button type="button" className={bannerButton} disabled={blockers.length > 0} onClick={() => setDialog('close')}>
             Close Register
           </button>
           <PrintButton onClick={() => setDialog('summary')} />
@@ -95,9 +100,9 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
             ))}
           </ul>
         )}
-        {openOrders > 0 && (
+        {blockers.length > 0 && (
           <p className="mt-6 rounded-2xl bg-zinc-950/25 px-4 py-3 text-sm font-semibold ring-1 ring-white/20" role="status">
-            {openOrders} open {openOrders === 1 ? 'order' : 'orders'}
+            {blockers.join(' · ')}
           </p>
         )}
         </div>

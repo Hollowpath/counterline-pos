@@ -39,15 +39,17 @@ export const registerPath = '/api/v1/register'
 /**
  * Whether the register is open, for screens that take payment or place orders. `open` is null
  * while unknown (loading or unreachable): the server still refuses both when it is closed.
- * `openOrders`: the outlet's placed, unpaid orders, counted on Past Orders.
+ * `openOrders`: the outlet's placed, unpaid orders, counted on Past Orders. `saleOpen`: this till's
+ * cart holds a sale (New Sale tapped, or items in it). Either keeps the register from closing.
  */
 export interface RegisterState {
   open: boolean | null
   openOrders: number
+  saleOpen: boolean
   refresh: () => void
 }
 
-export const RegisterContext = createContext<RegisterState>({ open: null, openOrders: 0, refresh: () => {} })
+export const RegisterContext = createContext<RegisterState>({ open: null, openOrders: 0, saleOpen: false, refresh: () => {} })
 
 export function useRegister(): RegisterState {
   return useContext(RegisterContext)

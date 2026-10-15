@@ -29,6 +29,7 @@ export function AppShell({ staff, outlet, welcome, onLogOff }: AppShellProps) {
   const [showWelcome, setShowWelcome] = useState(welcome)
   const [registerOpen, setRegisterOpen] = useState<boolean | null>(null)
   const [openOrders, setOpenOrders] = useState(0)
+  const [saleOpen, setSaleOpen] = useState(false)
   // The customer display paired with this till, if any.
   const [displayId, setDisplayId] = useState<number | null>(loadDisplayId)
   // "Edit Order" from Past Orders: the order to load into the cart (seq: each request is new).
@@ -53,8 +54,8 @@ export function AppShell({ staff, outlet, welcome, onLogOff }: AppShellProps) {
   }, [])
   useEffect(refreshRegister, [refreshRegister])
   const register = useMemo(
-    () => ({ open: registerOpen, openOrders, refresh: refreshRegister }),
-    [registerOpen, openOrders, refreshRegister],
+    () => ({ open: registerOpen, openOrders, saleOpen, refresh: refreshRegister }),
+    [registerOpen, openOrders, saleOpen, refreshRegister],
   )
 
   useEffect(() => {
@@ -74,6 +75,7 @@ export function AppShell({ staff, outlet, welcome, onLogOff }: AppShellProps) {
           onDisplayGone={forgetDisplay}
           editRequest={editRequest}
           voidedOrder={voidedOrder}
+          onSaleOpenChange={setSaleOpen}
           // Every paid sale ends with the staff member logged off, for the next one to log in.
           onSaleComplete={onLogOff}
         />
