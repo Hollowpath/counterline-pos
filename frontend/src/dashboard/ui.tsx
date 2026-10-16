@@ -16,7 +16,9 @@ export function Page({ label, title, description, actions, flush = false, childr
   children: ReactNode
 }) {
   return (
-    <section aria-label={label ?? (typeof title === 'string' ? title : undefined)} className="flex min-h-full flex-col">
+    // A flush page is exactly the screen's height, so its list and detail scroll on their own while
+    // the header and the rest stay put; any other page grows and the main area scrolls it.
+    <section aria-label={label ?? (typeof title === 'string' ? title : undefined)} className={`flex flex-col ${flush ? 'h-full print:h-auto' : 'min-h-full'}`}>
       <header className="sticky top-0 z-[5] flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-zinc-200/80 bg-white/85 px-8 py-5 backdrop-blur max-md:static max-md:px-4 max-md:py-4">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900 max-md:text-xl">{title}</h1>

@@ -35,33 +35,36 @@ export function CustomersScreen({ onOpenMenu, renderExtra }: CustomersScreenProp
   return (
     <div className={splitScreen.screen} data-detail={selectedId !== null}>
       <section className={splitScreen.list} aria-label="Customers">
-        <div className="flex items-center gap-2">
-          <div className={`${segmented} flex-1`} role="tablist" aria-label="Search by">
-            {SEARCH_FIELDS.map((option) => (
-              <button
-                key={option.field}
-                type="button"
-                role="tab"
-                aria-selected={option.field === field}
-                onClick={() => setField(option.field)}
-              >
-                {option.label}
-              </button>
-            ))}
+        {/* The search stays at the top while a long list scrolls under it. */}
+        <div className="sticky -top-4 z-[1] -mx-4 -mt-4 flex flex-col gap-3 bg-white px-4 pt-4 pb-1">
+          <div className="flex items-center gap-2">
+            <div className={`${segmented} flex-1`} role="tablist" aria-label="Search by">
+              {SEARCH_FIELDS.map((option) => (
+                <button
+                  key={option.field}
+                  type="button"
+                  role="tab"
+                  aria-selected={option.field === field}
+                  onClick={() => setField(option.field)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="icon-btn" aria-label="Add customer" onClick={() => setAdding(true)}>
+              +
+            </button>
           </div>
-          <button type="button" className="icon-btn" aria-label="Add customer" onClick={() => setAdding(true)}>
-            +
-          </button>
+          <input
+            className={splitScreen.search}
+            type="search"
+            placeholder={`Search by ${SEARCH_FIELDS.find((option) => option.field === field)!.label.toLowerCase()}`}
+            aria-label="Search customers"
+            value={searchInput}
+            maxLength={60}
+            onChange={(event) => setSearchInput(event.target.value)}
+          />
         </div>
-        <input
-          className={splitScreen.search}
-          type="search"
-          placeholder={`Search by ${SEARCH_FIELDS.find((option) => option.field === field)!.label.toLowerCase()}`}
-          aria-label="Search customers"
-          value={searchInput}
-          maxLength={60}
-          onChange={(event) => setSearchInput(event.target.value)}
-        />
 
         {state.phase !== 'ready' ? (
           <LoadState status={state.phase} message={state.phase === 'error' ? state.message : undefined} onRetry={refresh} />

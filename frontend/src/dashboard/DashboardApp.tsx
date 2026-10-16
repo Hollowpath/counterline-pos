@@ -98,7 +98,8 @@ function DashboardShell({ session, onLogOut }: { session: DashboardSession; onLo
   const title = pages.find((entry) => entry.page === page)?.label ?? ''
 
   return (
-    <div className="flex h-dvh max-lg:flex-col">
+    // On paper the page flows from sheet to sheet, instead of being cut at the screen's height.
+    <div className="flex h-dvh max-lg:flex-col print:block print:h-auto">
       {/* The POS's side menu: always beside the page on a wide screen, opened from the bar on a small one. */}
       {menuOpen && <div className="fixed inset-0 z-10 animate-fade-in bg-zinc-950/50 backdrop-blur-[2px] lg:hidden" onClick={() => setMenuOpen(false)} />}
       <nav
@@ -163,7 +164,7 @@ function DashboardShell({ session, onLogOut }: { session: DashboardSession; onLo
           </button>
         </div>
       </nav>
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-zinc-100">
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-zinc-100 print:overflow-visible print:bg-white">
         {page === 'overview' && <SalesOverview />}
         {page === 'live' && <LiveSales />}
         {page === 'reports' && <DashboardReports />}
