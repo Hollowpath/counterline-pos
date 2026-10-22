@@ -178,7 +178,7 @@ PC paper cans, CSP crispy roll pouches, gift boxes, promotional FOC items and fr
 The two secrets have no defaults, so the API refuses to start without them.
 
 The image (`docker build -t counterline-pos .`) is built in three stages: Node builds the three
-web apps, Maven builds the API with them as its static files (tests run in CI, not here), and
+web apps, Maven builds the API with them as its static files (tests are not run in this build; run them separately), and
 the runtime stage is a JRE on Alpine running as a non-root user, with Spring Boot's layers
 copied separately so a code change ships a small layer. It listens on 8080, sizes its heap
 from the container's memory limit, and reports health on `/actuator/health`. Vite's hashed

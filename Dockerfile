@@ -6,7 +6,7 @@
 #
 #   docker build -t counterline-pos .
 #
-# Tests are not run here: CI runs them (the backend's need Docker for Testcontainers).
+# Tests are not run here; run them separately (the backend's need Docker for Testcontainers).
 
 # ---- 1. The web apps ----
 FROM node:22-alpine AS frontend

@@ -73,7 +73,7 @@ Before external use, threat modelling must address malicious staff, stolen/share
 
 | Item | Outcome | Limitation, owner and trigger/evidence |
 |---|---|---|
-| Ignore local secrets/build output | Satisfied | Root and component ignore rules cover common secrets, dependency/build output and local settings; `start/` is excluded locally. |
+| Ignore local secrets/build output | Satisfied | Root and component ignore rules cover common secrets, dependency/build output and local settings; `/start/` is listed in the tracked `.gitignore`. |
 | Secret and history hygiene | Blocked before publication | Current files alone cannot prove old commits are clean. **Owner:** repository owner. Run an approved full-history secret/private-material scan and rotate anything exposed before publication. |
 | Locking and provenance | Satisfied, partial | npm lockfile and Maven wrapper exist; container bases are named. Image digests, SBOMs and release attestations are absent. |
 | Install-script review | Deferred | npm lifecycle behaviour and transitive Maven/npm risks have not been documented. **Owner:** maintainer. **Trigger:** before dependency updates or CI installs. |
