@@ -105,12 +105,15 @@ See [docs/testing.md](docs/testing.md). In short: `cd backend && ./mvnw test` (n
 
 ## Roadmap: AWS (planned, not built)
 
-Nothing in this repository deploys to AWS yet; there is no infrastructure code and no CI/CD workflow. The code is prepared for it: a single container image, a health check, configuration from environment variables, and comments assuming a load balancer in front of a container service. Everything below is **planned and unordered**. AWS work is written and run by the owner. The list is not an implementation order; sequencing is decided incrementally:
+Nothing in this repository deploys to AWS yet; there is no infrastructure code and no CI/CD workflow. The code is prepared for it: a single container image, a health check, configuration from environment variables, and comments assuming a load balancer in front of a container service. Everything below is **planned**. AWS work is written and run by the owner. The list is not an implementation order; sequencing is decided incrementally, and each piece is added only when it is needed:
 
-- Region `ap-southeast-1`.
-- Infrastructure as code with AWS CDK; GitHub Actions for build, test and image publishing.
-- Container image in a registry, run as a managed container service behind a load balancer.
-- Managed PostgreSQL (service not yet chosen) and secrets held in a secrets service rather than in configuration.
+- Region `ap-southeast-1`, one small environment.
+- Infrastructure as code with AWS CDK; GitHub Actions for build, test and image publishing, later deployment using GitHub OIDC rather than stored AWS keys.
+- The container image in Amazon ECR, run on Amazon ECS with Fargate behind an Application Load Balancer.
+- Amazon RDS for PostgreSQL, with database credentials and the application's keys held in AWS Secrets Manager rather than in configuration.
+- Amazon CloudWatch for logs and a small set of alarms.
+
+Cost is a design constraint: the plan avoids services that bill while idle unless they are required.
 
 The roadmap will be updated as pieces are delivered. See [docs/engineering-readiness.md](docs/engineering-readiness.md) for what is deliberately not yet in place.
 
