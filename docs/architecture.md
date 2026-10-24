@@ -1,0 +1,71 @@
+# Architecture
+
+Describes the system as it runs locally today. Statements here were checked against the code; file paths are given so they can be rechecked. AWS is not part of the current architecture (see the [README roadmap](../README.md#roadmap-aws-planned-not-built)).
+
+## Overview
+
+```
+Browser (POS / display / dashboard)  ──HTTP /api/v1──▶  Spring Boot API  ──JDBC──▶  PostgreSQL
+        static files served by the same API process ◀──┘
+```
+
+One deployable unit: the API process also serves the three built web apps. The browser calls the API on the same origin, so there is no CORS configuration. In development, Vite serves the apps on `:5173` and proxies `/api` to `:8080` (`frontend/vite.config.ts`).
+
+## Components
+
+### Backend (`backend/`, package `com.counterline.pos`)
+
+Java 21, Spring Boot 4.1, Maven wrapper. Organised by feature, each package holding its controllers, services, entities and repositories:
+
+| Package | Responsibility |
+| --- | --- |
+| `auth` | PIN login, device set-up, manager approval, dashboard login, JWT issue/validation, login throttle, PIN locks, security rules |
+| `catalog` | Items, categories, options/modifiers |
+| `orders` | Checkout, order lifecycle (place, pay, void, refund), payments, receipts, promotions applied to a sale |
+| `discounts`, `promotions`, `loyalty`, `vouchers` | Discount arithmetic, promotion rules, points and member entitlements, vouchers |
+| `customers` | Members and phone-number handling |
+| `display` | Customer-display pairing and its own restricted API |
+| `register`, `timecards` | Cash register sessions, staff clock-in/out |
+| `reports`, `dashboard` | Sales reports and the head-office/manager API |
+| `outlet`, `staff` | Outlets and per-outlet staff |
+| `common` | Error handling (RFC 9457 problem details), clock, static-asset caching |
+
+### Frontend (`frontend/`)
+
+React 19 + TypeScript, built by Vite from three HTML entry points: `index.html` (POS), `display.html` (customer display), `dashboard.html` (dashboard). Source is under `frontend/src/` (`features/` for POS screens, `dashboard/`, `display/`, shared `components/`, `lib/`, `api/`).
+
+### Database
+
+PostgreSQL 17. Schema is owned by Flyway (`db/migration`, `V1`–`V22`); Hibernate only validates (`ddl-auto: validate`). Under the `local` profile Flyway also loads repeatable sample data from `db/demo` (catalogue and outlets).
+
+### Packaging
+
+`Dockerfile` has three stages: build the web apps (Node 22), build the API with the built web apps copied into its static resources (JDK 21), then a JRE-only runtime image running as a non-root user with a health check on `/actuator/health`. `.dockerignore` is an allowlist (only `backend/` and `frontend/`). `docker-compose.yml` provides a development database and, under the `app` profile, the whole image with a separate database.
+
+## Security model
+
+- **Stateless bearer JWT**, HS256, signed with a configured secret; no cookies, so CSRF protection is disabled by design (`auth/SecurityConfig.java`).
+- **Channels.** Each token carries a channel claim: till, dashboard, display, or single-action approval. Route rules require the right channel, so a dashboard session cannot use till-only endpoints, a display token opens only `/api/v1/display/**`, and an approval token is accepted only for one void or refund.
+- **Roles:** `STAFF`, `MANAGER` (till/dashboard) and `ADMIN` (head office). Catalogue, discount and voucher management is `ADMIN` only; other dashboard routes allow `ADMIN` or `MANAGER`.
+- **Staff PINs** are six digits, hashed with a server-side pepper; passwords for the dashboard use BCrypt. Failed PIN attempts are counted per outlet PIN pad (or per client address where there is no pad); the 10th failure locks it for 5 minutes by default. The counts are stored in PostgreSQL, so every API instance sees them, and a dashboard user can unlock a pad.
+- **Public routes:** login/set-up endpoints, the outlet list, health, OpenAPI/Swagger UI and the static web apps.
+- Secrets have no defaults outside the `local` profile.
+
+## Design decisions
+
+- **Single image, same origin.** Simplest thing to run and deploy; avoids CORS and a separate static host. Cost: web and API releases are coupled.
+- **Money is `BigDecimal` in the backend and API** (`SaleOrder`, decimal prices in JSON); rounding rules are in `discounts` and covered by unit tests. The frontend converts to **integer sen** at the boundary (`frontend/src/lib/money.ts`) to avoid floating-point drift when summing, and back to decimals for display and requests.
+- **Idempotent payment.** Paying an order is keyed by a client request id, so a retried request returns the already-paid order instead of charging twice (`CheckoutService`).
+- **Concurrency.** Orders, customers and register sessions use optimistic locking (`@Version`); loyalty accounts, member entitlements, staff and display records are read with pessimistic write locks where races would corrupt balances or counters.
+- **Sensitive actions need a manager.** A manager PIN entered at the till (`/auth/special-access`) yields a short-lived (5 minute default) approval token. It is used in two ways that differ:
+  - **Void and refund** accept that token as a bearer credential and **consume it once**: used token ids are recorded in PostgreSQL (`used_approval_token`) and a second use is refused. A signed-in manager can also void or refund directly.
+  - **Checkout discount approval** (department comps) sends the same kind of token in the request body (`approvalToken`). It is checked for signature, expiry, approval channel, and that its subject is an active manager at the paying staff member's outlet (`auth/ManagerApproval.java`), but it is **not consumed**: until it expires, it can approve further discount payments by staff at that outlet. A signed-in manager needs no token. Making it single-use is an open improvement.
+- **Reports are accounted by event time.** A sale counts on the day it was paid; a refund counts on the day it was made.
+- **Time zone is configuration.** Reporting day boundaries use `POS_OUTLET_TIME_ZONE`.
+- **Errors are problem details** for both application and security failures, so clients handle one shape.
+- **Behind a proxy.** `forward-headers-strategy: native` lets login throttling see the real client address when a load balancer is in front.
+- **Operational endpoints.** Only `health` and `info` are exposed by Actuator.
+
+## Known gaps
+
+Listed with triggers in [engineering-readiness.md](engineering-readiness.md). Notably: Swagger UI and the OpenAPI document are served without authentication by the running application's route rules, checkout discount approval tokens are not consumed, and there is no CI configuration.
