@@ -11,4 +11,7 @@ public interface AdminUserRepository extends JpaRepository<AdminUser, Long> {
     Optional<AdminUser> findByIdAndActiveTrue(Long id);
 
     boolean existsByEmail(String email);
+
+    /** Includes deactivated accounts: their e-mail stays reserved by the unique constraint. */
+    Optional<AdminUser> findByEmail(String email);
 }

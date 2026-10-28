@@ -1,6 +1,6 @@
 # Architecture
 
-Describes the system as it runs locally today. Statements here were checked against the code; file paths are given so they can be rechecked. AWS is not part of the current architecture (see the [README roadmap](../README.md#roadmap-aws-planned-not-built)).
+Describes the system as it runs locally today. Statements here were checked against the code; file paths are given so they can be rechecked. The runtime described here is not deployed to AWS; only a CI workflow and a CDK project that defines the private ECR repository exist (see [AWS deployment status and roadmap](../README.md#aws-deployment-status-and-roadmap)).
 
 ## Overview
 

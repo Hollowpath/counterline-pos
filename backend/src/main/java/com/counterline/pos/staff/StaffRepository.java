@@ -16,6 +16,11 @@ public interface StaffRepository extends JpaRepository<Staff, Long> {
 
     Optional<Staff> findByEmailAndActiveTrue(String email);
 
+    /** Includes inactive staff: their PIN and email stay reserved by the unique constraints. */
+    Optional<Staff> findByPinHmac(String pinHmac);
+
+    Optional<Staff> findByEmail(String email);
+
     /** SELECT … FOR UPDATE: serialises per-staff state changes such as clocking in/out. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Staff s where s.id = :id")

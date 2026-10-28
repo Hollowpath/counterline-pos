@@ -5,7 +5,7 @@ What this system is scoped to do, what evidence exists for its quality, and whic
 ## Scope
 
 - Built and run by a single owner. No production traffic, no real customers, no service-level commitments.
-- Intended workload: a small number of outlets, run locally or in one small cloud environment once the AWS roadmap in the [README](../README.md#roadmap-aws-planned-not-built) is delivered. No capacity figure is established.
+- Intended workload: a small number of outlets, run locally or in one small cloud environment once the AWS runtime architecture in the [README](../README.md#aws-deployment-status-and-roadmap) is delivered. Today only CI and the CDK-defined ECR repository exist; the runtime is not deployed. No capacity figure is established.
 - Single region, single database, single container image. No multi-region, disaster-recovery or high-availability design.
 - Out of scope today: real payment-gateway integration (payments are recorded, not processed), tax filing, fiscal printer integration, offline till operation, and multi-tenant isolation.
 

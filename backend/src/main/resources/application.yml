@@ -45,6 +45,10 @@ pos:
     login-throttle:
       max-failures: 10
       window: 5m
+  bootstrap:
+    # One-time first-run set-up of a fresh non-local database. Off by default; the credential
+    # properties (POS_BOOTSTRAP_*) deliberately have no values here. See README.md.
+    enabled: ${POS_BOOTSTRAP_ENABLED:false}
 
 ---
 # Local development: demo catalogue + demo staff, and throwaway secrets.
