@@ -129,7 +129,19 @@ Operational sequence:
 
 1. Deploy with `POS_BOOTSTRAP_ENABLED=true` and the variables above set, and start the application once.
 2. Check access: sign in to the dashboard as head office and as the manager, set up a till with the manager PIN, then sign in at the till.
-3. Redeploy with `POS_BOOTSTRAP_ENABLED` unset (or `false`) and every `POS_BOOTSTRAP_*` credential variable removed. The initializer creates only this initial head-office account and manager; further staff and outlet administration is not implemented. A fresh non-local database also has an empty catalogue: head office builds it in the dashboard under Items & Prices, by adding a folder (naming its till-grid tab) and then items in it. Nothing is seeded outside the `local` profile.
+3. Redeploy with `POS_BOOTSTRAP_ENABLED` unset (or `false`) and every `POS_BOOTSTRAP_*` credential variable removed. The initializer creates only this initial head-office account and manager; further staff and outlet administration is not implemented. A fresh non-local database also has an empty catalogue: head office builds it in the dashboard under Items & Prices, by adding a folder (naming its till-grid tab) and then items in it. Nothing is seeded outside the `local` profile unless you load the demo catalogue (below).
+
+### Demo catalogue for a non-local database (temporary)
+
+To start from the demo range instead of an empty catalogue, set `POS_DEMO_CATALOG_ENABLED=true` for one start-up. The application then runs `backend/src/main/resources/db/demo/R__demo_catalog.sql` unchanged, in one transaction after the migrations, the same file the `local` profile loads. It creates the demo tabs, folders, items, gift-box option groups and options, promotions and discounts. It creates no outlets, accounts, staff, customers, sales or vouchers, and it refuses to start together with the `local` profile. If any statement fails, nothing is changed and start-up stops.
+
+The script is idempotent, but it makes the catalogue match itself: folders and items it does not list are taken off the till and deactivated (never deleted), and listed prices and promotion and discount settings are reset. Use it on a fresh database, not after head office has started editing.
+
+1. Start once with `POS_DEMO_CATALOG_ENABLED=true`.
+2. Verify in the dashboard (Items & Prices, Discounts) and at a till.
+3. Redeploy with `POS_DEMO_CATALOG_ENABLED` unset or `false`.
+
+Issued vouchers are not part of this: head office creates voucher batches separately in the dashboard under Vouchers.
 
 If the credentials are held in AWS Secrets Manager, removing them from the current secret value does not erase the previous encrypted version, which Secrets Manager keeps until the secret is deleted. Use this workflow only with synthetic, temporary credentials; the AWS steps are in [infrastructure/README.md](infrastructure/README.md).
 
