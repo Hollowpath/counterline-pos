@@ -23,6 +23,23 @@ describe('useCountdown', () => {
     expect(onElapsed).toHaveBeenCalledTimes(1)
   })
 
+  it('shows a changed duration in full on the render that receives it, never the old count', () => {
+    vi.useFakeTimers()
+    const shown: number[] = []
+    const { rerender } = renderHook(({ seconds }) => {
+      const left = useCountdown(seconds, true, () => {})
+      shown.push(left)
+      return left
+    }, { initialProps: { seconds: 15 } })
+    act(() => vi.advanceTimersByTime(2000))
+    shown.length = 0
+
+    rerender({ seconds: 5 })
+    // Every render from the change on, including the first, is already counting from 5.
+    expect(shown.length).toBeGreaterThan(0)
+    expect(Math.max(...shown)).toBe(5)
+  })
+
   it('waits while not running, and starts again in full when the restart key changes', () => {
     vi.useFakeTimers()
     const onElapsed = vi.fn()

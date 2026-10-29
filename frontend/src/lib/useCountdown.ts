@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from 'react'
  * for showing "Closing in 4s". Restarts whenever `running` turns true again, or `restartKey` changes.
  */
 export function useCountdown(seconds: number, running: boolean, onElapsed: () => void, restartKey = 0): number {
-  const [left, setLeft] = useState(seconds)
+  // The count belongs to the duration it was started for: a new duration shows in full on the very
+  // render that receives it, not one render later when the effect restarts the timer.
+  const [count, setCount] = useState({ seconds, restartKey, left: seconds })
   // The latest callback, so a parent re-render doesn't restart the countdown.
   const onElapsedRef = useRef(onElapsed)
   useEffect(() => {
@@ -14,11 +16,11 @@ export function useCountdown(seconds: number, running: boolean, onElapsed: () =>
 
   useEffect(() => {
     if (!running) return
-    setLeft(seconds)
+    setCount({ seconds, restartKey, left: seconds })
     let remaining = seconds
     const timer = window.setInterval(() => {
       remaining -= 1
-      setLeft(remaining)
+      setCount({ seconds, restartKey, left: remaining })
       if (remaining <= 0) {
         window.clearInterval(timer)
         onElapsedRef.current()
@@ -27,5 +29,5 @@ export function useCountdown(seconds: number, running: boolean, onElapsed: () =>
     return () => window.clearInterval(timer)
   }, [seconds, running, restartKey])
 
-  return left
+  return count.seconds === seconds && count.restartKey === restartKey ? count.left : seconds
 }
