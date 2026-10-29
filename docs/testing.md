@@ -52,10 +52,11 @@ The Docker image build skips tests (`-DskipTests`); run them separately before b
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` (GitHub Actions, workflow `CI`) runs on pushes to `main`, on pull requests and on manual dispatch. It has two independent jobs on `ubuntu-latest`, with read-only repository permissions and no secrets:
+`.github/workflows/ci.yml` (GitHub Actions, workflow `CI`) runs on pushes to `main`, on pull requests and on manual dispatch. It has three independent jobs on `ubuntu-latest`, with read-only repository permissions and no secrets:
 
 - **Backend:** Java 21 (Temurin) with the Maven cache, then `sh ./mvnw -B verify` in `backend`. This runs the full backend suite, with PostgreSQL provided by Testcontainers through the runner's Docker, and packages the Spring Boot jar.
 - **Frontend:** Node.js 22 with the npm cache, then `npm ci`, `npm run lint`, `npm test` and `npm run build` in `frontend`, as separate steps.
+- **Infrastructure:** Node.js 22 with the npm cache, then `npm ci`, `npm run build` (type-check) and `npm test` in `infrastructure`. These are the synthesis tests described below. The job needs no AWS credentials, contacts no AWS service, and runs no `cdk diff`, `synth` or `deploy`.
 
 A newer run on the same ref cancels an older one still in progress. GitHub Dependabot alerts are enabled for the repository; they are reported by GitHub, not by this workflow.
 
@@ -79,5 +80,5 @@ Synthesis tests show what the template asks for, not what AWS does with it. They
 - **No contract tests** between frontend and backend types or between the dashboard and the API.
 - **No coverage measurement** is configured, so coverage is unknown.
 - **No performance, load or security testing** (image scanning, penetration testing). Dependency alerts come from GitHub Dependabot only; no scan runs in CI. Concurrency behaviour (locking, idempotent payments) is covered only to the extent the integration tests exercise it.
-- **No tests of the packaged image** or of the Compose `app` profile. CI does not run the infrastructure tests.
+- **No tests of the packaged image** or of the Compose `app` profile. CI runs the infrastructure synthesis tests but never deploys, and its result says nothing about what AWS does with the template.
 - **Local state.** Running the API (not the tests) against the shared Compose database runs migrations on it.
