@@ -12,7 +12,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.Locale;
 
 /**
@@ -24,8 +28,15 @@ import java.util.Locale;
 public class DashboardAuthService {
 
     private static final Logger log = LoggerFactory.getLogger(DashboardAuthService.class);
-    /** Throttle key prefix: wrong passwords are counted per client address. */
+    /**
+     * Wrong passwords are counted twice: per account (the e-mail typed, whether or not it exists, so the
+     * answer never tells which e-mails are accounts) and per client address, as a wider net. One account's
+     * failures therefore never lock a different account that shares the address; the address locks only
+     * after {@value #ADDRESS_FAILURE_FACTOR} times as many failures as one account does.
+     */
     private static final String DASHBOARD = "dashboard:";
+    private static final String ACCOUNT = "dashboard-account:";
+    static final int ADDRESS_FAILURE_FACTOR = 5;
 
     private final AdminUserRepository adminRepository;
     private final StaffRepository staffRepository;
@@ -54,11 +65,12 @@ public class DashboardAuthService {
 
     /** Head office (every outlet) or an outlet manager (their outlet), by email and password. */
     public DashboardLoginResponse login(String email, String password, String client) {
-        limiter.checkAllowed(DASHBOARD + client);
         String normalised = email.strip().toLowerCase(Locale.ROOT);
+        limiter.checkAllowed(DASHBOARD + client);
+        limiter.checkAllowed(accountKey(normalised));
         AdminUser admin = adminRepository.findByEmailAndActiveTrue(normalised).orElse(null);
         if (admin != null) {
-            requirePassword(password, admin.getPasswordHash(), client);
+            requirePassword(password, admin.getPasswordHash(), client, normalised);
             IssuedToken token = tokenService.issueAdmin(admin);
             log.info("Admin {} logged in to the dashboard", admin.getId());
             return new DashboardLoginResponse(token.value(), token.expiresAt(), admin.getFullName(), TokenService.ADMIN_ROLE,
@@ -67,7 +79,7 @@ public class DashboardAuthService {
         Staff manager = staffRepository.findByEmailAndActiveTrue(normalised)
                 .filter(staff -> staff.getRole() == StaffRole.MANAGER)
                 .orElse(null);
-        requirePassword(password, manager == null ? null : manager.getPasswordHash(), client);
+        requirePassword(password, manager == null ? null : manager.getPasswordHash(), client, normalised);
         IssuedToken token = tokenService.issueDashboard(manager);
         log.info("Manager {} logged in to the dashboard", manager.getId());
         return new DashboardLoginResponse(token.value(), token.expiresAt(), manager.getFullName(), StaffRole.MANAGER.name(),
@@ -75,12 +87,36 @@ public class DashboardAuthService {
     }
 
     /** {@code hash} null for an unknown email: checked anyway, so it takes as long as a wrong password. */
-    private void requirePassword(String password, String hash, String client) {
+    private void requirePassword(String password, String hash, String client, String normalisedEmail) {
         boolean matches = passwordEncoder.matches(password, hash == null ? unknownUserHash : hash);
         if (hash == null || !matches) {
-            limiter.recordFailure(DASHBOARD + client);
+            recordFailure(client, normalisedEmail);
             log.warn("Failed dashboard login from {}", client);
             throw new InvalidPinException("Wrong email or password");
+        }
+    }
+
+    /** Counts the failure against the account and the address; either reaching its limit locks that key. */
+    private void recordFailure(String client, String normalisedEmail) {
+        TooManyLoginAttemptsException addressLocked = null;
+        try {
+            limiter.recordFailure(DASHBOARD + client, limiter.maxFailures() * ADDRESS_FAILURE_FACTOR);
+        } catch (TooManyLoginAttemptsException e) {
+            addressLocked = e;
+        }
+        limiter.recordFailure(accountKey(normalisedEmail));
+        if (addressLocked != null) {
+            throw addressLocked;
+        }
+    }
+
+    /** A hash of the typed e-mail, so the key has a fixed length and no e-mail (real or not) is stored in it. */
+    static String accountKey(String normalisedEmail) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(normalisedEmail.getBytes(StandardCharsets.UTF_8));
+            return ACCOUNT + HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
         }
     }
 }

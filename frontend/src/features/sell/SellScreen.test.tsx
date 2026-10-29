@@ -66,6 +66,16 @@ describe('SellScreen', () => {
     expect(onSaleOpenChange).toHaveBeenLastCalledWith(true)
   })
 
+  it('names the 123 tab by what it shows, and describes it as the custom amount', async () => {
+    stubApi({ '/api/v1/catalog/tabs': () => jsonResponse(tabs) })
+    render(<SellScreen onOpenMenu={() => {}} />)
+    await screen.findByRole('button', { name: /popcorn pouch/i })
+
+    const tab = screen.getByRole('button', { name: '123' })
+    expect(tab).toHaveAccessibleDescription('Custom amount')
+    expect(screen.queryByRole('button', { name: 'Custom amount' })).not.toBeInTheDocument()
+  })
+
   it('builds a sale by opening a folder and tapping items', async () => {
     stubApi({
       '/api/v1/catalog/tabs': () => jsonResponse(tabs),

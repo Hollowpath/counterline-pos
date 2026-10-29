@@ -51,6 +51,11 @@ public class LoginAttemptLimiter {
         this.clock = clock;
     }
 
+    /** The failures in a row that lock an ordinary key (a PIN pad, one account). */
+    public int maxFailures() {
+        return maxFailures;
+    }
+
     /** A key that is locked now, and until when. */
     public record Lock(String key, Instant lockedUntil) {
     }
@@ -81,6 +86,11 @@ public class LoginAttemptLimiter {
      * @throws TooManyLoginAttemptsException if this was the last try: the key is now locked
      */
     public int recordFailure(String key) {
+        return recordFailure(key, maxFailures);
+    }
+
+    /** As {@link #recordFailure(String)}, for a key with a limit of its own (a wider net than one account's). */
+    public int recordFailure(String key, int limit) {
         Instant now = clock.instant();
         Row row = ownTransaction.execute(status -> {
             // Rows that no longer count: the last wrong attempt is a window ago, or the lock is over.
@@ -90,7 +100,7 @@ public class LoginAttemptLimiter {
                     + "ON CONFLICT (throttle_key) DO NOTHING", key, Timestamp.from(now)) == 1;
             // Row lock: two wrong attempts at once both count.
             int failures = first ? 1 : find(key, true).orElseThrow().failures() + 1;
-            Instant lockedUntil = failures >= maxFailures ? now.plus(window) : null;
+            Instant lockedUntil = failures >= limit ? now.plus(window) : null;
             jdbc.update("UPDATE login_throttle SET failures = ?, last_failed_at = ?, locked_until = ? WHERE throttle_key = ?",
                     failures, Timestamp.from(now), lockedUntil == null ? null : Timestamp.from(lockedUntil), key);
             return new Row(failures, lockedUntil);
@@ -98,7 +108,7 @@ public class LoginAttemptLimiter {
         if (row.lockedUntil() != null) {
             throw locked(key, row.lockedUntil(), now);
         }
-        return maxFailures - row.failures();
+        return limit - row.failures();
     }
 
     /** Unlocks the key at once, and forgets its wrong attempts. */

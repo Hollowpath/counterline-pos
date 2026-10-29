@@ -133,7 +133,7 @@ describe('item options and discounts', () => {
     await user.click(await screen.findByRole('button', { name: /Order 10%/ }))
     expect(cart().getByTestId('cart-total')).toHaveTextContent('RM14.40')
 
-    await user.click(screen.getByRole('button', { name: 'Custom amount' }))
+    await user.click(screen.getByRole('button', { name: '123' }))
     for (const key of ['1', '2', '5', '0']) await user.click(screen.getByRole('button', { name: key }))
     expect(screen.getByLabelText('Amount entered')).toHaveTextContent('RM12.50')
     await user.click(screen.getByRole('button', { name: 'Add custom amount' }))

@@ -25,7 +25,7 @@ import { cartNotice, lineDetail, removeX } from './styles'
 const NEEDS_MEMBER = 'Add member'
 
 /** The sale on the right of the Point of Sale (below the grid on a phone). */
-const cartPanel = 'z-[1] flex min-h-0 flex-col bg-white shadow-[-8px_0_24px_-12px_rgb(24_24_27/0.15)] ring-1 ring-zinc-900/5 max-md:shadow-[0_-8px_24px_-12px_rgb(24_24_27/0.2)]'
+const cartPanel = 'z-[1] flex min-h-0 flex-col bg-white max-md:overflow-y-auto shadow-[-8px_0_24px_-12px_rgb(24_24_27/0.15)] ring-1 ring-zinc-900/5 max-md:shadow-[0_-8px_24px_-12px_rgb(24_24_27/0.2)]'
 /** A label beside the member's name (New Member, Owed). */
 const tag = 'inline-flex shrink-0 rounded-full px-2 py-0.5 align-middle text-[0.65rem] font-semibold whitespace-nowrap ring-1 ring-inset'
 /** A tapped label's details, under the member's name. */
@@ -224,7 +224,7 @@ export function CartPanel({
       )}
 
       {/* Charged items first (those counting towards Buy 3 at the top), free items last. */}
-      <ul className="list-none overflow-y-auto px-2">
+      <ul className="list-none overflow-y-auto px-2 max-md:shrink-0">
         {sortedLines(cart.lines).map((line, index, lines) => (
           <li
             key={line.key}
@@ -296,7 +296,7 @@ export function CartPanel({
       ))}
 
       <textarea
-        className="mx-4 mb-3 min-h-16 flex-1 resize-none rounded-xl bg-zinc-50 px-3 py-2 text-sm text-zinc-900 ring-1 ring-zinc-200/70 transition ring-inset placeholder:text-zinc-400 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+        className="mx-4 mb-3 min-h-16 flex-1 resize-none max-md:flex-none rounded-xl bg-zinc-50 px-3 py-2 text-sm text-zinc-900 ring-1 ring-zinc-200/70 transition ring-inset placeholder:text-zinc-400 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
         placeholder="Enter an order note…"
         aria-label="Order note"
         value={cart.note}
@@ -319,6 +319,8 @@ export function CartPanel({
         </ul>
       )}
 
+      {/* On a phone the sale scrolls above its total and the Place Order / Pay buttons, which stay in view. */}
+      <div className="max-md:sticky max-md:bottom-0 max-md:z-[1] max-md:bg-white">
       <footer className="mx-3 flex items-baseline justify-between rounded-t-2xl bg-zinc-100 px-4 pt-3 pb-2 text-zinc-900 ring-1 ring-zinc-200/70 ring-inset">
         <span className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
           {itemCount} {itemCount === 1 ? 'Item' : 'Items'}
@@ -332,6 +334,7 @@ export function CartPanel({
         <button type="button" className="rounded-xl bg-zinc-300 px-2 py-3.5 text-base font-bold text-zinc-800 transition enabled:hover:bg-zinc-400/70 enabled:active:scale-[0.98]" disabled={empty || busy || blocked} onClick={onPay}>
           Pay
         </button>
+      </div>
       </div>
     </aside>
   )

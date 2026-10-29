@@ -265,7 +265,7 @@ function ItemRow({ item, folderId, folders, folderItemIds, canReorder, onChanged
       </td>
       <td className="whitespace-nowrap">
         <button type="button" className="btn btn-primary" disabled={!changed || incomplete || name.trim() === '' || price === ''}
-          onClick={() => void save()}>
+          aria-label={`Save ${saved.name}`} onClick={() => void save()}>
           Save
         </button>
         <Status status={status} />

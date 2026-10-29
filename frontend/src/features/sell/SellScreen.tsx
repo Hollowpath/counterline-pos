@@ -317,7 +317,7 @@ export function SellScreen({
         <button
           type="button"
           className={appBarTab}
-          aria-label="Custom amount"
+          title="Custom amount"
           aria-current={view.kind === 'keypad' ? 'page' : undefined}
           onClick={() => setView({ kind: 'keypad' })}
         >

@@ -221,7 +221,7 @@ describe('back-office dashboard', () => {
     await user.click(await nav().findByRole('button', { name: 'Items & Prices' }))
 
     const price = await screen.findByLabelText('Price of WSP Caramel')
-    const save = within(price.closest('tr')!).getByRole('button', { name: 'Save' })
+    const save = within(price.closest('tr')!).getByRole('button', { name: 'Save WSP Caramel' })
     expect(save).toBeDisabled()
     expect(screen.getByText('Free with Buy 3 Free 1 Promo')).toBeInTheDocument()
     await user.clear(price)
@@ -381,6 +381,20 @@ describe('back-office dashboard', () => {
       expect(await screen.findByText('Deleted B3 F1 BC Caramel')).toBeInTheDocument()
     })
 
+    it('gives every item row its own Save button, named after the item', async () => {
+      stubApi()
+      const user = userEvent.setup()
+      await openItems(user)
+
+      const table = screen.getByLabelText('Price of WSP Caramel').closest('table')!
+      const saves = within(table).getAllByRole('button', { name: /^Save / })
+      const names = saves.map((button) => button.getAttribute('aria-label'))
+      expect(names).toEqual(expect.arrayContaining(['Save WSP Caramel', 'Save B3 F1 BC Caramel']))
+      expect(new Set(names).size).toBe(names.length)
+      // No Save button in the table is left with only the word "Save" to say what it saves.
+      expect(within(table).queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    })
+
     it('reorders an item and moves it to another folder', async () => {
       const calls = stubApi()
       const user = userEvent.setup()
@@ -428,9 +442,9 @@ describe('back-office dashboard', () => {
     await user.click(await screen.findByLabelText('WSP Caramel is a seasonal flavour'))
     const row = screen.getByLabelText('Price of WSP Caramel').closest('tr')!
     // A seasonal flavour is for a limited time: no saving without its last day.
-    expect(within(row).getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(within(row).getByRole('button', { name: 'Save WSP Caramel' })).toBeDisabled()
     await user.type(within(row).getByLabelText('WSP Caramel seasonal until'), '2026-12-31')
-    await user.click(within(row).getByRole('button', { name: 'Save' }))
+    await user.click(within(row).getByRole('button', { name: 'Save WSP Caramel' }))
 
     expect(await within(row).findByText('Saved')).toBeInTheDocument()
     expect(calls.find((call) => call.key === 'PUT /api/v1/dashboard/catalog/items/7')!.body)
