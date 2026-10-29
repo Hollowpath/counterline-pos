@@ -51,7 +51,7 @@ export function ManagerActionDialog({ title, confirmLabel, description, needsApp
 
   if (needsApproval && !approval) {
     return (
-      <Dialog title="Special Access Required">
+      <Dialog title="Special Access Required" onClose={onCancel}>
         <p className="mb-5 rounded-xl bg-orange-50 px-3 py-2.5 text-sm text-orange-800 ring-1 ring-orange-200 ring-inset">Manager PIN</p>
         <PinEntry onSubmit={approve} lockStatus={tillLockStatus} />
         <div className={dialogActions}>
@@ -64,7 +64,7 @@ export function ManagerActionDialog({ title, confirmLabel, description, needsApp
   }
 
   return (
-    <Dialog title={title}>
+    <Dialog title={title} onClose={submitting ? undefined : onCancel}>
       <div className="text-sm text-zinc-600 [&_p]:mb-3">{description}</div>
       {approval && <p className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700 ring-1 ring-green-200 ring-inset before:content-['✓']">Approved by {approval.managerName}</p>}
       <form onSubmit={confirm}>

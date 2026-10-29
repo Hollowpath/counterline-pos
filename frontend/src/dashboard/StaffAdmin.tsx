@@ -1,13 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { deleteJson, postJson, putJson } from '../api/http'
 import { useApi } from '../api/useApi'
+import { useConfirm } from '../components/confirmContext'
 import { LoadState } from '../components/LoadState'
-import { confirmed, message } from './catalogHelpers'
-import { field, note, noticeClass, sectionTitle, table, tableFrame } from './styles'
-import { dashboardPaths, type AdminOutlet, type AdminStaff } from './types'
+import { message } from './catalogHelpers'
+import { field, note, noticeClass, sectionTitle, table, tableAsCards, tableFrame } from './styles'
+import { dashboardPaths, type AdminOutlet, type AdminStaff, type Notice } from './types'
 import { Page } from './ui'
 
-type Notice = { tone: 'ok' | 'error'; text: string } | null
 type Role = AdminStaff['role']
 
 const ROLES: { value: Role; label: string }[] = [
@@ -24,7 +24,7 @@ export function StaffAdmin() {
   const outlets = useApi<AdminOutlet[]>(dashboardPaths.adminOutlets)
   const [outletId, setOutletId] = useState<number | null>(null)
   const staff = useApi<AdminStaff[]>(dashboardPaths.adminStaff(outletId))
-  const [notice, setNotice] = useState<Notice>(null)
+  const [notice, setNotice] = useState<Notice | null>(null)
 
   if (outlets.status !== 'success') {
     return <LoadState status={outlets.status} message={outlets.status === 'error' ? outlets.message : undefined} onRetry={outlets.reload} />
@@ -64,7 +64,7 @@ export function StaffAdmin() {
           <p className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">No staff yet.</p>
         ) : (
           <div className={tableFrame}>
-            <table className={table}>
+            <table className={`${table} ${tableAsCards}`}>
               <thead>
                 <tr>
                   <th>Name</th>
@@ -172,6 +172,7 @@ function StaffRow({ member, outlets, onChanged, onError }: {
   onChanged: (text: string) => void
   onError: (text: string) => void
 }) {
+  const confirm = useConfirm()
   const [fullName, setFullName] = useState(member.fullName)
   const [role, setRole] = useState<Role>(member.role)
   const [outletId, setOutletId] = useState(member.outletId)
@@ -193,9 +194,9 @@ function StaffRow({ member, outlets, onChanged, onError }: {
     }
   }
 
-  function save() {
+  async function save() {
     if (member.role === 'MANAGER' && role === 'STAFF' && member.email !== null
-      && !confirmed(`Make ${name} a cashier? A cashier has no dashboard login, so theirs is removed.`)) return
+      && !await confirm({ title: `Make ${name} a cashier?`, message: 'A cashier has no dashboard login, so theirs is removed and any dashboard session ends. They keep their till PIN.', confirmLabel: 'Make cashier' })) return
     void run(() => putJson(dashboardPaths.adminStaffMember(member.id), { fullName, role, outletId }), `Saved ${fullName}`)
   }
 
@@ -211,22 +212,22 @@ function StaffRow({ member, outlets, onChanged, onError }: {
     <>
     <tr>
       <td>
-        <input className={field} aria-label={`Name of ${name}`} value={fullName} maxLength={120} onChange={(event) => setFullName(event.target.value)} />
+        <input className={`${field} w-full min-w-40`} aria-label={`Name of ${name}`} value={fullName} maxLength={120} onChange={(event) => setFullName(event.target.value)} />
         {member.email && <span className={note}>Dashboard login: {member.email}</span>}
       </td>
-      <td>
+      <td data-label="Role">
         <select className={field} aria-label={`Role of ${name}`} value={role} onChange={(event) => setRole(event.target.value as Role)}>
           {ROLES.map((entry) => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
         </select>
       </td>
-      <td>
+      <td data-label="Outlet">
         <select className={field} aria-label={`Outlet of ${name}`} value={outletId} onChange={(event) => setOutletId(Number(event.target.value))}>
           {outlets.filter((outlet) => outlet.active || outlet.id === member.outletId).map((outlet) => (
             <option key={outlet.id} value={outlet.id}>{outlet.code} · {outlet.name}{outlet.active ? '' : ' (closed)'}</option>
           ))}
         </select>
       </td>
-      <td>{member.active ? 'Active' : 'Deactivated'}</td>
+      <td data-label="Status">{member.active ? 'Active' : 'Deactivated'}</td>
       <td className="text-right">
         <div className="flex flex-wrap items-center justify-end gap-2">
           {newPin === null ? (
@@ -248,11 +249,11 @@ function StaffRow({ member, outlets, onChanged, onError }: {
               Dashboard login
             </button>
           )}
-          <button type="button" className="btn" disabled={busy || !dirty} aria-label={`Save ${name}`} onClick={save}>Save</button>
+          <button type="button" className="btn" disabled={busy || !dirty} aria-label={`Save ${name}`} onClick={() => void save()}>Save</button>
           {member.active ? (
             <button type="button" className="btn btn-danger" disabled={busy} aria-label={`Deactivate ${name}`}
-              onClick={() => {
-                if (!confirmed(`Deactivate ${name}? They can no longer sign in. Their past sales and timecards are kept.`)) return
+              onClick={async () => {
+                if (!await confirm({ title: `Deactivate ${name}?`, message: 'They can no longer sign in. Their past sales and timecards are kept, and they can be reactivated.', confirmLabel: 'Deactivate' })) return
                 void run(() => postJson(dashboardPaths.adminStaffAction(member.id, 'deactivate'), {}), `Deactivated ${name}`)
               }}>
               Deactivate
@@ -287,6 +288,7 @@ function LoginPanel({ member, onChanged, onError }: {
   onChanged: (text: string) => void
   onError: (text: string) => void
 }) {
+  const confirm = useConfirm()
   const hasLogin = member.email !== null
   const [email, setEmail] = useState(member.email ?? '')
   const [password, setPassword] = useState('')
@@ -336,8 +338,8 @@ function LoginPanel({ member, onChanged, onError }: {
       </button>
       {hasLogin && (
         <button type="button" className="btn btn-danger" disabled={busy} aria-label={`Remove dashboard login of ${name}`}
-          onClick={() => {
-            if (!confirmed(`Remove the dashboard login of ${name}? They can still sign in at the till with their PIN.`)) return
+          onClick={async () => {
+            if (!await confirm({ title: `Remove the dashboard login of ${name}?`, message: 'Their dashboard session ends. They can still sign in at the till with their PIN.', confirmLabel: 'Remove login' })) return
             void run(() => deleteJson(dashboardPaths.adminStaffLogin(member.id)), `Removed the dashboard login of ${name}`)
           }}>
           Remove login

@@ -125,7 +125,7 @@ export function CustomerForm({ customer, onSaved, onDeleted, onCancel }: Custome
   }
 
   return (
-    <Dialog title={customer ? 'Edit Customer' : 'Add Customer'} wide>
+    <Dialog title={customer ? 'Edit Customer' : 'Add Customer'} wide onClose={busy ? undefined : onCancel}>
       <form className={form} onSubmit={save}>
         {customer && onDeleted && (
           <div className="flex flex-wrap items-center gap-2">

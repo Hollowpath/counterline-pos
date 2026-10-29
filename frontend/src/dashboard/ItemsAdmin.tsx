@@ -1,13 +1,14 @@
 import { useState, type FormEvent } from 'react'
 import { ApiError, deleteJson, postJson, putJson } from '../api/http'
 import { useApi } from '../api/useApi'
+import { useConfirm } from '../components/confirmContext'
 import { LoadState } from '../components/LoadState'
 import { formatDate } from '../lib/dates'
-import { checkbox, field, note, sectionTitle, table, tableAsCards, tableFrame } from './styles'
-import { confirmed, moved } from './catalogHelpers'
+import { checkbox, field, note, noticeClass, sectionTitle, table, tableAsCards, tableFrame } from './styles'
+import { moved } from './catalogHelpers'
 import { FolderToolbar, TabsPanel } from './CatalogStructure'
 import { ModifiersEditor } from './ModifiersEditor'
-import { dashboardPaths, type AdminCategory, type AdminItem, type Removal } from './types'
+import { dashboardPaths, type AdminCategory, type AdminItem, type Notice, type Removal } from './types'
 import { Page, Status } from './ui'
 
 function message(error: unknown) {
@@ -25,7 +26,7 @@ export function ItemsAdmin() {
   const [filter, setFilter] = useState('')
   const [showOffGrid, setShowOffGrid] = useState(false)
   // What the last structural change did, kept across the reload that follows it.
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<Notice | null>(null)
 
   if (catalogue.status !== 'success') {
     return <LoadState status={catalogue.status} message={catalogue.status === 'error' ? catalogue.message : undefined} onRetry={catalogue.reload} />
@@ -66,7 +67,7 @@ export function ItemsAdmin() {
         </>
       }
     >
-      {notice && <p className="text-sm font-medium text-zinc-700" role="status">{notice}</p>}
+      {notice && <p className={noticeClass(notice.tone)} role={notice.tone === 'error' ? 'alert' : 'status'}>{notice.text}</p>}
       <NewFolderForm
         tabs={tabNames}
         empty={catalogue.data.length === 0}
@@ -168,8 +169,9 @@ function ItemRow({ item, folderId, folders, folderItemIds, canReorder, onChanged
   folderItemIds: number[]
   canReorder: boolean
   onChanged: () => void
-  onNotice: (text: string | null) => void
+  onNotice: (notice: Notice | null) => void
 }) {
+  const confirm = useConfirm()
   const [showOptions, setShowOptions] = useState(false)
   const [saved, setSaved] = useState(item)
   const [name, setName] = useState(item.name)
@@ -203,10 +205,10 @@ function ItemRow({ item, folderId, folders, folderItemIds, canReorder, onChanged
     onNotice(null)
     try {
       const result = await action()
-      onNotice(done(result))
+      onNotice({ tone: 'ok', text: done(result) })
       onChanged()
     } catch (error) {
-      onNotice(message(error))
+      onNotice({ tone: 'error', text: message(error) })
     }
   }
   const order = (by: -1 | 1) => {
@@ -286,8 +288,8 @@ function ItemRow({ item, folderId, folders, folderItemIds, canReorder, onChanged
           <button type="button" className="btn" aria-expanded={showOptions} aria-label={`Options of ${saved.name}`}
             onClick={() => setShowOptions(!showOptions)}>Options</button>
           <button type="button" className="btn" aria-label={`Remove ${saved.name}`}
-            onClick={() => {
-              if (confirmed(`Remove ${saved.name}? If it has been sold it is only taken off sale, so past sales stay intact.`)) {
+            onClick={async () => {
+              if (await confirm({ title: `Remove ${saved.name}?`, message: 'An item that has been sold is only taken off sale, so past sales stay intact; one that was never sold is deleted.', confirmLabel: 'Remove item' })) {
                 void structural(() => deleteJson<Removal>(dashboardPaths.item(item.id)), (result) =>
                   (result as Removal).outcome === 'DELETED'
                     ? `Deleted ${saved.name}`

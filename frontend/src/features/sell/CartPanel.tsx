@@ -131,13 +131,13 @@ export function CartPanel({
         </button>
       </header>
 
-      <div className="mx-3 my-2.5 flex min-h-11 items-center justify-between gap-2 rounded-xl bg-zinc-50 px-3 py-1 text-sm ring-1 ring-zinc-200/70 ring-inset">
+      <div className="mx-3 my-2.5 flex min-h-11 shrink-0 items-center justify-between gap-2 rounded-xl bg-zinc-50 px-3 py-1 text-sm ring-1 ring-zinc-200/70 ring-inset">
         {cart.customer ? (
           <>
             {/* The whole name, then its labels (they move to the next line rather than cover it), the phone number under them. */}
-            <span className="flex min-w-0 flex-col py-0.5">
+            <span className="flex min-w-0 flex-1 flex-col py-0.5">
               <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
-                <strong className="font-semibold break-words text-zinc-900">{cart.customer.name}</strong>
+                <strong className="font-semibold [overflow-wrap:anywhere] text-zinc-900">{cart.customer.name}</strong>
                 {perks?.birthdayMonth && (
                   <span className="shrink-0 text-[1.25rem] leading-none" role="img" aria-label="Birthday month" title="Birthday month">
                     🎂
@@ -165,7 +165,7 @@ export function CartPanel({
                   </button>
                 ))}
               </span>
-              {cart.customer.phone && <span className="text-xs text-zinc-500 tabular-nums">{maskPhone(cart.customer.phone)}</span>}
+              {cart.customer.phone && <span className="text-xs whitespace-nowrap text-zinc-500 tabular-nums">{maskPhone(cart.customer.phone)}</span>}
             </span>
             <button
               type="button"
@@ -196,7 +196,7 @@ export function CartPanel({
         </p>
       ))}
       {loyalty && (
-        <div className="flex items-stretch gap-1 px-3 pt-1 pb-2 text-[0.6rem]" data-testid="points-preview" aria-label="Loyalty points">
+        <div className="flex shrink-0 items-stretch gap-1 px-3 pt-1 pb-2 text-[0.6rem]" data-testid="points-preview" aria-label="Loyalty points">
           <span className={`${pointsBox} bg-zinc-50 ring-zinc-200/70 [&_strong]:text-zinc-900`}>
             <span>Current points</span>
             <strong>{loyalty.before}</strong>

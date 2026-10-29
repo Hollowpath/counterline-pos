@@ -53,7 +53,7 @@ export function VoucherDialog({ onApply, onCancel }: VoucherDialogProps) {
   }
 
   return (
-    <Dialog title="Voucher">
+    <Dialog title="Voucher" onClose={onCancel}>
       <form className="flex items-end gap-2" onSubmit={(event) => void check(event)}>
         <label className="flex flex-1 flex-col gap-1.5 text-sm font-medium text-zinc-700">
           Voucher code

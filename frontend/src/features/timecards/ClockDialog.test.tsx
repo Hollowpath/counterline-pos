@@ -84,6 +84,30 @@ describe('ClockDialog', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('cannot be closed with Escape or the backdrop while the clock request is in flight', async () => {
+    let finish: (response: Response) => void = () => {}
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      if (String(input).endsWith('/pin-lock/CLOCK')) return Promise.resolve(json({ lockedForSeconds: 0 }))
+      if (String(input).endsWith('/status')) return Promise.resolve(json({ staffName: 'Aisyah Rahman', clockedIn: false, since: null }))
+      return new Promise<Response>((resolve) => { finish = resolve })
+    }))
+    const onClose = vi.fn()
+    const user = setUpUser()
+    render(<ClockDialog onClose={onClose} />)
+
+    await enterPin(user, '111111')
+    await screen.findByRole('status', { name: 'Not clocked in' })
+    await slide(user, 'Slide to Clock In')
+    await user.keyboard('{Escape}')
+    await user.pointer({ keys: '[MouseLeft]', target: screen.getByRole('dialog', { name: 'Clock In/Out' }).parentElement! })
+    expect(onClose).not.toHaveBeenCalled()
+
+    finish(json({ staffName: 'Aisyah Rahman', type: 'IN', at: '2026-10-12T01:02:00Z' }))
+    await vi.waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/Clocked in.*Aisyah Rahman ·/))
+    await user.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('shows someone clocked in with a green slide to Clock Out, then shows it in red', async () => {
     stubClock({ clockedIn: true, since: '2026-10-12T01:00:00Z' })
     const user = setUpUser()

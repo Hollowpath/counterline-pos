@@ -3,6 +3,7 @@ import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setAuthToken } from '../api/http'
 import { DashboardApp } from './DashboardApp'
+import { answerConfirm } from '../test/confirmDialog'
 import type { LiveSales, SalesOverview } from './types'
 
 function json(body: unknown, status = 200) {
@@ -64,6 +65,9 @@ function stubApi({ emptyCatalogue = false } = {}) {
     const key = `${init.method ?? 'GET'} ${url.pathname}`
     const body = init.body ? JSON.parse(String(init.body)) : null
     calls.push({ key, body })
+    if (key === 'PUT /api/v1/dashboard/catalog/folders/1' && body.name === 'Boom') {
+      return json({ title: 'Conflict', detail: 'A folder named Boom already exists' }, 409)
+    }
     const manager = new Headers(init.headers).get('Authorization') === 'Bearer manager-jwt'
     switch (key) {
       case 'POST /api/v1/dashboard/auth/login':
@@ -279,7 +283,6 @@ describe('back-office dashboard', () => {
 
     it('renames a folder and takes it off the till grid only after confirming', async () => {
       const calls = stubApi()
-      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
       const user = userEvent.setup()
       await openItems(user)
 
@@ -294,32 +297,53 @@ describe('back-office dashboard', () => {
 
       // Declined: nothing is sent. Accepted: the folder leaves the grid (tab null).
       await user.click(await screen.findByRole('button', { name: 'Remove White Stand Pouch from the till grid' }))
-      expect(confirm).toHaveBeenCalledTimes(1)
+      await answerConfirm(user, 'Remove White Stand Pouch from the till grid?', 'Cancel')
       expect(sent(calls, 'PUT /api/v1/dashboard/catalog/folders/1')).toHaveLength(1)
       await user.click(screen.getByRole('button', { name: 'Remove White Stand Pouch from the till grid' }))
+      await answerConfirm(user, 'Remove White Stand Pouch from the till grid?', 'Remove from grid')
       expect(await screen.findAllByText(/Saved/)).not.toHaveLength(0)
       expect(sent(calls, 'PUT /api/v1/dashboard/catalog/folders/1')[1].body).toMatchObject({ tab: null })
-      confirm.mockRestore()
+    })
+
+    it('shows a success notice in the green result banner and a failure in the red one, as the other pages do', async () => {
+      stubApi()
+      const user = userEvent.setup()
+      await openItems(user)
+
+      const name = screen.getByLabelText('Name of folder White Stand Pouch')
+      await user.clear(name)
+      await user.type(name, 'Boom')
+      await user.click(screen.getByRole('button', { name: 'Save folder White Stand Pouch' }))
+      const failure = await screen.findByText('A folder named Boom already exists')
+      expect(failure).toHaveAttribute('role', 'alert')
+      expect(failure).toHaveClass('bg-red-50', 'text-red-700')
+
+      await user.clear(screen.getByLabelText('Name of folder White Stand Pouch'))
+      await user.type(screen.getByLabelText('Name of folder White Stand Pouch'), 'Pouches')
+      await user.click(screen.getByRole('button', { name: 'Save folder White Stand Pouch' }))
+      const success = await screen.findByText('Saved Pouches')
+      expect(success).toHaveAttribute('role', 'status')
+      expect(success).toHaveClass('bg-green-50', 'text-green-700')
+      expect(screen.queryByText('A folder named Boom already exists')).not.toBeInTheDocument()
     })
 
     it('deletes only an empty folder, and only when confirmed', async () => {
       const calls = stubApi()
-      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
       const user = userEvent.setup()
       await openItems(user)
 
       expect(screen.getByRole('button', { name: 'Delete folder White Stand Pouch' })).toBeDisabled()
       await user.click(screen.getByRole('button', { name: 'Delete folder Empty Folder' }))
+      await answerConfirm(user, 'Delete the empty folder Empty Folder?', 'Cancel')
       expect(sent(calls, 'DELETE /api/v1/dashboard/catalog/folders/2')).toHaveLength(0)
       await user.click(screen.getByRole('button', { name: 'Delete folder Empty Folder' }))
+      await answerConfirm(user, 'Delete the empty folder Empty Folder?', 'Delete folder')
       expect(await screen.findByText('Deleted Empty Folder')).toBeInTheDocument()
       expect(sent(calls, 'DELETE /api/v1/dashboard/catalog/folders/2')).toHaveLength(1)
-      confirm.mockRestore()
     })
 
     it('renames, reorders and deletes tabs; a tab with folders cannot be deleted', async () => {
       const calls = stubApi()
-      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
       const user = userEvent.setup()
       await openItems(user)
 
@@ -333,26 +357,28 @@ describe('back-office dashboard', () => {
       expect(sent(calls, 'PUT /api/v1/dashboard/catalog/tabs/order')[0].body).toEqual({ ids: [2, 1] })
 
       await user.click(within(await screen.findByRole('region', { name: 'Tabs' })).getByRole('button', { name: 'Delete tab Gifts' }))
+      await answerConfirm(user, 'Delete the Gifts tab?', 'Cancel')
       expect(sent(calls, 'DELETE /api/v1/dashboard/catalog/tabs/2')).toHaveLength(0)
       await user.click(within(await screen.findByRole('region', { name: 'Tabs' })).getByRole('button', { name: 'Delete tab Gifts' }))
+      await answerConfirm(user, 'Delete the Gifts tab?', 'Delete tab')
       await vi.waitFor(() => expect(sent(calls, 'DELETE /api/v1/dashboard/catalog/tabs/2')).toHaveLength(1))
-      confirm.mockRestore()
     })
 
     it('removes an item after confirming: a sold one is only taken off sale, an unsold one is deleted', async () => {
       const calls = stubApi()
-      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
       const user = userEvent.setup()
       await openItems(user)
 
       await user.click(screen.getByRole('button', { name: 'Remove WSP Caramel' }))
+      await answerConfirm(user, 'Remove WSP Caramel?', 'Cancel')
       expect(sent(calls, 'DELETE /api/v1/dashboard/catalog/items/7')).toHaveLength(0)
       await user.click(screen.getByRole('button', { name: 'Remove WSP Caramel' }))
+      await answerConfirm(user, 'Remove WSP Caramel?', 'Remove item')
       expect(await screen.findByText('WSP Caramel was sold before: taken off sale, with its history kept')).toBeInTheDocument()
 
       await user.click(await screen.findByRole('button', { name: 'Remove B3 F1 BC Caramel' }))
+      await answerConfirm(user, 'Remove B3 F1 BC Caramel?', 'Remove item')
       expect(await screen.findByText('Deleted B3 F1 BC Caramel')).toBeInTheDocument()
-      confirm.mockRestore()
     })
 
     it('reorders an item and moves it to another folder', async () => {
@@ -372,7 +398,6 @@ describe('back-office dashboard', () => {
 
     it('manages an item’s option groups and options, keeping sold ones as inactive', async () => {
       const calls = stubApi()
-      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
       const user = userEvent.setup()
       await openItems(user)
 
@@ -386,10 +411,11 @@ describe('back-office dashboard', () => {
         .toEqual({ name: 'Cheese', price: 0 }))
 
       await user.click(await within(await screen.findByRole('group', { name: 'Options of WSP Caramel' })).findByRole('button', { name: 'Remove option Matcha' }))
+      await answerConfirm(user, 'Remove the Matcha option?', 'Cancel')
       expect(sent(calls, 'DELETE /api/v1/dashboard/catalog/modifier-options/12')).toHaveLength(0)
       await user.click(within(await screen.findByRole('group', { name: 'Options of WSP Caramel' })).getByRole('button', { name: 'Remove option Matcha' }))
+      await answerConfirm(user, 'Remove the Matcha option?', 'Remove option')
       expect(await screen.findByText('Matcha was sold before: kept, but no longer offered')).toBeInTheDocument()
-      confirm.mockRestore()
     })
   })
 

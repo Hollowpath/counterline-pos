@@ -4,7 +4,7 @@ import { useApi } from '../api/useApi'
 import { LoadState } from '../components/LoadState'
 import { formatDateTime } from '../lib/dates'
 import { PinLocksPanel } from './PinLocksPanel'
-import { note, sectionTitle, table, tableFrame } from './styles'
+import { note, noticeClass, sectionTitle, table, tableAsCards, tableFrame } from './styles'
 import { dashboardPaths, type TillDevice } from './types'
 import { Page } from './ui'
 
@@ -43,7 +43,7 @@ export function TillDevicesAdmin() {
       description="Each outlet has one till iPad, set up once. To move or replace it, reset it here: it stops logging staff in, and a manager sets up the new (or the same) iPad at the till."
     >
       {status && (
-        <p className={`rounded-xl px-4 py-2.5 text-sm font-medium ring-1 ring-inset ${status.tone === 'ok' ? 'bg-green-50 text-green-700 ring-green-200' : 'bg-red-50 text-red-700 ring-red-200'}`} role="status">
+        <p className={noticeClass(status.tone)} role="status">
           {status.text}
         </p>
       )}
@@ -53,7 +53,7 @@ export function TillDevicesAdmin() {
           <p className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">No iPads are set up yet.</p>
         ) : (
           <div className={tableFrame}>
-            <table className={table}>
+            <table className={`${table} ${tableAsCards}`}>
               <thead>
                 <tr>
                   <th>Outlet</th>
@@ -67,12 +67,12 @@ export function TillDevicesAdmin() {
                 {devices.data.map((device) => (
                   <tr key={device.id}>
                     <td className="font-semibold">{device.outletName}</td>
-                    <td>{device.label}</td>
-                    <td>
+                    <td data-label="iPad">{device.label}</td>
+                    <td data-label="Set up">
                       {formatDateTime(device.setUpAt)}
                       <span className={note}>by {device.setUpBy}</span>
                     </td>
-                    <td>{device.lastLoginAt ? formatDateTime(device.lastLoginAt) : '—'}</td>
+                    <td data-label="Last login">{device.lastLoginAt ? formatDateTime(device.lastLoginAt) : '—'}</td>
                     <td className="whitespace-nowrap text-right">
                       {confirming === device.id ? (
                         <>

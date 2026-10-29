@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { deleteJson, putJson } from '../api/http'
 import { useApi } from '../api/useApi'
-import { confirmed, message, moved } from './catalogHelpers'
+import { useConfirm } from '../components/confirmContext'
+import { message, moved } from './catalogHelpers'
 import { checkbox, field, note, sectionTitle } from './styles'
-import { dashboardPaths, type AdminCategory, type AdminTab } from './types'
+import { dashboardPaths, type AdminCategory, type AdminTab, type Notice } from './types'
 
 /** Quick-grid tabs: rename, reorder, and delete the ones with no folders. */
-export function TabsPanel({ onChanged, onNotice }: { onChanged: () => void; onNotice: (text: string | null) => void }) {
+export function TabsPanel({ onChanged, onNotice }: { onChanged: () => void; onNotice: (notice: Notice | null) => void }) {
+  const confirm = useConfirm()
   const tabs = useApi<AdminTab[]>(dashboardPaths.tabs)
   if (tabs.status !== 'success') {
     return tabs.status === 'error' ? <p className="text-sm text-red-600" role="alert">{tabs.message}</p> : null
@@ -20,7 +22,7 @@ export function TabsPanel({ onChanged, onNotice }: { onChanged: () => void; onNo
       tabs.reload()
       onChanged()
     } catch (error) {
-      onNotice(message(error))
+      onNotice({ tone: 'error', text: message(error) })
     }
   }
 
@@ -38,8 +40,10 @@ export function TabsPanel({ onChanged, onNotice }: { onChanged: () => void; onNo
                 const order = moved(ids, tab.id, by)
                 return order ? run(() => putJson(dashboardPaths.tabsOrder, { ids: order })) : undefined
               }}
-              onDelete={() => {
-                if (confirmed(`Delete the ${tab.name} tab?`)) void run(() => deleteJson(dashboardPaths.tab(tab.id)))
+              onDelete={async () => {
+                if (await confirm({ title: `Delete the ${tab.name} tab?`, message: 'The tab is empty, so no folders are affected.', confirmLabel: 'Delete tab' })) {
+                  void run(() => deleteJson(dashboardPaths.tab(tab.id)))
+                }
               }} />
           ))}
         </ul>
@@ -76,8 +80,9 @@ export function FolderToolbar({ category, tabs, onChanged, onNotice }: {
   category: AdminCategory
   tabs: string[]
   onChanged: () => void
-  onNotice: (text: string | null) => void
+  onNotice: (notice: Notice | null) => void
 }) {
+  const confirm = useConfirm()
   const [name, setName] = useState(category.name)
   const [tab, setTab] = useState(category.tab ?? '')
   const [counts, setCounts] = useState(category.countsForPromotions)
@@ -87,10 +92,10 @@ export function FolderToolbar({ category, tabs, onChanged, onNotice }: {
     onNotice(null)
     try {
       await action()
-      onNotice(done)
+      onNotice({ tone: 'ok', text: done })
       onChanged()
     } catch (error) {
-      onNotice(message(error))
+      onNotice({ tone: 'error', text: message(error) })
     }
   }
 
@@ -125,8 +130,8 @@ export function FolderToolbar({ category, tabs, onChanged, onNotice }: {
         aria-label={`Save folder ${category.name}`} onClick={() => void save(tab)}>Save</button>
       {category.tab !== null && (
         <button type="button" className="btn" aria-label={`Remove ${category.name} from the till grid`}
-          onClick={() => {
-            if (confirmed(`Remove ${category.name} from the till grid? Its items stay in the library.`)) {
+          onClick={async () => {
+            if (await confirm({ title: `Remove ${category.name} from the till grid?`, message: 'Its items stay in the library and past sales keep their folder name.', confirmLabel: 'Remove from grid' })) {
               setTab('')
               void save('')
             }
@@ -136,8 +141,8 @@ export function FolderToolbar({ category, tabs, onChanged, onNotice }: {
       )}
       <button type="button" className="btn" disabled={category.items.length > 0} aria-label={`Delete folder ${category.name}`}
         title={category.items.length > 0 ? 'Move or remove its items first' : undefined}
-        onClick={() => {
-          if (confirmed(`Delete the empty folder ${category.name}?`)) {
+        onClick={async () => {
+          if (await confirm({ title: `Delete the empty folder ${category.name}?`, message: 'Past sales keep the folder name they were sold under.', confirmLabel: 'Delete folder' })) {
             void run(() => deleteJson(dashboardPaths.folder(category.id)), `Deleted ${category.name}`)
           }
         }}>

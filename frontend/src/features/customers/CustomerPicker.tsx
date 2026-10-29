@@ -35,7 +35,7 @@ export function CustomerPicker({ onSelect, onCancel }: CustomerPickerProps) {
   }
 
   return (
-    <Dialog title="Select a Customer">
+    <Dialog title="Select a Customer" onClose={onCancel} closeOnBackdrop>
       <input
         className={`${splitScreen.search} w-full`}
         type="search"

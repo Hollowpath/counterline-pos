@@ -25,7 +25,7 @@ export function DiscountApprovalDialog({ discountName, onApproved, onCancel }: D
   }
 
   return (
-    <Dialog title="Special Access Required">
+    <Dialog title="Special Access Required" onClose={onCancel}>
       <p className="mb-5 rounded-xl bg-orange-50 px-3 py-2.5 text-sm text-orange-800 ring-1 ring-orange-200 ring-inset">Manager PIN · <strong className="font-semibold">{discountName}</strong></p>
       <PinEntry onSubmit={approve} lockStatus={tillLockStatus} />
       <div className={dialogActions}>

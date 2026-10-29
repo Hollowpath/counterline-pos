@@ -3,6 +3,7 @@ import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setAuthToken } from '../api/http'
 import { DashboardApp } from './DashboardApp'
+import { answerConfirm } from '../test/confirmDialog'
 import type { AdminOutlet, AdminStaff } from './types'
 
 function json(body: unknown, status = 200) {
@@ -178,20 +179,21 @@ describe('outlets', () => {
 
   it('deactivates only after confirming, reports an open register, and reactivates', async () => {
     const calls = stubApi()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
     const user = userEvent.setup()
     await open(user, 'Outlets')
 
     await user.click(await screen.findByRole('button', { name: 'Deactivate outlet O2' }))
-    expect(confirm).toHaveBeenCalledTimes(1)
+    await answerConfirm(user, 'Deactivate Counterline Cheras?', 'Cancel')
     expect(sent(calls, `POST ${admin}/outlets/2/deactivate`)).toHaveLength(0)
 
     // The open register makes the server refuse: the clear 409 text is shown and the outlet stays open.
     await user.click(screen.getByRole('button', { name: 'Deactivate outlet O1' }))
+    await answerConfirm(user, 'Deactivate Counterline Bukit Bintang?', 'Deactivate outlet')
     expect(await screen.findByText('Outlet O1 has an open register. Close it before deactivating the outlet.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Deactivate outlet O1' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Deactivate outlet O2' }))
+    await answerConfirm(user, 'Deactivate Counterline Cheras?', 'Deactivate outlet')
     expect(await screen.findByText('Deactivated Counterline Cheras')).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'Reactivate outlet O2' }))
     expect(await screen.findByText('Reactivated Counterline Cheras')).toBeInTheDocument()
@@ -254,7 +256,6 @@ describe('staff', () => {
 
   it('edits name, role and outlet, asking first before a manager loses the dashboard login', async () => {
     const calls = stubApi()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
     const user = userEvent.setup()
     await open(user, 'Staff')
 
@@ -263,14 +264,15 @@ describe('staff', () => {
     await user.click(screen.getByRole('button', { name: 'Save Aisyah Rahman' }))
     expect(await screen.findByText('Saved Aisyah Rahman')).toBeInTheDocument()
     expect(sent(calls, `PUT ${admin}/staff/10`)[0].body).toEqual({ fullName: 'Aisyah Rahman', role: 'STAFF', outletId: 2 })
-    expect(confirm).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
 
     // Demoting a manager removes their login: declined sends nothing, accepted saves.
     await user.selectOptions(screen.getByLabelText('Role of Daniel Lim'), 'STAFF')
     await user.click(screen.getByRole('button', { name: 'Save Daniel Lim' }))
-    expect(confirm).toHaveBeenCalledTimes(1)
+    await answerConfirm(user, 'Make Daniel Lim a cashier?', 'Cancel')
     expect(sent(calls, `PUT ${admin}/staff/11`)).toHaveLength(0)
     await user.click(screen.getByRole('button', { name: 'Save Daniel Lim' }))
+    await answerConfirm(user, 'Make Daniel Lim a cashier?', 'Make cashier')
     expect(await screen.findByText('Saved Daniel Lim')).toBeInTheDocument()
     expect(sent(calls, `PUT ${admin}/staff/11`)[0].body).toEqual({ fullName: 'Daniel Lim', role: 'STAFF', outletId: 1 })
     expect(screen.queryByText(/Dashboard login: daniel/)).not.toBeInTheDocument()
@@ -278,14 +280,14 @@ describe('staff', () => {
 
   it('deactivates only after confirming, and reactivates', async () => {
     const calls = stubApi()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
     const user = userEvent.setup()
     await open(user, 'Staff')
 
     await user.click(await screen.findByRole('button', { name: 'Deactivate Aisyah Rahman' }))
-    expect(confirm).toHaveBeenCalledTimes(1)
+    await answerConfirm(user, 'Deactivate Aisyah Rahman?', 'Cancel')
     expect(sent(calls, `POST ${admin}/staff/10/deactivate`)).toHaveLength(0)
     await user.click(screen.getByRole('button', { name: 'Deactivate Aisyah Rahman' }))
+    await answerConfirm(user, 'Deactivate Aisyah Rahman?', 'Deactivate')
     expect(await screen.findByText('Deactivated Aisyah Rahman')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: 'Reactivate Aisyah Rahman' })).toBeInTheDocument()
 
@@ -401,16 +403,16 @@ describe('dashboard logins of existing managers', () => {
 
   it('removes a login only after confirming', async () => {
     const calls = stubApi()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
     const user = userEvent.setup()
     await open(user, 'Staff')
 
     const form = await openLogin(user, 'Daniel Lim')
     await user.click(within(form).getByRole('button', { name: 'Remove dashboard login of Daniel Lim' }))
-    expect(confirm).toHaveBeenCalledTimes(1)
+    await answerConfirm(user, 'Remove the dashboard login of Daniel Lim?', 'Cancel')
     expect(sent(calls, `DELETE ${admin}/staff/11/dashboard-login`)).toHaveLength(0)
 
     await user.click(within(form).getByRole('button', { name: 'Remove dashboard login of Daniel Lim' }))
+    await answerConfirm(user, 'Remove the dashboard login of Daniel Lim?', 'Remove login')
     expect(await screen.findByText('Removed the dashboard login of Daniel Lim')).toBeInTheDocument()
     expect(sent(calls, `DELETE ${admin}/staff/11/dashboard-login`)).toHaveLength(1)
     expect(screen.queryByText(/Dashboard login: daniel/)).not.toBeInTheDocument()
@@ -436,8 +438,8 @@ describe('authorization', () => {
     await open(user, 'Outlets')
     // The same page with a token the server rejects: the refusal is shown, not a blank page.
     setAuthToken('manager-jwt')
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     await user.click(await screen.findByRole('button', { name: 'Deactivate outlet O2' }))
+    await answerConfirm(user, 'Deactivate Counterline Cheras?', 'Deactivate outlet')
     expect(await screen.findByText('Forbidden')).toBeInTheDocument()
   })
 })

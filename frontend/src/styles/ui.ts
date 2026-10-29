@@ -102,8 +102,8 @@ export const customerRow = {
     'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-zinc-50',
     'aria-[current=true]:bg-zinc-200/70',
   ].join(' '),
-  name: 'font-semibold text-zinc-900',
-  contact: 'text-sm text-zinc-500',
+  name: 'min-w-0 font-semibold [overflow-wrap:anywhere] text-zinc-900',
+  contact: 'shrink-0 text-sm whitespace-nowrap text-zinc-500',
 }
 
 /** A count beside a menu item or tab, e.g. the open orders on Past Orders. */

@@ -66,7 +66,7 @@ function Loading({ initial, onCancel, state }: ItemDialogProps & {
   state: { status: 'loading' } | { status: 'error'; message: string; reload: () => void }
 }) {
   return (
-    <Dialog title={initial.name}>
+    <Dialog title={initial.name} onClose={onCancel}>
       <LoadState
         status={state.status}
         message={state.status === 'error' ? state.message : undefined}
@@ -119,7 +119,7 @@ function ItemForm({ initial, mode, groups, offeredDiscounts, discountElsewhere, 
   }
 
   return (
-    <Dialog title={initial.name} wide>
+    <Dialog title={initial.name} wide onClose={onCancel}>
       <div className="grid gap-4">
         <div className="flex items-center justify-between rounded-2xl bg-linear-to-r from-zinc-900 to-zinc-800 px-4 py-3 text-white shadow-inner">
           <span className="text-xs font-semibold tracking-wider text-zinc-400 uppercase">Unit Price</span>

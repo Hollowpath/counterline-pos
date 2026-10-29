@@ -161,7 +161,7 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
       </main>
 
       {dialog === 'summary' && summarised && (
-        <Dialog title="Register summary" wide>
+        <Dialog title="Register summary" wide onClose={() => setDialog(null)} closeOnBackdrop>
           <div className="max-h-[60vh] overflow-y-auto">
             <p className="text-sm text-zinc-500">
               Opened {formatStamp(summarised.openedAt)} by {summarised.openedBy}
@@ -268,7 +268,7 @@ function CloseDialog({ error, onConfirm, onCancel }: {
   }
 
   return (
-    <Dialog title="Close Register">
+    <Dialog title="Close Register" onClose={busy ? undefined : onCancel}>
       <p className="text-sm text-zinc-600">Close the register? Payments can't be taken until it is opened again.</p>
       {error && (
         <p className="mt-3 text-sm font-medium text-red-600" role="alert">
@@ -307,7 +307,7 @@ function MovementDialog({ error, onConfirm, onCancel }: {
   }
 
   return (
-    <Dialog title="Pay In / Out">
+    <Dialog title="Pay In / Out" onClose={busy ? undefined : onCancel}>
       <form onSubmit={submit}>
         <div className={segmented} role="tablist" aria-label="Direction">
           {(['IN', 'OUT'] as const).map((option) => (

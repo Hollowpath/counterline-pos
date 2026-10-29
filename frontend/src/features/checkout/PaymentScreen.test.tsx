@@ -149,6 +149,24 @@ describe('PaymentScreen', () => {
     ])
   })
 
+  it('Escape goes back like Back does, but not while the sale is being recorded', async () => {
+    let finish: (response: Response) => void = () => {}
+    const bodies = stubApi(() => new Promise<Response>((resolve) => { finish = resolve }))
+    const user = userEvent.setup()
+    const { onCancel } = renderScreen()
+
+    await user.keyboard('{Escape}')
+    expect(onCancel).toHaveBeenCalledTimes(1)
+
+    await pay(user, 'Visa', { reference: 'ref' })
+    await vi.waitFor(() => expect(bodies).toHaveLength(1))
+    await user.keyboard('{Escape}')
+    expect(onCancel).toHaveBeenCalledTimes(1)
+
+    finish(json(order(), 201))
+    expect(await screen.findByRole('dialog', { name: 'Sale complete' })).toBeInTheDocument()
+  })
+
   it('refuses a card amount above the remaining balance', async () => {
     const bodies = stubApi()
     const user = userEvent.setup()

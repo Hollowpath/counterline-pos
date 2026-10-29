@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { ApiError, postJson, setAuthToken, setUnauthorizedHandler } from '../api/http'
 import { AppBar } from '../app/AppBar'
+import { ConfirmProvider } from '../components/ConfirmProvider'
 import { CustomersScreen } from '../features/customers/CustomersScreen'
 import { DashboardReports } from './DashboardReports'
 import { DiscountsAdmin } from './DiscountsAdmin'
@@ -91,7 +92,7 @@ export function DashboardApp() {
 
   return session === null
     ? <DashboardLogin notice={notice} onLoggedIn={loggedIn} />
-    : <DashboardShell session={session} onLogOut={() => logout()} />
+    : <ConfirmProvider><DashboardShell session={session} onLogOut={() => logout()} /></ConfirmProvider>
 }
 
 function DashboardShell({ session, onLogOut }: { session: DashboardSession; onLogOut: () => void }) {

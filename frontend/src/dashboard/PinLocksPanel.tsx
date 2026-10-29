@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, getJson, postJson } from '../api/http'
 import { formatTime } from '../lib/dates'
-import { sectionTitle, table, tableFrame } from './styles'
+import { noticeClass, sectionTitle, table, tableFrame } from './styles'
 import { dashboardPaths, type PinLock } from './types'
 
 /** How often the list is checked while it is on screen. */
@@ -56,7 +56,7 @@ export function PinLocksPanel() {
         wait.
       </p>
       {status && (
-        <p className={`mb-3 rounded-xl px-4 py-2.5 text-sm font-medium ring-1 ring-inset ${status.tone === 'ok' ? 'bg-green-50 text-green-700 ring-green-200' : 'bg-red-50 text-red-700 ring-red-200'}`} role="status">
+        <p className={`mb-3 ${noticeClass(status.tone)}`} role="status">
           {status.text}
         </p>
       )}

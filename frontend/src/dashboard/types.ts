@@ -226,6 +226,12 @@ export const dashboardPaths = {
   adminStaffPin: (id: number) => `/api/v1/dashboard/admin/staff/${id}/pin`,
 }
 
+/** A result shown in the page's banner: it worked (`ok`) or it did not (`error`). */
+export interface Notice {
+  tone: 'ok' | 'error'
+  text: string
+}
+
 /** An outlet as head office manages it, deactivated ones included. */
 export interface AdminOutlet {
   id: number

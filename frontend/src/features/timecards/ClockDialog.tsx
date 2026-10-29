@@ -81,7 +81,7 @@ export function ClockDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Dialog title="Clock In/Out">
+    <Dialog title="Clock In/Out" onClose={busy ? undefined : onClose} closeOnBackdrop>
       <LiveClock />
       {phase.name === 'pin' && <PinEntry onSubmit={checkPin} lockStatus={clockLockStatus} />}
 

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { deleteJson, postJson, putJson } from '../api/http'
 import { useApi } from '../api/useApi'
+import { useConfirm } from '../components/confirmContext'
 import { LoadState } from '../components/LoadState'
 import { checkbox, field, note } from './styles'
-import { confirmed, message, moved } from './catalogHelpers'
+import { message, moved } from './catalogHelpers'
 import { dashboardPaths, type AdminModifierGroup, type AdminModifierOption, type Removal } from './types'
 import { Status } from './ui'
 
@@ -12,6 +13,7 @@ import { Status } from './ui'
  * kept, as inactive, so past sales still make sense; a group with no active option leaves the till.
  */
 export function ModifiersEditor({ itemId, itemName }: { itemId: number; itemName: string }) {
+  const confirm = useConfirm()
   const groups = useApi<AdminModifierGroup[]>(dashboardPaths.modifierGroups(itemId))
   const [status, setStatus] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
 
@@ -48,8 +50,8 @@ export function ModifiersEditor({ itemId, itemName }: { itemId: number; itemName
             const order = moved(groupIds, group.id, by)
             if (order) void run(() => putJson(dashboardPaths.modifierGroupsOrder(itemId), { ids: order }))
           }}
-          onRemove={() => {
-            if (confirmed(`Remove the ${group.name} option group from ${itemName}?`)) {
+          onRemove={async () => {
+            if (await confirm({ title: `Remove the ${group.name} option group?`, message: `It is taken off ${itemName}. Past sales keep the options they were sold with.`, confirmLabel: 'Remove group' })) {
               void run(() => deleteJson<Removal>(dashboardPaths.modifierGroup(group.id)), removed(group.name))
             }
           }}
@@ -72,6 +74,7 @@ function GroupEditor({ group, first, last, onSave, onMove, onRemove, run, remove
   run: Run
   removed: (what: string) => (result: unknown) => string
 }) {
+  const confirm = useConfirm()
   const [name, setName] = useState(group.name)
   const [picks, setPicks] = useState(String(group.chooseExactly))
   const optionIds = group.options.map((option) => option.id)
@@ -101,8 +104,8 @@ function GroupEditor({ group, first, last, onSave, onMove, onRemove, run, remove
               const order = moved(optionIds, option.id, by)
               if (order) void run(() => putJson(dashboardPaths.modifierOptionsOrder(group.id), { ids: order }))
             }}
-            onRemove={() => {
-              if (confirmed(`Remove the ${option.name} option?`)) {
+            onRemove={async () => {
+              if (await confirm({ title: `Remove the ${option.name} option?`, message: 'Past sales keep the option they were sold with.', confirmLabel: 'Remove option' })) {
                 void run(() => deleteJson<Removal>(dashboardPaths.modifierOption(option.id)), removed(option.name))
               }
             }} />

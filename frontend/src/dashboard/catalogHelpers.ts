@@ -4,11 +4,6 @@ export function message(error: unknown) {
   return error instanceof ApiError ? error.message : 'Offline'
 }
 
-/** Destructive actions ask first; the page keeps working if the answer is no. */
-export function confirmed(question: string) {
-  return window.confirm(question)
-}
-
 /** Moves `id` one place up or down in `ids`; null at either end. */
 export function moved(ids: number[], id: number, by: -1 | 1): number[] | null {
   const from = ids.indexOf(id)

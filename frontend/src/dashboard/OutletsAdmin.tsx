@@ -1,13 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { postJson, putJson } from '../api/http'
 import { useApi } from '../api/useApi'
+import { useConfirm } from '../components/confirmContext'
 import { LoadState } from '../components/LoadState'
-import { confirmed, message } from './catalogHelpers'
-import { field, note, noticeClass, sectionTitle, table, tableFrame } from './styles'
-import { dashboardPaths, type AdminOutlet } from './types'
+import { message } from './catalogHelpers'
+import { field, note, noticeClass, sectionTitle, table, tableAsCards, tableFrame } from './styles'
+import { dashboardPaths, type AdminOutlet, type Notice } from './types'
 import { Page } from './ui'
-
-type Notice = { tone: 'ok' | 'error'; text: string } | null
 
 /**
  * Head office's outlets: add one, change its name and address, close it or open it again. The code
@@ -16,7 +15,7 @@ type Notice = { tone: 'ok' | 'error'; text: string } | null
  */
 export function OutletsAdmin() {
   const outlets = useApi<AdminOutlet[]>(dashboardPaths.adminOutlets)
-  const [notice, setNotice] = useState<Notice>(null)
+  const [notice, setNotice] = useState<Notice | null>(null)
 
   if (outlets.status !== 'success') {
     return <LoadState status={outlets.status} message={outlets.status === 'error' ? outlets.message : undefined} onRetry={outlets.reload} />
@@ -34,7 +33,7 @@ export function OutletsAdmin() {
       <section aria-label="Outlet list">
         <h2 className={sectionTitle}>All outlets</h2>
         <div className={tableFrame}>
-          <table className={table}>
+          <table className={`${table} ${tableAsCards}`}>
             <thead>
               <tr>
                 <th>Code</th>
@@ -105,6 +104,7 @@ function OutletRow({ outlet, onChanged, onError }: {
   onChanged: (text: string) => void
   onError: (text: string) => void
 }) {
+  const confirm = useConfirm()
   const [name, setName] = useState(outlet.name)
   const [address, setAddress] = useState(outlet.address ?? '')
   const [busy, setBusy] = useState(false)
@@ -125,15 +125,15 @@ function OutletRow({ outlet, onChanged, onError }: {
   return (
     <tr>
       <td className="font-semibold">{outlet.code}</td>
-      <td>
-        <input className={field} aria-label={`Name of outlet ${outlet.code}`} value={name} maxLength={80}
+      <td data-label="Name">
+        <input className={`${field} w-full min-w-40`} aria-label={`Name of outlet ${outlet.code}`} value={name} maxLength={80}
           onChange={(event) => setName(event.target.value)} />
       </td>
-      <td>
-        <input className={field} aria-label={`Address of outlet ${outlet.code}`} value={address} maxLength={200}
+      <td data-label="Address">
+        <input className={`${field} w-full min-w-48`} aria-label={`Address of outlet ${outlet.code}`} value={address} maxLength={200}
           onChange={(event) => setAddress(event.target.value)} />
       </td>
-      <td>
+      <td data-label="Status">
         {outlet.active ? 'Open' : 'Closed'}
         {!outlet.active && <span className={note}>Deactivated</span>}
       </td>
@@ -144,8 +144,8 @@ function OutletRow({ outlet, onChanged, onError }: {
         </button>{' '}
         {outlet.active ? (
           <button type="button" className="btn btn-danger" disabled={busy} aria-label={`Deactivate outlet ${outlet.code}`}
-            onClick={() => {
-              if (!confirmed(`Deactivate ${outlet.name}? It stops trading and its staff cannot sign in; its sales are kept.`)) return
+            onClick={async () => {
+              if (!await confirm({ title: `Deactivate ${outlet.name}?`, message: 'It stops trading and its staff cannot sign in. Its sales are kept, and it can be reactivated.', confirmLabel: 'Deactivate outlet' })) return
               void run(() => postJson(dashboardPaths.adminOutletAction(outlet.id, 'deactivate'), {}), `Deactivated ${outlet.name}`)
             }}>
             Deactivate

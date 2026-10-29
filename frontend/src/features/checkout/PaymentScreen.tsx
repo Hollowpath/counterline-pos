@@ -145,7 +145,7 @@ export function PaymentScreen({ amountDueSen, totalLabel, onSubmit, onCancel, on
   const busy = phase.name === 'submitting'
 
   return (
-    <Dialog title="Payment">
+    <Dialog title="Payment" onClose={busy ? undefined : onCancel}>
       <dl className="mb-5 grid grid-cols-2 gap-3 [&_dd]:mt-1 [&_dd]:text-[1.6rem] [&_dd]:font-bold [&_dd]:tracking-tight [&_dd]:tabular-nums [&_div]:rounded-2xl [&_div]:p-4 [&_dt]:text-xs [&_dt]:font-semibold [&_dt]:tracking-wider [&_dt]:uppercase">
         {/* The total on grey, what is left to pay lit in indigo. */}
         <div className="bg-zinc-100 ring-1 ring-zinc-200/70 ring-inset [&_dt]:text-zinc-500">
