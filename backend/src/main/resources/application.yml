@@ -49,9 +49,6 @@ pos:
     # One-time first-run set-up of a fresh non-local database. Off by default; the credential
     # properties (POS_BOOTSTRAP_*) deliberately have no values here. See README.md.
     enabled: ${POS_BOOTSTRAP_ENABLED:false}
-  demo-catalog:
-    # Temporary load of the demo catalogue into a non-local database (see README.md). Off by default.
-    enabled: ${POS_DEMO_CATALOG_ENABLED:false}
 
 ---
 # Local development: demo catalogue + demo staff, and throwaway secrets.
