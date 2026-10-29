@@ -98,3 +98,41 @@ jobs:
 
       - name: Test
         run: npm test
+
+  image:
+    name: Packaged image smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the image
+        run: docker build -t counterline-pos:local .
+
+      - name: Start the Compose app profile
+        run: docker compose --profile app up --no-build -d
+
+      - name: Wait for the application to report healthy
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:8090/actuator/health | grep -q '"status":"UP"'; then
+              echo "Healthy after $attempt attempt(s)"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "The application did not become healthy within 180 seconds" >&2
+          exit 1
+
+      - name: Show container status and logs
+        if: failure()
+        run: |
+          docker compose --profile app ps -a
+          docker compose --profile app logs --no-color --tail=200 app app-db
+
+      - name: Stop and remove the containers
+        if: always()
+        run: docker compose --profile app down --volumes
