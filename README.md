@@ -131,19 +131,30 @@ Operational sequence:
 2. Check access: sign in to the dashboard as head office and as the manager, set up a till with the manager PIN, then sign in at the till.
 3. Redeploy with `POS_BOOTSTRAP_ENABLED` unset (or `false`) and every `POS_BOOTSTRAP_*` credential variable removed. The initializer creates only this initial head-office account and manager; further staff and outlet administration is not implemented.
 
+If the credentials are held in AWS Secrets Manager, removing them from the current secret value does not erase the previous encrypted version, which Secrets Manager keeps until the secret is deleted. Use this workflow only with synthetic, temporary credentials; the AWS steps are in [infrastructure/README.md](infrastructure/README.md).
+
 ## AWS deployment status and roadmap
 
-What exists today: a GitHub Actions CI workflow (`.github/workflows/ci.yml`) that builds and tests the backend and the frontend, and a TypeScript AWS CDK project in `infrastructure/`, deployed by the owner, that currently defines only the private Amazon ECR repository for the application image. There is no deployment pipeline, and the runtime architecture below is not built. The code is prepared for it: a single container image, a health check, configuration from environment variables, and comments assuming a load balancer in front of a container service. Everything in the list below is **planned**. AWS work is written and run by the owner. The list is not an implementation order; sequencing is decided incrementally, and each piece is added only when it is needed:
+**What exists.** A GitHub Actions workflow (`.github/workflows/ci.yml`) builds and tests the backend and frontend. The owner-managed AWS CDK stack in `infrastructure/` (TypeScript) defines:
 
-- Region `ap-southeast-1`, one small environment.
-- Further infrastructure as code with AWS CDK; GitHub Actions image publishing, later deployment using GitHub OIDC rather than stored AWS keys.
-- The container image in Amazon ECR, run on Amazon ECS with Fargate behind an Application Load Balancer.
-- Amazon RDS for PostgreSQL, with database credentials and the application's keys held in AWS Secrets Manager rather than in configuration.
-- Amazon CloudWatch for logs and a small set of alarms.
+- a private Amazon ECR repository for the application image (immutable tags, scan on push, the five most recent images kept, retained if the stack is deleted);
+- a two-AZ VPC with public and isolated database subnets and no NAT gateway;
+- an internet-facing Application Load Balancer serving HTTP only, reachable only from the owner's IPv4 address (a single `/32`, supplied as a stack parameter);
+- one Fargate task with a public IP, receiving traffic from the load balancer on port 8080;
+- an encrypted, single-AZ Amazon RDS for PostgreSQL 17 instance in the isolated subnets, not publicly accessible;
+- AWS Secrets Manager secrets for the database credentials and the application's keys;
+- CloudWatch application logs with seven-day retention.
 
-Cost is a design constraint: the plan avoids services that bill while idle unless they are required.
+**What this is not.** This is a temporary learning deployment, not production-ready: HTTP only, one task, a single-AZ database with one day of backups, no alarms, no autoscaling, and resources that are deleted with the stack (except the ECR repository). There is no automated deployment pipeline: CI does not build or publish an image or touch AWS, and the owner pushes images and deploys the stack by hand. The operator steps are in [infrastructure/README.md](infrastructure/README.md).
 
-The roadmap will be updated as pieces are delivered. See [docs/engineering-readiness.md](docs/engineering-readiness.md) for what is deliberately not yet in place.
+**Planned, not built.** Region `ap-southeast-1`, one small environment. Each item is added only when it is needed:
+
+- HTTPS on a domain the owner controls, before any access beyond the owner.
+- Automated delivery from GitHub Actions (image publishing, then deployment using GitHub OIDC rather than stored AWS keys).
+- A small set of CloudWatch alarms.
+- Production availability and backups for the database.
+
+Cost is a design constraint: the plan avoids services that bill while idle unless they are required. See [docs/engineering-readiness.md](docs/engineering-readiness.md) for what is deliberately not yet in place.
 
 ## Documentation
 
@@ -151,3 +162,4 @@ The roadmap will be updated as pieces are delivered. See [docs/engineering-readi
 - [docs/architecture.md](docs/architecture.md)
 - [docs/testing.md](docs/testing.md)
 - [docs/engineering-readiness.md](docs/engineering-readiness.md)
+- [infrastructure/README.md](infrastructure/README.md): operator guide for the AWS CDK stack

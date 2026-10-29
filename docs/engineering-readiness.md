@@ -5,7 +5,7 @@ What this system is scoped to do, what evidence exists for its quality, and whic
 ## Scope
 
 - Built and run by a single owner. No production traffic, no real customers, no service-level commitments.
-- Intended workload: a small number of outlets, run locally or in one small cloud environment once the AWS runtime architecture in the [README](../README.md#aws-deployment-status-and-roadmap) is delivered. Today only CI and the CDK-defined ECR repository exist; the runtime is not deployed. No capacity figure is established.
+- Intended workload: a small number of outlets, run locally or in one small cloud environment. A temporary, owner-restricted learning deployment on AWS exists (see the [README](../README.md#aws-deployment-status-and-roadmap)); it is not production-ready. No capacity figure is established.
 - Single region, single database, single container image. No multi-region, disaster-recovery or high-availability design.
 - Out of scope today: real payment-gateway integration (payments are recorded, not processed), tax filing, fiscal printer integration, offline till operation, and multi-tenant isolation.
 
@@ -34,6 +34,7 @@ What this system is scoped to do, what evidence exists for its quality, and whic
 | Container         | Multi-stage image, non-root runtime, health check, memory-aware JVM flags                                                         | `Dockerfile`                              |
 | Config            | Environment-variable driven; no secret defaults outside `local`                                                                   | `application.yml`                         |
 | Error shape       | Problem-details responses for application and security errors                                                                     | `common/`, `auth/`                        |
+| AWS runtime (temporary) | Owner-managed CDK stack: ECR, two-AZ VPC without NAT, owner-restricted HTTP ALB, one public-IP Fargate task, encrypted isolated PostgreSQL, Secrets Manager, seven-day logs | `infrastructure/`, [architecture.md](architecture.md) |
 
 ## Deferred controls and their triggers
 
@@ -41,20 +42,23 @@ Each item is intentionally not built. Build it when its trigger is met, not befo
 
 | Control                                                                                           | Trigger                                                                                        | Today                                                                                                          |
 | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Automated deploy pipeline                                                                         | When an AWS environment exists and the owner has written its infrastructure                    | Planned; owner-run                                                                                             |
+| Automated delivery (image publishing and deployment) | Now: an AWS environment and its CDK code exist | Not built. CI does not build or publish an image or touch AWS; the owner pushes images and deploys by hand |
+| Production availability | Before any use beyond the owner or any data worth keeping | Not built: one task, single-AZ database |
+| Autoscaling | When load or availability needs it | Not built: fixed at one task |
+| General public access (HTTPS, domain, edge protection) | Before any access beyond the owner | Not built: owner-only HTTP |
 | Consume checkout discount approval tokens once (void and refund approvals already are)            | Before real sales or revenue depend on discount approvals, or when approval misuse is observed | Short-lived (5 minutes by default) but reusable until expiry                                                   |
-| Restrict or disable Swagger UI / OpenAPI outside local development                                | Before any persistent or publicly accessible environment                                       | Within the running application they are served without authentication                                          |
-| HTTPS and secure headers at the edge                                                              | Before any persistent or publicly accessible environment                                       | Not applicable locally. HTTPS is planned at the load balancer; where secure headers are set is not yet decided |
+| Restrict or disable Swagger UI / OpenAPI outside local development | Before any access beyond the owner | Served without authentication, including on the AWS deployment (reachable only from the owner address) |
+| HTTPS and secure headers at the edge | Before any access beyond the owner (needs a domain the owner controls) | Not built. The load balancer serves plain HTTP, restricted to one owner IPv4 `/32`. Where secure headers are set is not yet decided |
 | Rate limiting beyond PIN throttle, bot protection                                                 | Before any persistent or publicly accessible environment                                       | PIN throttle only                                                                                              |
-| Cost alerts and a billing-review routine (a budget alert only notifies; it does not cap spending) | Before the first billable cloud resource exists                                                | None                                                                                                           |
-| Backups and a tested restore                                                                      | Before any environment holds data worth keeping                                                | None                                                                                                           |
-| Centralised logs, metrics, alarms, tracing                                                        | When deployed beyond a local machine                                                           | Health and info endpoints only                                                                                 |
-| Container image vulnerability scanning                                                            | When CI first builds a container image                                                         | Deferred; CI does not build an image yet                                                                       |
+| Cost alerts and a billing-review routine (a budget alert only notifies; it does not cap spending) | Before the first billable cloud resource exists | Trigger met: billable resources are defined. The owner has configured AWS budget notifications outside the repository; they notify but do not cap or automatically stop spending, and billing review remains manual |
+| Backups and a tested restore | Before any environment holds data worth keeping | The database keeps one day of automated backups and is deleted with the stack. No restore has been tested |
+| Metrics, alarms, tracing | When deployed beyond a local machine | Application logs go to CloudWatch with seven-day retention. No alarms, custom metrics or tracing; health and info endpoints only |
+| Container image vulnerability scanning beyond basic ECR scanning | When CI first builds a container image | ECR scans on push (basic scanning). CI does not build an image, so no scan runs there |
 | SonarCloud code-quality gate                                                                      | When the codebase has more than one regular contributor, or a defect class escapes the tests, lint and build | Deferred; tests, lint, build and dependency alerts give the most value for the current project  |
 | End-to-end browser tests                                                                          | When a UI regression escapes the component tests, or before a release candidate                | None                                                                                                           |
 | Load / soak tests                                                                                 | Before claiming any capacity figure                                                            | None; no capacity is claimed                                                                                   |
 | Audit trail review and data-retention policy                                                      | Before any real personal data is stored                                                        | Not designed                                                                                                   |
-| Secrets rotation                                                                                  | When deployed with a managed secrets service                                                   | Not applicable locally                                                                                         |
+| Secrets rotation | When deployed with a managed secrets service | Trigger met: Secrets Manager holds the secrets. No rotation is configured |
 | Accessibility audit                                                                               | Before the UI is offered to users outside the owner                                            | Not performed                                                                                                  |
 
 ## Review cadence
