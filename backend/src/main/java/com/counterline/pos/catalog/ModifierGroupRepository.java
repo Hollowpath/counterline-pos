@@ -19,7 +19,14 @@ interface ModifierGroupRepository extends JpaRepository<ModifierGroup, Long> {
             """)
     List<ModifierGroup> findWithOptionsByItemIds(@Param("itemIds") Collection<Long> itemIds);
 
+    /** All groups of an item, in display order (options are read separately). */
+    @Query("select g from ModifierGroup g where g.item.id = :itemId order by g.sortOrder")
+    List<ModifierGroup> findByItemIdOrderBySortOrderAsc(@Param("itemId") Long itemId);
+
+    @Query("select coalesce(max(g.sortOrder), 0) from ModifierGroup g where g.item.id = :itemId")
+    int maxSortOrder(@Param("itemId") Long itemId);
+
     /** Which of these items open the item dialog (have at least one option group). */
-    @Query("select distinct g.item.id from ModifierGroup g where g.item.id in :itemIds")
+    @Query("select distinct g.item.id from ModifierGroup g join g.options o where g.item.id in :itemIds and o.active = true")
     Set<Long> findItemIdsWithGroups(@Param("itemIds") Collection<Long> itemIds);
 }

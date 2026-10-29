@@ -27,6 +27,14 @@ public class QuickgridTab {
         this.sortOrder = sortOrder;
     }
 
+    void rename(String name) {
+        this.name = name;
+    }
+
+    void setSortOrder(short sortOrder) {
+        this.sortOrder = sortOrder;
+    }
+
     public Long getId() {
         return id;
     }

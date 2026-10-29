@@ -66,6 +66,7 @@ public class CatalogService {
             return Map.of();
         }
         return modifierGroupRepository.findWithOptionsByItemIds(itemIds).stream()
+                .filter(group -> group.getOptions().stream().anyMatch(ModifierOption::isActive))
                 .collect(Collectors.groupingBy(ModifierGroup::getItemId));
     }
 

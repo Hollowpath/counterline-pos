@@ -62,7 +62,39 @@ export interface AdminCategory {
   id: number
   name: string
   tab: string | null
+  /** The cell on the tab's 5 × 5 grid; null off the grid. */
+  row: number | null
+  col: number | null
+  /** Its items count towards "Buy 3" promotions. */
+  countsForPromotions: boolean
   items: AdminItem[]
+}
+
+export interface AdminTab {
+  id: number
+  name: string
+  sortOrder: number
+  folders: number
+}
+
+export interface AdminModifierOption {
+  id: number
+  name: string
+  price: number
+  active: boolean
+}
+
+export interface AdminModifierGroup {
+  id: number
+  itemId: number
+  name: string
+  chooseExactly: number
+  options: AdminModifierOption[]
+}
+
+/** DELETED, or DEACTIVATED when there is sales history to keep. */
+export interface Removal {
+  outcome: 'DELETED' | 'DEACTIVATED'
 }
 
 export interface AdminDiscount {
@@ -162,6 +194,17 @@ export const dashboardPaths = {
   items: '/api/v1/dashboard/catalog/items',
   item: (id: number) => `/api/v1/dashboard/catalog/items/${id}`,
   folders: '/api/v1/dashboard/catalog/folders',
+  folder: (id: number) => `/api/v1/dashboard/catalog/folders/${id}`,
+  folderItemsOrder: (id: number) => `/api/v1/dashboard/catalog/folders/${id}/items/order`,
+  tabs: '/api/v1/dashboard/catalog/tabs',
+  tabsOrder: '/api/v1/dashboard/catalog/tabs/order',
+  tab: (id: number) => `/api/v1/dashboard/catalog/tabs/${id}`,
+  modifierGroups: (itemId: number) => `/api/v1/dashboard/catalog/items/${itemId}/modifier-groups`,
+  modifierGroupsOrder: (itemId: number) => `/api/v1/dashboard/catalog/items/${itemId}/modifier-groups/order`,
+  modifierGroup: (id: number) => `/api/v1/dashboard/catalog/modifier-groups/${id}`,
+  modifierOptions: (groupId: number) => `/api/v1/dashboard/catalog/modifier-groups/${groupId}/options`,
+  modifierOptionsOrder: (groupId: number) => `/api/v1/dashboard/catalog/modifier-groups/${groupId}/options/order`,
+  modifierOption: (id: number) => `/api/v1/dashboard/catalog/modifier-options/${id}`,
   discounts: '/api/v1/dashboard/discounts',
   discount: (id: number) => `/api/v1/dashboard/discounts/${id}`,
   vouchers: '/api/v1/dashboard/vouchers',

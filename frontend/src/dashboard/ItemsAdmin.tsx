@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from 'react'
-import { ApiError, postJson, putJson } from '../api/http'
+import { ApiError, deleteJson, postJson, putJson } from '../api/http'
 import { useApi } from '../api/useApi'
 import { LoadState } from '../components/LoadState'
 import { formatDate } from '../lib/dates'
 import { checkbox, field, note, sectionTitle, table, tableAsCards, tableFrame } from './styles'
-import { dashboardPaths, type AdminCategory, type AdminItem } from './types'
+import { confirmed, moved } from './catalogHelpers'
+import { FolderToolbar, TabsPanel } from './CatalogStructure'
+import { ModifiersEditor } from './ModifiersEditor'
+import { dashboardPaths, type AdminCategory, type AdminItem, type Removal } from './types'
 import { Page, Status } from './ui'
 
 function message(error: unknown) {
@@ -21,10 +24,14 @@ export function ItemsAdmin() {
   const catalogue = useApi<AdminCategory[]>(dashboardPaths.items)
   const [filter, setFilter] = useState('')
   const [showOffGrid, setShowOffGrid] = useState(false)
+  // What the last structural change did, kept across the reload that follows it.
+  const [notice, setNotice] = useState<string | null>(null)
 
   if (catalogue.status !== 'success') {
     return <LoadState status={catalogue.status} message={catalogue.status === 'error' ? catalogue.message : undefined} onRetry={catalogue.reload} />
   }
+  const tabNames = [...new Set(catalogue.data.flatMap((category) => (category.tab === null ? [] : [category.tab])))]
+  const folders = catalogue.data.map((category) => ({ id: category.id, name: category.name }))
   const term = filter.trim().toLowerCase()
   const categories = catalogue.data
     .map((category) => ({ ...category, items: category.items.filter((item) => item.name.toLowerCase().includes(term)) }))
@@ -59,17 +66,20 @@ export function ItemsAdmin() {
         </>
       }
     >
+      {notice && <p className="text-sm font-medium text-zinc-700" role="status">{notice}</p>}
       <NewFolderForm
-        tabs={[...new Set(catalogue.data.flatMap((category) => (category.tab === null ? [] : [category.tab])))]}
+        tabs={tabNames}
         empty={catalogue.data.length === 0}
         onAdded={catalogue.reload}
       />
+      <TabsPanel onChanged={catalogue.reload} onNotice={setNotice} />
       {categories.map((category) => (
         <section key={category.id} aria-label={category.name}>
           <h2 className={`${sectionTitle} flex items-baseline gap-2`}>
             {category.name}
             <span className="text-xs font-normal normal-case tracking-normal">{category.tab ?? 'Not on the grid'}</span>
           </h2>
+          <FolderToolbar category={category} tabs={tabNames} onChanged={catalogue.reload} onNotice={setNotice} />
           <div className={tableFrame}>
             <table className={`${table} ${tableAsCards}`}>
               <thead>
@@ -83,7 +93,9 @@ export function ItemsAdmin() {
               </thead>
               <tbody>
                 {category.items.map((item) => (
-                  <ItemRow key={item.id} item={item} />
+                  <ItemRow key={item.id} item={item} folderId={category.id} folders={folders}
+                    folderItemIds={catalogue.data.find((all) => all.id === category.id)?.items.map((it) => it.id) ?? []}
+                    canReorder={term === ''} onChanged={catalogue.reload} onNotice={setNotice} />
                 ))}
                 <NewItemRow categoryId={category.id} onAdded={catalogue.reload} />
               </tbody>
@@ -149,7 +161,16 @@ function NewFolderForm({ tabs, empty, onAdded }: { tabs: string[]; empty: boolea
   )
 }
 
-function ItemRow({ item }: { item: AdminItem }) {
+function ItemRow({ item, folderId, folders, folderItemIds, canReorder, onChanged, onNotice }: {
+  item: AdminItem
+  folderId: number
+  folders: { id: number; name: string }[]
+  folderItemIds: number[]
+  canReorder: boolean
+  onChanged: () => void
+  onNotice: (text: string | null) => void
+}) {
+  const [showOptions, setShowOptions] = useState(false)
   const [saved, setSaved] = useState(item)
   const [name, setName] = useState(item.name)
   const [price, setPrice] = useState(item.price.toFixed(2))
@@ -178,7 +199,23 @@ function ItemRow({ item }: { item: AdminItem }) {
     }
   }
 
+  async function structural(action: () => Promise<unknown>, done: (result: unknown) => string) {
+    onNotice(null)
+    try {
+      const result = await action()
+      onNotice(done(result))
+      onChanged()
+    } catch (error) {
+      onNotice(message(error))
+    }
+  }
+  const order = (by: -1 | 1) => {
+    const next = moved(folderItemIds, item.id, by)
+    if (next) void structural(() => putJson(dashboardPaths.folderItemsOrder(folderId), { ids: next }), () => `Moved ${saved.name}`)
+  }
+
   return (
+    <>
     <tr className={active ? undefined : 'opacity-55'}>
       <td>
         <input className={`${field} w-full min-w-48`} aria-label={`Name of ${saved.name}`} maxLength={120} value={name}
@@ -230,8 +267,42 @@ function ItemRow({ item }: { item: AdminItem }) {
           Save
         </button>
         <Status status={status} />
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <button type="button" className="btn" disabled={!canReorder || folderItemIds[0] === item.id}
+            aria-label={`Move ${saved.name} up`} onClick={() => order(-1)}>↑</button>
+          <button type="button" className="btn" disabled={!canReorder || folderItemIds[folderItemIds.length - 1] === item.id}
+            aria-label={`Move ${saved.name} down`} onClick={() => order(1)}>↓</button>
+          <select className={field} aria-label={`Folder of ${saved.name}`} value={folderId}
+            onChange={(event) => {
+              const target = folders.find((folder) => folder.id === Number(event.target.value))
+              if (target) {
+                void structural(() => putJson(dashboardPaths.item(item.id), {
+                  categoryId: target.id, name: saved.name, price: saved.price, active: saved.active,
+                }), () => `Moved ${saved.name} to ${target.name}`)
+              }
+            }}>
+            {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+          </select>
+          <button type="button" className="btn" aria-expanded={showOptions} aria-label={`Options of ${saved.name}`}
+            onClick={() => setShowOptions(!showOptions)}>Options</button>
+          <button type="button" className="btn" aria-label={`Remove ${saved.name}`}
+            onClick={() => {
+              if (confirmed(`Remove ${saved.name}? If it has been sold it is only taken off sale, so past sales stay intact.`)) {
+                void structural(() => deleteJson<Removal>(dashboardPaths.item(item.id)), (result) =>
+                  (result as Removal).outcome === 'DELETED'
+                    ? `Deleted ${saved.name}`
+                    : `${saved.name} was sold before: taken off sale, with its history kept`)
+              }
+            }}>Remove</button>
+        </div>
       </td>
     </tr>
+    {showOptions && (
+      <tr>
+        <td colSpan={5}><ModifiersEditor itemId={item.id} itemName={saved.name} /></td>
+      </tr>
+    )}
+    </>
   )
 }
 

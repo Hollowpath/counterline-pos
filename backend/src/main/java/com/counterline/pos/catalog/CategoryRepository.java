@@ -24,6 +24,10 @@ interface CategoryRepository extends JpaRepository<Category, Long> {
 
     boolean existsByNameIgnoreCase(String name);
 
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
+
+    long countByTabId(Long tabId);
+
     List<Category> findByTabId(Long tabId);
 
     /** Every folder, with or without items, in till order: tab, then grid cell; off-grid folders last. */

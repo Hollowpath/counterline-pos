@@ -35,6 +35,29 @@ public class ModifierOption {
     protected ModifierOption() {
     }
 
+    /** A new, active option at the end of the group's options (from the dashboard). */
+    ModifierOption(ModifierGroup group, String name, BigDecimal price, int sortOrder) {
+        this.group = group;
+        this.name = name;
+        this.price = price;
+        this.sortOrder = (short) sortOrder;
+        this.active = true;
+    }
+
+    void edit(String name, BigDecimal price, boolean active) {
+        this.name = name;
+        this.price = price;
+        this.active = active;
+    }
+
+    void setSortOrder(int sortOrder) {
+        this.sortOrder = (short) sortOrder;
+    }
+
+    public int getSortOrder() {
+        return sortOrder;
+    }
+
     public Long getId() {
         return id;
     }

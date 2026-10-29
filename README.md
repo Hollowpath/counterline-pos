@@ -20,7 +20,7 @@ A multi-outlet retail point-of-sale system: a tablet POS for the till, a custome
 **Dashboard**
 
 - Head-office and manager sign-in with email and password.
-- Sales overview per outlet; catalogue (adding folders to the till grid and items in them, prices, on-sale), discount and voucher management (head office); customers, member adjustments, till devices and PIN locks.
+- Sales overview per outlet; catalogue (folders and tabs: add, rename, move, reorder, delete when empty; items: add, price, move, reorder, remove; item option groups and options; sold items and options are taken off sale rather than deleted, so past sales stay intact), discount and voucher management (head office); customers, member adjustments, till devices and PIN locks.
 
 **Platform**
 

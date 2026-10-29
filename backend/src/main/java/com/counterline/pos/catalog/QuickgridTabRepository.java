@@ -13,6 +13,8 @@ interface QuickgridTabRepository extends JpaRepository<QuickgridTab, Long> {
 
     Optional<QuickgridTab> findByNameIgnoreCase(String name);
 
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
+
     @Query("select coalesce(max(t.sortOrder), 0) from QuickgridTab t")
     int maxSortOrder();
 }

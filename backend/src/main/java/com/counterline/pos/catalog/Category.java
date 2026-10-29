@@ -45,6 +45,27 @@ public class Category {
         this.gridCol = gridCol;
     }
 
+    void rename(String name) {
+        this.name = name;
+    }
+
+    void placeOn(QuickgridTab tab, short gridRow, short gridCol) {
+        this.tab = tab;
+        this.gridRow = gridRow;
+        this.gridCol = gridCol;
+    }
+
+    /** Takes the folder off the till grid; it still exists in the library and reports. */
+    void removeFromGrid() {
+        this.tab = null;
+        this.gridRow = null;
+        this.gridCol = null;
+    }
+
+    void setCountsForPromotions(boolean countsForPromotions) {
+        this.countsForPromotions = countsForPromotions;
+    }
+
     public Long getId() {
         return id;
     }

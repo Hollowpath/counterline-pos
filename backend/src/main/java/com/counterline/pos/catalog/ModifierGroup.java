@@ -41,6 +41,27 @@ public class ModifierGroup {
     protected ModifierGroup() {
     }
 
+    /** A new group at the end of the item's groups (from the dashboard). */
+    ModifierGroup(Item item, String name, int chooseExactly, int sortOrder) {
+        this.item = item;
+        this.name = name;
+        this.chooseExactly = (short) chooseExactly;
+        this.sortOrder = (short) sortOrder;
+    }
+
+    void edit(String name, int chooseExactly) {
+        this.name = name;
+        this.chooseExactly = (short) chooseExactly;
+    }
+
+    void setSortOrder(int sortOrder) {
+        this.sortOrder = (short) sortOrder;
+    }
+
+    public int getSortOrder() {
+        return sortOrder;
+    }
+
     public Long getId() {
         return id;
     }

@@ -70,6 +70,16 @@ public class Item {
         this.active = active;
     }
 
+    /** Moves the item to the end of another folder. */
+    void moveTo(Category category, int sortOrder) {
+        this.category = category;
+        this.sortOrder = sortOrder;
+    }
+
+    void setSortOrder(int sortOrder) {
+        this.sortOrder = sortOrder;
+    }
+
     /** Marks the item a seasonal flavour for those days, or not at all ({@code seasonal} false). */
     void setSeasonal(boolean seasonal, LocalDate from, LocalDate until) {
         this.seasonal = seasonal;

@@ -28,6 +28,11 @@ interface ItemRepository extends JpaRepository<Item, Long> {
     @org.springframework.data.jpa.repository.Query("select coalesce(max(i.sortOrder), 0) from Item i where i.category.id = :categoryId")
     int maxSortOrder(@org.springframework.data.repository.query.Param("categoryId") Long categoryId);
 
+    long countByCategoryId(Long categoryId);
+
+    /** Every item of a folder, on sale or not, in display order. */
+    List<Item> findByCategoryIdOrderBySortOrderAsc(Long categoryId);
+
     boolean existsByCategoryIdAndNameIgnoreCase(Long categoryId, String name);
 
     boolean existsByCategoryIdAndNameIgnoreCaseAndIdNot(Long categoryId, String name, Long id);

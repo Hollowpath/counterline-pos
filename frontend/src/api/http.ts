@@ -73,6 +73,11 @@ export function putJson<T>(path: string, body: unknown): Promise<T> {
   return sendJson<T>('PUT', path, body)
 }
 
+/** A DELETE whose response says what happened (e.g. deleted, or only deactivated because it has history). */
+export function deleteJson<T>(path: string): Promise<T> {
+  return request<T>(path, { method: 'DELETE' })
+}
+
 export function deleteRequest(path: string): Promise<void> {
   return request<void>(path, { method: 'DELETE' })
 }

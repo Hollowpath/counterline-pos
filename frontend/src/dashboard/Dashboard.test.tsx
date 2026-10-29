@@ -50,12 +50,14 @@ const overview = (forOutlets: typeof outlets): SalesOverview => ({
 function stubApi({ emptyCatalogue = false } = {}) {
   const calls: { key: string; body: unknown }[] = []
   // The catalogue is kept as state so folders and items added through the API show on the next read.
-  const catalogue: { id: number; name: string; tab: string | null; items: Record<string, unknown>[] }[] = emptyCatalogue ? [] : [
-    { id: 1, name: 'White Stand Pouch', tab: 'Selling Items', items: [
+  const catalogue: { id: number; name: string; tab: string | null; row?: number; col?: number; countsForPromotions?: boolean;
+    items: Record<string, unknown>[] }[] = emptyCatalogue ? [] : [
+    { id: 1, name: 'White Stand Pouch', tab: 'Selling Items', row: 1, col: 1, countsForPromotions: true, items: [
       { id: 7, name: 'WSP Caramel', price: 16, active: true, promotion: null, seasonal: false, seasonalFrom: null, seasonalUntil: null, seasonalNow: false },
       { id: 8, name: 'B3 F1 BC Caramel', price: 6.5, active: true, promotion: 'Buy 3 Free 1 Promo', seasonal: false, seasonalFrom: null,
         seasonalUntil: null, seasonalNow: false },
     ] },
+    { id: 2, name: 'Empty Folder', tab: 'Selling Items', row: 1, col: 2, countsForPromotions: false, items: [] },
   ]
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = new URL(String(input), 'http://pos.test')
@@ -79,10 +81,37 @@ function stubApi({ emptyCatalogue = false } = {}) {
       case 'GET /api/v1/dashboard/catalog/items':
         return json(catalogue)
       case 'POST /api/v1/dashboard/catalog/folders': {
-        const folder = { id: catalogue.length + 1, name: body.name, tab: body.tab, items: [] }
+        const folder = { id: catalogue.length + 1, name: body.name, tab: body.tab, row: 1, col: 1, countsForPromotions: false, items: [] }
         catalogue.push(folder)
         return json(folder, 201)
       }
+      case 'GET /api/v1/dashboard/catalog/tabs':
+        return json([{ id: 1, name: 'Selling Items', sortOrder: 1, folders: 2 }, { id: 2, name: 'Gifts', sortOrder: 2, folders: 0 }])
+      case 'PUT /api/v1/dashboard/catalog/tabs/1':
+        return json({ id: 1, name: body.name, sortOrder: 1, folders: 2 })
+      case 'PUT /api/v1/dashboard/catalog/tabs/order':
+        return json([])
+      case 'DELETE /api/v1/dashboard/catalog/tabs/2':
+      case 'DELETE /api/v1/dashboard/catalog/folders/2':
+        return new Response(null, { status: 204 })
+      case 'PUT /api/v1/dashboard/catalog/folders/1':
+        return json({ id: 1, name: body.name, tab: body.tab, row: null, col: null, countsForPromotions: body.countsForPromotions, items: [] })
+      case 'PUT /api/v1/dashboard/catalog/folders/1/items/order':
+        return json([])
+      case 'DELETE /api/v1/dashboard/catalog/items/7':
+        return json({ outcome: 'DEACTIVATED' })
+      case 'DELETE /api/v1/dashboard/catalog/items/8':
+        return json({ outcome: 'DELETED' })
+      case 'GET /api/v1/dashboard/catalog/items/7/modifier-groups':
+        return json([{ id: 5, itemId: 7, name: 'Flavours', chooseExactly: 3, options: [
+          { id: 11, name: 'Caramel', price: 0, active: true }, { id: 12, name: 'Matcha', price: 2, active: true }] }])
+      case 'POST /api/v1/dashboard/catalog/items/7/modifier-groups':
+      case 'POST /api/v1/dashboard/catalog/modifier-groups/5/options':
+        return json({ id: 99, ...body }, 201)
+      case 'DELETE /api/v1/dashboard/catalog/modifier-options/12':
+        return json({ outcome: 'DEACTIVATED' })
+      case 'DELETE /api/v1/dashboard/catalog/modifier-groups/5':
+        return json({ outcome: 'DELETED' })
       case 'POST /api/v1/dashboard/catalog/items': {
         const item = { id: 100, name: body.name, price: body.price, active: true, promotion: null, seasonal: false, seasonalFrom: null,
           seasonalUntil: null, seasonalNow: false }
@@ -238,6 +267,130 @@ describe('back-office dashboard', () => {
     // Available with a catalogue too, defaulting to an existing tab.
     expect(await screen.findByLabelText('Tab')).toHaveValue('Selling Items')
     expect(screen.queryByText(/There are no folders yet/)).not.toBeInTheDocument()
+  })
+
+  describe('restructuring the catalogue', () => {
+    const openItems = async (user: UserEvent) => {
+      await logInAsHeadOffice(user)
+      await user.click(await nav().findByRole('button', { name: 'Items & Prices' }))
+      await screen.findByLabelText('Price of WSP Caramel')
+    }
+    const sent = (calls: { key: string; body: unknown }[], key: string) => calls.filter((call) => call.key === key)
+
+    it('renames a folder and takes it off the till grid only after confirming', async () => {
+      const calls = stubApi()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
+      const user = userEvent.setup()
+      await openItems(user)
+
+      const name = screen.getByLabelText('Name of folder White Stand Pouch')
+      await user.clear(name)
+      await user.type(name, 'Pouches')
+      await user.click(screen.getByLabelText('White Stand Pouch counts for promotions'))
+      await user.click(screen.getByRole('button', { name: 'Save folder White Stand Pouch' }))
+      expect(await screen.findByText('Saved Pouches')).toBeInTheDocument()
+      expect(sent(calls, 'PUT /api/v1/dashboard/catalog/folders/1')[0].body)
+        .toEqual({ name: 'Pouches', tab: 'Selling Items', countsForPromotions: false })
+
+      // Declined: nothing is sent. Accepted: the folder leaves the grid (tab null).
+      await user.click(await screen.findByRole('button', { name: 'Remove White Stand Pouch from the till grid' }))
+      expect(confirm).toHaveBeenCalledTimes(1)
+      expect(sent(calls, 'PUT /api/v1/dashboard/catalog/folders/1')).toHaveLength(1)
+      await user.click(screen.getByRole('button', { name: 'Remove White Stand Pouch from the till grid' }))
+      expect(await screen.findAllByText(/Saved/)).not.toHaveLength(0)
+      expect(sent(calls, 'PUT /api/v1/dashboard/catalog/folders/1')[1].body).toMatchObject({ tab: null })
+      confirm.mockRestore()
+    })
+
+    it('deletes only an empty folder, and only when confirmed', async () => {
+      const calls = stubApi()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
+      const user = userEvent.setup()
+      await openItems(user)
+
+      expect(screen.getByRole('button', { name: 'Delete folder White Stand Pouch' })).toBeDisabled()
+      await user.click(screen.getByRole('button', { name: 'Delete folder Empty Folder' }))
+      expect(sent(calls, 'DELETE /api/v1/dashboard/catalog/folders/2')).toHaveLength(0)
+      await user.click(screen.getByRole('button', { name: 'Delete folder Empty Folder' }))
+      expect(await screen.findByText('Deleted Empty Folder')).toBeInTheDocument()
+      expect(sent(calls, 'DELETE /api/v1/dashboard/catalog/folders/2')).toHaveLength(1)
+      confirm.mockRestore()
+    })
+
+    it('renames, reorders and deletes tabs; a tab with folders cannot be deleted', async () => {
+      const calls = stubApi()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
+      const user = userEvent.setup()
+      await openItems(user)
+
+      const tabs = await screen.findByRole('region', { name: 'Tabs' })
+      expect(within(tabs).getByRole('button', { name: 'Delete tab Selling Items' })).toBeDisabled()
+      const rename = within(tabs).getByLabelText('Name of tab Gifts')
+      await user.clear(rename)
+      await user.type(rename, 'Gift Boxes')
+      expect(within(tabs).getByRole('button', { name: 'Save tab Gifts' })).toBeEnabled()
+      await user.click(within(tabs).getByRole('button', { name: 'Move tab Gifts earlier' }))
+      expect(sent(calls, 'PUT /api/v1/dashboard/catalog/tabs/order')[0].body).toEqual({ ids: [2, 1] })
+
+      await user.click(within(await screen.findByRole('region', { name: 'Tabs' })).getByRole('button', { name: 'Delete tab Gifts' }))
+      expect(sent(calls, 'DELETE /api/v1/dashboard/catalog/tabs/2')).toHaveLength(0)
+      await user.click(within(await screen.findByRole('region', { name: 'Tabs' })).getByRole('button', { name: 'Delete tab Gifts' }))
+      await vi.waitFor(() => expect(sent(calls, 'DELETE /api/v1/dashboard/catalog/tabs/2')).toHaveLength(1))
+      confirm.mockRestore()
+    })
+
+    it('removes an item after confirming: a sold one is only taken off sale, an unsold one is deleted', async () => {
+      const calls = stubApi()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
+      const user = userEvent.setup()
+      await openItems(user)
+
+      await user.click(screen.getByRole('button', { name: 'Remove WSP Caramel' }))
+      expect(sent(calls, 'DELETE /api/v1/dashboard/catalog/items/7')).toHaveLength(0)
+      await user.click(screen.getByRole('button', { name: 'Remove WSP Caramel' }))
+      expect(await screen.findByText('WSP Caramel was sold before: taken off sale, with its history kept')).toBeInTheDocument()
+
+      await user.click(await screen.findByRole('button', { name: 'Remove B3 F1 BC Caramel' }))
+      expect(await screen.findByText('Deleted B3 F1 BC Caramel')).toBeInTheDocument()
+      confirm.mockRestore()
+    })
+
+    it('reorders an item and moves it to another folder', async () => {
+      const calls = stubApi()
+      const user = userEvent.setup()
+      await openItems(user)
+
+      expect(screen.getByRole('button', { name: 'Move WSP Caramel up' })).toBeDisabled()
+      await user.click(screen.getByRole('button', { name: 'Move WSP Caramel down' }))
+      expect(sent(calls, 'PUT /api/v1/dashboard/catalog/folders/1/items/order')[0].body).toEqual({ ids: [8, 7] })
+
+      await user.selectOptions(await screen.findByLabelText('Folder of WSP Caramel'), 'Empty Folder')
+      expect(await screen.findByText('Moved WSP Caramel to Empty Folder')).toBeInTheDocument()
+      expect(sent(calls, 'PUT /api/v1/dashboard/catalog/items/7')[0].body)
+        .toMatchObject({ categoryId: 2, name: 'WSP Caramel', price: 16, active: true })
+    })
+
+    it('manages an item’s option groups and options, keeping sold ones as inactive', async () => {
+      const calls = stubApi()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true)
+      const user = userEvent.setup()
+      await openItems(user)
+
+      await user.click(screen.getByRole('button', { name: 'Options of WSP Caramel' }))
+      const editor = await screen.findByRole('group', { name: 'Options of WSP Caramel' })
+      expect(within(editor).getByLabelText('Name of option Matcha')).toBeInTheDocument()
+
+      await user.type(within(editor).getByLabelText('New option name for Flavours'), 'Cheese')
+      await user.click(within(editor).getByRole('button', { name: 'Add option to Flavours' }))
+      await vi.waitFor(() => expect(sent(calls, 'POST /api/v1/dashboard/catalog/modifier-groups/5/options')[0].body)
+        .toEqual({ name: 'Cheese', price: 0 }))
+
+      await user.click(await within(await screen.findByRole('group', { name: 'Options of WSP Caramel' })).findByRole('button', { name: 'Remove option Matcha' }))
+      expect(sent(calls, 'DELETE /api/v1/dashboard/catalog/modifier-options/12')).toHaveLength(0)
+      await user.click(within(await screen.findByRole('group', { name: 'Options of WSP Caramel' })).getByRole('button', { name: 'Remove option Matcha' }))
+      expect(await screen.findByText('Matcha was sold before: kept, but no longer offered')).toBeInTheDocument()
+      confirm.mockRestore()
+    })
   })
 
   it('head office makes an item a seasonal flavour until its last day', async () => {
