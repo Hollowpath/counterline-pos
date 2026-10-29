@@ -100,7 +100,7 @@ jobs:
         run: npm test
 
   image:
-    name: Packaged image smoke test
+    name: Packaged image scan and smoke test
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -111,6 +111,19 @@ jobs:
 
       - name: Build the image
         run: docker build -t counterline-pos:local .
+
+      # Scans the image built above (not rebuilt): OS packages and application libraries. Only
+      # vulnerabilities with a fix available at HIGH or CRITICAL severity fail the job.
+      - name: Scan the image for vulnerabilities
+        id: trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: counterline-pos:local
+          format: table
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
 
       - name: Start the Compose app profile
         run: docker compose --profile app up --no-build -d
@@ -127,8 +140,9 @@ jobs:
           echo "The application did not become healthy within 180 seconds" >&2
           exit 1
 
+      # Only when the scan passed and a later Compose step failed: not for checkout, build or scan failures.
       - name: Show container status and logs
-        if: failure()
+        if: failure() && steps.trivy.conclusion == 'success'
         run: |
           docker compose --profile app ps -a
           docker compose --profile app logs --no-color --tail=200 app app-db
