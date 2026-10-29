@@ -5,7 +5,7 @@ What this system is scoped to do, what evidence exists for its quality, and whic
 ## Scope
 
 - Built and run by a single owner. No production traffic, no real customers, no service-level commitments.
-- Intended workload: a small number of outlets, run locally or in one small cloud environment. A temporary, owner-restricted learning deployment on AWS exists (see the [README](../README.md#aws-deployment-status-and-roadmap)); it is not production-ready. No capacity figure is established.
+- Intended workload: a small number of outlets, run locally or in one small cloud environment. A reproducible CDK stack for a temporary, owner-restricted learning deployment on AWS exists, but the repository provides no continuously hosted environment; deployments are external, owner-managed and created on demand (see the [README](../README.md#aws-deployment-status-and-roadmap)); it is not production-ready. No capacity figure is established.
 - Single region, single database, single container image. No multi-region, disaster-recovery or high-availability design.
 - Out of scope today: real payment-gateway integration (payments are recorded, not processed), tax filing, fiscal printer integration, offline till operation, and multi-tenant isolation.
 
@@ -34,7 +34,7 @@ What this system is scoped to do, what evidence exists for its quality, and whic
 | Container         | Multi-stage image, non-root runtime, health check, memory-aware JVM flags                                                         | `Dockerfile`                              |
 | Config            | Environment-variable driven; no secret defaults outside `local`                                                                   | `application.yml`                         |
 | Error shape       | Problem-details responses for application and security errors                                                                     | `common/`, `auth/`                        |
-| AWS runtime (temporary) | Owner-managed CDK stack: ECR, two-AZ VPC without NAT, owner-restricted HTTP ALB, one public-IP Fargate task, encrypted isolated PostgreSQL, Secrets Manager, seven-day logs | `infrastructure/`, [architecture.md](architecture.md) |
+| AWS stack (temporary, on-demand) | Owner-managed, reproducible CDK stack, deployed only for testing or demonstrations and destroyed afterwards: ECR, two-AZ VPC without NAT, owner-restricted HTTP ALB, one public-IP Fargate task, encrypted isolated PostgreSQL, Secrets Manager, seven-day logs | `infrastructure/`, [architecture.md](architecture.md) |
 
 ## Deferred controls and their triggers
 
@@ -50,7 +50,7 @@ Each item is intentionally not built. Build it when its trigger is met, not befo
 | Restrict or disable Swagger UI / OpenAPI outside local development | Before any access beyond the owner | Served without authentication, including on the AWS deployment (reachable only from the owner address) |
 | HTTPS and secure headers at the edge | Before any access beyond the owner (needs a domain the owner controls) | Not built. The load balancer serves plain HTTP, restricted to one owner IPv4 `/32`. Where secure headers are set is not yet decided |
 | Rate limiting beyond PIN throttle, bot protection                                                 | Before any persistent or publicly accessible environment                                       | PIN throttle only                                                                                              |
-| Cost alerts and a billing-review routine (a budget alert only notifies; it does not cap spending) | Before the first billable cloud resource exists | Trigger met: billable resources are defined. The owner has configured AWS budget notifications outside the repository; they notify but do not cap or automatically stop spending, and billing review remains manual |
+| Cost alerts and a billing-review routine (a budget alert only notifies; it does not cap spending) | Before the first billable cloud resource exists | Trigger met: billable resources are defined. The stack is meant to be deployed briefly and destroyed to avoid idle charges. The owner has configured AWS budget notifications outside the repository; they notify but do not cap or automatically stop spending, and billing review remains manual |
 | Backups and a tested restore | Before any environment holds data worth keeping | The database keeps one day of automated backups and is deleted with the stack. No restore has been tested |
 | Metrics, alarms, tracing | When deployed beyond a local machine | Application logs go to CloudWatch with seven-day retention. No alarms, custom metrics or tracing; health and info endpoints only |
 | Container image vulnerability scanning beyond basic ECR scanning | When CI first builds a container image | ECR scans on push (basic scanning). CI does not build an image, so no scan runs there |

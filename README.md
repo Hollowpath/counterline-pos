@@ -135,7 +135,9 @@ If the credentials are held in AWS Secrets Manager, removing them from the curre
 
 ## AWS deployment status and roadmap
 
-**What exists.** A GitHub Actions workflow (`.github/workflows/ci.yml`) builds and tests the backend and frontend. The owner-managed AWS CDK stack in `infrastructure/` (TypeScript) defines:
+**Runtime state.** The repository provides no continuously hosted environment. Deployments are external, owner-managed and created on demand; the repository describes what can be deployed, and these docs cannot assert live external state.
+
+**What exists.** A GitHub Actions workflow (`.github/workflows/ci.yml`) builds and tests the backend and frontend. The owner-managed AWS CDK stack in `infrastructure/` (TypeScript) is reproducible and was designed for temporary, owner-run deployments. It defines:
 
 - a private Amazon ECR repository for the application image (immutable tags, scan on push, the five most recent images kept, retained if the stack is deleted);
 - a two-AZ VPC with public and isolated database subnets and no NAT gateway;
@@ -146,6 +148,8 @@ If the credentials are held in AWS Secrets Manager, removing them from the curre
 - CloudWatch application logs with seven-day retention.
 
 **What this is not.** This is a temporary learning deployment, not production-ready: HTTP only, one task, a single-AZ database with one day of backups, no alarms, no autoscaling, and resources that are deleted with the stack (except the ECR repository). There is no automated deployment pipeline: CI does not build or publish an image or touch AWS, and the owner pushes images and deploys the stack by hand. The operator steps are in [infrastructure/README.md](infrastructure/README.md).
+
+**Deploy briefly, then destroy.** The load balancer, Fargate task, database and public IPv4 addresses are billed while they exist, even when idle, so deploy only for testing or demonstrations and tear the stack down afterwards with `cdk destroy`. Teardown deletes the synthetic database and the secrets. The ECR repository is retained by the stack and must be deleted separately for a complete teardown (see [infrastructure/README.md](infrastructure/README.md#teardown-and-cost)).
 
 **Planned, not built.** Region `ap-southeast-1`, one small environment. Each item is added only when it is needed:
 

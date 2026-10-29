@@ -1,6 +1,6 @@
 # Infrastructure
 
-The AWS CDK (TypeScript) stack `Counterline` for a temporary learning deployment of Counterline POS. It is written and run by the owner. It is not production-ready. What it defines and how the pieces connect is in [docs/architecture.md](../docs/architecture.md#aws-deployment-temporary).
+The AWS CDK (TypeScript) stack `Counterline` for a temporary learning deployment of Counterline POS. It is reproducible and designed for temporary, owner-run deployments: deploy for testing or demonstrations, then destroy. The repository provides no continuously hosted environment: deployments are external, owner-managed and created on demand, and these docs cannot assert live external state. It is written and run by the owner and is not production-ready. What it defines and how the pieces connect is in [docs/architecture.md](../docs/architecture.md#aws-deployment-temporary).
 
 Placeholders below: `<profile>` is your AWS CLI profile, `<owner-ip>` your public IPv4 address, `<tag>` the image tag. Never commit real values, account details or credentials.
 
@@ -38,12 +38,18 @@ Secrets Manager keeps the previous encrypted version of a secret until the secre
 
 ## Teardown and cost
 
-Billable resources run while the stack exists: the load balancer, the Fargate task, the database instance and storage, and the public IPv4 addresses. Destroy the stack when an exercise is finished:
+Billable resources run while the stack exists, including when idle: the load balancer, the Fargate task, the database instance and storage, and the public IPv4 addresses. Deploy only for testing or demonstrations, and destroy the stack when an exercise is finished:
 
 ```bash
 npx cdk destroy --profile <profile>
 ```
 
-- The ECR repository has a retain policy: it and its images stay after `destroy`, with a small storage cost, until you delete them yourself.
-- The database, its automated backups, the log group and the secrets are deleted with the stack. Deletion is irreversible: take any export you need first. CloudFormation deletes the secrets without a recovery window (it force-deletes them), but permanent deletion is asynchronous, so creating a secret with the same name straight away may need a short retry.
+- The ECR repository has a retain policy: it and its images stay after `destroy`, with a small storage cost. For a complete teardown, delete it separately:
+
+  ```bash
+  aws ecr delete-repository --repository-name counterline-pos --force --profile <profile>
+  ```
+
+  The current stack creates the repository named `counterline-pos` itself and cannot automatically reuse a retained one, so redeploying this unchanged stack while the retained repository exists conflicts. Delete the retained repository before redeploying. Keeping it would first require changing the repository design in the stack, for example importing the existing repository.
+- The database, its automated backups, the log group and the secrets are deleted with the stack, so teardown destroys the synthetic database and secrets. Deletion is irreversible: take any export you need first. CloudFormation deletes the secrets without a recovery window (it force-deletes them), but permanent deletion is asynchronous, so creating a secret with the same name straight away may need a short retry.
 - Confirm in the AWS console that nothing is left running, and review billing the same day. Budget notifications, where configured, notify only; they do not cap or stop spending.

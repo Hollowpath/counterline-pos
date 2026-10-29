@@ -44,7 +44,7 @@ PostgreSQL 17. Schema is owned by Flyway (`db/migration`, `V1`–`V22`); Hiberna
 
 ## AWS deployment (temporary)
 
-Defined in `infrastructure/lib/infrastructure-stack.ts`; a learning deployment run by the owner, not a production design.
+Defined in `infrastructure/lib/infrastructure-stack.ts`; a reproducible learning deployment designed to be run temporarily by the owner, not a production design. This section describes what the stack defines; the repository provides no continuously hosted environment, and deployments are external, owner-managed and created on demand, so these docs cannot assert live external state. Deploy only for testing or demonstrations and destroy afterwards (see the [infrastructure guide](../infrastructure/README.md#teardown-and-cost)).
 
 ```
 Owner (one IPv4 /32) ──HTTP :80──▶ ALB (public subnets) ──HTTP :8080──▶ Fargate task ──JDBC :5432──▶ RDS PostgreSQL
