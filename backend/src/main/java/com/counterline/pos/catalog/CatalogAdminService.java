@@ -11,15 +11,18 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Head office edits the catalogue from the dashboard: item names, prices and whether they are on
@@ -32,16 +35,21 @@ public class CatalogAdminService {
 
     private static final Logger log = LoggerFactory.getLogger(CatalogAdminService.class);
 
+    /** The till grid is 5 by 5 (category_grid_cell_ck). */
+    private static final int GRID_SIZE = 5;
+
     private final ItemRepository itemRepository;
     private final CategoryRepository categoryRepository;
+    private final QuickgridTabRepository tabRepository;
 
     private final OutletProperties outlet;
     private final Clock clock;
 
-    CatalogAdminService(ItemRepository itemRepository, CategoryRepository categoryRepository, OutletProperties outlet,
-                        Clock clock) {
+    CatalogAdminService(ItemRepository itemRepository, CategoryRepository categoryRepository,
+                        QuickgridTabRepository tabRepository, OutletProperties outlet, Clock clock) {
         this.itemRepository = itemRepository;
         this.categoryRepository = categoryRepository;
+        this.tabRepository = tabRepository;
         this.outlet = outlet;
         this.clock = clock;
     }
@@ -77,19 +85,69 @@ public class CatalogAdminService {
             LocalDate seasonalUntil) {
     }
 
+    /** A new folder: its name, and the quick-grid tab to place it on (created if there is none by that name). */
+    public record FolderRequest(@NotBlank @Size(max = 80) String name, @NotBlank @Size(max = 60) String tab) {
+    }
+
+    /** Every folder, including empty ones, in till order, each with its items. */
     @Transactional(readOnly = true)
     public List<AdminCategory> catalogue() {
         Map<Long, List<AdminItem>> byCategory = new LinkedHashMap<>();
-        Map<Long, Category> categories = new LinkedHashMap<>();
         for (Item item : itemRepository.findAllInTillOrder()) {
-            categories.putIfAbsent(item.getCategory().getId(), item.getCategory());
             byCategory.computeIfAbsent(item.getCategory().getId(), id -> new java.util.ArrayList<>())
                     .add(AdminItem.from(item, today()));
         }
-        return categories.values().stream()
+        return categoryRepository.findAllInTillOrder().stream()
                 .map(category -> new AdminCategory(category.getId(), category.getName(),
-                        category.getTab() == null ? null : category.getTab().getName(), byCategory.get(category.getId())))
+                        category.getTab() == null ? null : category.getTab().getName(),
+                        byCategory.getOrDefault(category.getId(), List.of())))
                 .toList();
+    }
+
+    /**
+     * Adds a folder to the till grid: on the tab of that name (created after the existing tabs if it
+     * does not exist), in the first free cell reading row by row.
+     */
+    public AdminCategory createFolder(FolderRequest request) {
+        String name = request.name().strip();
+        String tabName = request.tab().strip();
+        if (name.isEmpty() || tabName.isEmpty()) {
+            throw new BadRequestException("Give the folder and the tab a name");
+        }
+        if (categoryRepository.existsByNameIgnoreCase(name)) {
+            throw new ConflictException("A folder called " + name + " already exists");
+        }
+        QuickgridTab tab = tabRepository.findByNameIgnoreCase(tabName).orElse(null);
+        short row = 1;
+        short col = 1;
+        if (tab == null) {
+            tab = tabRepository.save(new QuickgridTab(tabName, (short) (tabRepository.maxSortOrder() + 1)));
+        } else {
+            Set<String> taken = new HashSet<>();
+            for (Category placed : categoryRepository.findByTabId(tab.getId())) {
+                taken.add(placed.getGridRow() + ":" + placed.getGridCol());
+            }
+            int free = -1;
+            for (int cell = 0; cell < GRID_SIZE * GRID_SIZE && free < 0; cell++) {
+                if (!taken.contains((cell / GRID_SIZE + 1) + ":" + (cell % GRID_SIZE + 1))) {
+                    free = cell;
+                }
+            }
+            if (free < 0) {
+                throw new ConflictException("The " + tab.getName() + " tab is full (" + GRID_SIZE + " by " + GRID_SIZE
+                        + " folders). Choose another tab");
+            }
+            row = (short) (free / GRID_SIZE + 1);
+            col = (short) (free % GRID_SIZE + 1);
+        }
+        Category category;
+        try {
+            category = categoryRepository.saveAndFlush(new Category(name, tab, row, col));
+        } catch (DataIntegrityViolationException e) {
+            throw new ConflictException("That folder or grid cell was just taken. Try again");
+        }
+        log.info("Folder {} ({}) added to tab {} at row {}, column {}", category.getId(), name, tab.getName(), row, col);
+        return new AdminCategory(category.getId(), category.getName(), tab.getName(), List.of());
     }
 
     public AdminItem create(ItemRequest request) {

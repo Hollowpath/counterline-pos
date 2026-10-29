@@ -22,6 +22,11 @@ public class QuickgridTab {
     protected QuickgridTab() {
     }
 
+    public QuickgridTab(String name, short sortOrder) {
+        this.name = name;
+        this.sortOrder = sortOrder;
+    }
+
     public Long getId() {
         return id;
     }

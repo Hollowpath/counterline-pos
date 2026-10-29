@@ -37,6 +37,14 @@ public class Category {
     protected Category() {
     }
 
+    /** A folder at the given cell (1 to 5 each) of {@code tab}. */
+    public Category(String name, QuickgridTab tab, short gridRow, short gridCol) {
+        this.name = name;
+        this.tab = tab;
+        this.gridRow = gridRow;
+        this.gridCol = gridCol;
+    }
+
     public Long getId() {
         return id;
     }

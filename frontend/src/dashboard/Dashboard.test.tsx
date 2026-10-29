@@ -47,8 +47,16 @@ const overview = (forOutlets: typeof outlets): SalesOverview => ({
   generatedAt: '2026-10-13T02:00:00Z',
 })
 
-function stubApi() {
+function stubApi({ emptyCatalogue = false } = {}) {
   const calls: { key: string; body: unknown }[] = []
+  // The catalogue is kept as state so folders and items added through the API show on the next read.
+  const catalogue: { id: number; name: string; tab: string | null; items: Record<string, unknown>[] }[] = emptyCatalogue ? [] : [
+    { id: 1, name: 'White Stand Pouch', tab: 'Selling Items', items: [
+      { id: 7, name: 'WSP Caramel', price: 16, active: true, promotion: null, seasonal: false, seasonalFrom: null, seasonalUntil: null, seasonalNow: false },
+      { id: 8, name: 'B3 F1 BC Caramel', price: 6.5, active: true, promotion: 'Buy 3 Free 1 Promo', seasonal: false, seasonalFrom: null,
+        seasonalUntil: null, seasonalNow: false },
+    ] },
+  ]
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = new URL(String(input), 'http://pos.test')
     const key = `${init.method ?? 'GET'} ${url.pathname}`
@@ -69,11 +77,18 @@ function stubApi() {
       case 'GET /api/v1/dashboard/outlets':
         return json(manager ? [outlets[1]] : outlets)
       case 'GET /api/v1/dashboard/catalog/items':
-        return json([{ id: 1, name: 'White Stand Pouch', tab: 'Selling Items', items: [
-          { id: 7, name: 'WSP Caramel', price: 16, active: true, promotion: null, seasonal: false, seasonalFrom: null, seasonalUntil: null, seasonalNow: false },
-          { id: 8, name: 'B3 F1 BC Caramel', price: 6.5, active: true, promotion: 'Buy 3 Free 1 Promo', seasonal: false, seasonalFrom: null,
-            seasonalUntil: null, seasonalNow: false },
-        ] }])
+        return json(catalogue)
+      case 'POST /api/v1/dashboard/catalog/folders': {
+        const folder = { id: catalogue.length + 1, name: body.name, tab: body.tab, items: [] }
+        catalogue.push(folder)
+        return json(folder, 201)
+      }
+      case 'POST /api/v1/dashboard/catalog/items': {
+        const item = { id: 100, name: body.name, price: body.price, active: true, promotion: null, seasonal: false, seasonalFrom: null,
+          seasonalUntil: null, seasonalNow: false }
+        catalogue.find((category) => category.id === body.categoryId)!.items.push(item)
+        return json(item, 201)
+      }
       case 'PUT /api/v1/dashboard/catalog/items/7':
         return json({ id: 7, ...body, promotion: null, seasonalNow: body.seasonal })
       case 'GET /api/v1/dashboard/discounts':
@@ -183,6 +198,46 @@ describe('back-office dashboard', () => {
     expect(await screen.findByText('Saved')).toBeInTheDocument()
     expect(calls.find((call) => call.key === 'PUT /api/v1/dashboard/catalog/items/7')!.body)
       .toEqual({ name: 'WSP Caramel', price: 17.5, active: true, seasonal: false, seasonalFrom: null, seasonalUntil: null })
+  })
+
+  it('head office builds an empty catalogue: adds a folder, then its first item', async () => {
+    const calls = stubApi({ emptyCatalogue: true })
+    const user = userEvent.setup()
+    await logInAsHeadOffice(user)
+    await user.click(await nav().findByRole('button', { name: 'Items & Prices' }))
+
+    expect(await screen.findByText(/There are no folders yet/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('New item name')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add folder' })).toBeDisabled()
+
+    await user.type(screen.getByLabelText('Folder name'), 'White Stand Pouch')
+    expect(screen.getByLabelText('Tab')).toHaveValue('Selling Items')
+    await user.click(screen.getByRole('button', { name: 'Add folder' }))
+
+    expect(await screen.findByText('Added White Stand Pouch to Selling Items')).toBeInTheDocument()
+    expect(calls.find((call) => call.key === 'POST /api/v1/dashboard/catalog/folders')!.body)
+      .toEqual({ name: 'White Stand Pouch', tab: 'Selling Items' })
+    // The empty folder is listed, with the row for its first item.
+    const folder = await screen.findByRole('region', { name: 'White Stand Pouch' })
+    expect(screen.queryByText(/There are no folders yet/)).not.toBeInTheDocument()
+    await user.type(within(folder).getByLabelText('New item name'), 'WSP Caramel')
+    await user.type(within(folder).getByLabelText('New item price'), '16')
+    await user.click(within(folder).getByRole('button', { name: 'Add' }))
+
+    expect(await screen.findByLabelText('Name of WSP Caramel')).toBeInTheDocument()
+    expect(calls.find((call) => call.key === 'POST /api/v1/dashboard/catalog/items')!.body)
+      .toEqual({ categoryId: 1, name: 'WSP Caramel', price: 16 })
+  })
+
+  it('keeps the Add folder form available once the catalogue has folders', async () => {
+    stubApi()
+    const user = userEvent.setup()
+    await logInAsHeadOffice(user)
+    await user.click(await nav().findByRole('button', { name: 'Items & Prices' }))
+
+    // Available with a catalogue too, defaulting to an existing tab.
+    expect(await screen.findByLabelText('Tab')).toHaveValue('Selling Items')
+    expect(screen.queryByText(/There are no folders yet/)).not.toBeInTheDocument()
   })
 
   it('head office makes an item a seasonal flavour until its last day', async () => {

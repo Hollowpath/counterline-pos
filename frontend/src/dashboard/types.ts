@@ -161,6 +161,7 @@ export const dashboardPaths = {
     `/api/v1/dashboard/outlets/${outletId}/reports/${name}?${new URLSearchParams({ from, to })}`,
   items: '/api/v1/dashboard/catalog/items',
   item: (id: number) => `/api/v1/dashboard/catalog/items/${id}`,
+  folders: '/api/v1/dashboard/catalog/folders',
   discounts: '/api/v1/dashboard/discounts',
   discount: (id: number) => `/api/v1/dashboard/discounts/${id}`,
   vouchers: '/api/v1/dashboard/vouchers',

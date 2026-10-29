@@ -2,6 +2,7 @@ package com.counterline.pos.catalog;
 
 import com.counterline.pos.catalog.CatalogAdminService.AdminCategory;
 import com.counterline.pos.catalog.CatalogAdminService.AdminItem;
+import com.counterline.pos.catalog.CatalogAdminService.FolderRequest;
 import com.counterline.pos.catalog.CatalogAdminService.ItemRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -34,6 +35,14 @@ class CatalogAdminController {
     @GetMapping("/items")
     List<AdminCategory> catalogue() {
         return catalogAdmin.catalogue();
+    }
+
+    @Operation(summary = "Add a folder to the till grid",
+            description = "Placed on the tab of that name (created if new) in the first free cell, row by row.")
+    @PostMapping("/folders")
+    @ResponseStatus(HttpStatus.CREATED)
+    AdminCategory createFolder(@Valid @RequestBody FolderRequest request) {
+        return catalogAdmin.createFolder(request);
     }
 
     @Operation(summary = "Add an item at the end of a folder")

@@ -21,4 +21,15 @@ interface CategoryRepository extends JpaRepository<Category, Long> {
             order by c.gridRow, c.gridCol
             """)
     List<FolderTile> findFolderTiles();
+
+    boolean existsByNameIgnoreCase(String name);
+
+    List<Category> findByTabId(Long tabId);
+
+    /** Every folder, with or without items, in till order: tab, then grid cell; off-grid folders last. */
+    @Query("""
+            select c from Category c left join fetch c.tab t
+            order by t.sortOrder nulls last, c.gridRow nulls last, c.gridCol nulls last, c.name
+            """)
+    List<Category> findAllInTillOrder();
 }

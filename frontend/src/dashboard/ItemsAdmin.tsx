@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { ApiError, postJson, putJson } from '../api/http'
 import { useApi } from '../api/useApi'
 import { LoadState } from '../components/LoadState'
@@ -59,6 +59,11 @@ export function ItemsAdmin() {
         </>
       }
     >
+      <NewFolderForm
+        tabs={[...new Set(catalogue.data.flatMap((category) => (category.tab === null ? [] : [category.tab])))]}
+        empty={catalogue.data.length === 0}
+        onAdded={catalogue.reload}
+      />
       {categories.map((category) => (
         <section key={category.id} aria-label={category.name}>
           <h2 className={`${sectionTitle} flex items-baseline gap-2`}>
@@ -87,6 +92,60 @@ export function ItemsAdmin() {
         </section>
       ))}
     </Page>
+  )
+}
+
+/**
+ * Adds a folder to the till grid: on the tab of that name (a new tab if there is none), in its first
+ * free cell. The way to start a catalogue from nothing; items are then added inside the folder.
+ */
+function NewFolderForm({ tabs, empty, onAdded }: { tabs: string[]; empty: boolean; onAdded: () => void }) {
+  const [name, setName] = useState('')
+  const [tab, setTab] = useState<string | null>(null)
+  const [status, setStatus] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+  // Until chosen, the first existing tab (or a suggested name for the first one).
+  const tabName = tab ?? tabs[0] ?? 'Selling Items'
+
+  async function add(event: FormEvent) {
+    event.preventDefault()
+    setStatus(null)
+    try {
+      const added = await postJson<AdminCategory>(dashboardPaths.folders, { name: name.trim(), tab: tabName.trim() })
+      setName('')
+      setStatus({ tone: 'ok', text: `Added ${added.name} to ${added.tab}` })
+      onAdded()
+    } catch (error) {
+      setStatus({ tone: 'error', text: message(error) })
+    }
+  }
+
+  return (
+    <section aria-label="Add folder">
+      <h2 className={sectionTitle}>Add folder</h2>
+      {empty && (
+        <p className={`${note} mb-3`}>
+          There are no folders yet. Add a folder, then add its first item below it. Folders appear on the till’s grid, on the tab you name.
+        </p>
+      )}
+      <form className="flex flex-wrap items-end gap-3" onSubmit={(event) => void add(event)}>
+        <label className="flex flex-col gap-1 text-sm">
+          Folder name
+          <input className={`${field} w-56`} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          Tab
+          <input className={`${field} w-56`} maxLength={60} list="folder-tabs" value={tabName}
+            onChange={(event) => setTab(event.target.value)} />
+          <datalist id="folder-tabs">
+            {tabs.map((existing) => <option key={existing} value={existing} />)}
+          </datalist>
+        </label>
+        <button type="submit" className="btn btn-primary" disabled={name.trim() === '' || tabName.trim() === ''}>
+          Add folder
+        </button>
+        <Status status={status} />
+      </form>
+    </section>
   )
 }
 

@@ -20,7 +20,7 @@ A multi-outlet retail point-of-sale system: a tablet POS for the till, a custome
 **Dashboard**
 
 - Head-office and manager sign-in with email and password.
-- Sales overview per outlet; catalogue, discount and voucher management (head office); customers, member adjustments, till devices and PIN locks.
+- Sales overview per outlet; catalogue (adding folders to the till grid and items in them, prices, on-sale), discount and voucher management (head office); customers, member adjustments, till devices and PIN locks.
 
 **Platform**
 
@@ -129,7 +129,7 @@ Operational sequence:
 
 1. Deploy with `POS_BOOTSTRAP_ENABLED=true` and the variables above set, and start the application once.
 2. Check access: sign in to the dashboard as head office and as the manager, set up a till with the manager PIN, then sign in at the till.
-3. Redeploy with `POS_BOOTSTRAP_ENABLED` unset (or `false`) and every `POS_BOOTSTRAP_*` credential variable removed. The initializer creates only this initial head-office account and manager; further staff and outlet administration is not implemented.
+3. Redeploy with `POS_BOOTSTRAP_ENABLED` unset (or `false`) and every `POS_BOOTSTRAP_*` credential variable removed. The initializer creates only this initial head-office account and manager; further staff and outlet administration is not implemented. A fresh non-local database also has an empty catalogue: head office builds it in the dashboard under Items & Prices, by adding a folder (naming its till-grid tab) and then items in it. Nothing is seeded outside the `local` profile.
 
 If the credentials are held in AWS Secrets Manager, removing them from the current secret value does not erase the previous encrypted version, which Secrets Manager keeps until the secret is deleted. Use this workflow only with synthetic, temporary credentials; the AWS steps are in [infrastructure/README.md](infrastructure/README.md).
 
