@@ -174,7 +174,7 @@ export class CounterlineStack extends cdk.Stack {
 
     const container = taskDefinition.addContainer('ApplicationContainer', {
       containerName: 'counterline',
-      image: ecs.ContainerImage.fromEcrRepository(repository, '92a3b7adfdb3'),
+      image: ecs.ContainerImage.fromEcrRepository(repository, '9732963a0d52'),
       logging: ecs.LogDrivers.awsLogs({
         logGroup,
         streamPrefix: 'application',
