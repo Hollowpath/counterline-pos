@@ -20,6 +20,8 @@ A multi-outlet retail point-of-sale system: a tablet POS for the till, a custome
 **Dashboard**
 
 - Head-office and manager sign-in with email and password.
+- Outlets (head office): add, edit name and address, deactivate and reactivate. The outlet code is set once and never changes; outlets are never deleted, and deactivation is refused while a register is open.
+- Staff (head office): cashiers and managers per outlet; add, edit name, role and outlet, deactivate and reactivate, reset a PIN. Managers can have a dashboard e-mail and password. PINs and passwords are never shown or logged, staff are never deleted, and a deactivated person cannot sign in.
 - Sales overview per outlet; catalogue (folders and tabs: add, rename, move, reorder, delete when empty; items: add, price, move, reorder, remove; item option groups and options; sold items and options are taken off sale rather than deleted, so past sales stay intact), discount and voucher management (head office); customers, member adjustments, till devices and PIN locks.
 
 **Platform**
@@ -129,7 +131,7 @@ Operational sequence:
 
 1. Deploy with `POS_BOOTSTRAP_ENABLED=true` and the variables above set, and start the application once.
 2. Check access: sign in to the dashboard as head office and as the manager, set up a till with the manager PIN, then sign in at the till.
-3. Redeploy with `POS_BOOTSTRAP_ENABLED` unset (or `false`) and every `POS_BOOTSTRAP_*` credential variable removed. The initializer creates only this initial head-office account and manager; further staff and outlet administration is not implemented. A fresh non-local database also has an empty catalogue: head office builds it in the dashboard under Items & Prices, by adding a folder (naming its till-grid tab) and then items in it. Nothing is seeded outside the `local` profile.
+3. Redeploy with `POS_BOOTSTRAP_ENABLED` unset (or `false`) and every `POS_BOOTSTRAP_*` credential variable removed. The initializer creates only this initial head-office account and manager; further outlets and staff are managed in the dashboard (Outlets, Staff). A fresh non-local database also has an empty catalogue: head office builds it in the dashboard under Items & Prices, by adding a folder (naming its till-grid tab) and then items in it. Nothing is seeded outside the `local` profile.
 
 If the credentials are held in AWS Secrets Manager, removing them from the current secret value does not erase the previous encrypted version, which Secrets Manager keeps until the secret is deleted. Use this workflow only with synthetic, temporary credentials; the AWS steps are in [infrastructure/README.md](infrastructure/README.md).
 

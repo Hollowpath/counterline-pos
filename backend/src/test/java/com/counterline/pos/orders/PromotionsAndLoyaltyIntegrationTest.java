@@ -131,6 +131,8 @@ class PromotionsAndLoyaltyIntegrationTest {
 
         // The dashboard counts what was given away: the free can and the discount, each on its own.
         String today = LocalDate.now(OUTLET).toString();
+        // A dashboard session exists only for a manager with a dashboard login.
+        jdbc.update("UPDATE staff SET email = ?, password_hash = ? WHERE id = ?", "manager@promotions.test", "unused-hash", managerId);
         String manager = tokenService.issueDashboard(staffRepository.findById(managerId).orElseThrow()).value();
         mockMvc.perform(get("/api/v1/dashboard/overview").param("from", today).param("to", today)
                         .header("Authorization", "Bearer " + manager))

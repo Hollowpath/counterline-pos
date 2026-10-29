@@ -26,6 +26,23 @@ public class Outlet {
     protected Outlet() {
     }
 
+    public Outlet(String code, String name, String address) {
+        this.code = code;
+        this.name = name;
+        this.address = address;
+        this.active = true;
+    }
+
+    /** The code is an operational identifier and is deliberately not changeable. */
+    void edit(String name, String address) {
+        this.name = name;
+        this.address = address;
+    }
+
+    void setActive(boolean active) {
+        this.active = active;
+    }
+
     public Long getId() {
         return id;
     }

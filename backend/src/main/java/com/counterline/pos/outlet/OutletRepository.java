@@ -10,4 +10,12 @@ interface OutletRepository extends JpaRepository<Outlet, Long> {
     List<Outlet> findByActiveTrueOrderByName();
 
     Optional<Outlet> findByIdAndActiveTrue(Long id);
+
+    List<Outlet> findAllByOrderByCodeAsc();
+
+    boolean existsByCodeIgnoreCase(String code);
+
+    boolean existsByNameIgnoreCase(String name);
+
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
 }

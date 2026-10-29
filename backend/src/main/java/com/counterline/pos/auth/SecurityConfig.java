@@ -47,7 +47,7 @@ import java.util.Set;
 class SecurityConfig {
 
     @Bean
-    SecurityFilterChain apiSecurity(HttpSecurity http,
+    SecurityFilterChain apiSecurity(HttpSecurity http, StaffSessionGuard staffSessions,
                                     @Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver) throws Exception {
         // Route security failures through the MVC exception handlers so 401/403 bodies are
         // problem details like every other error.
@@ -71,9 +71,9 @@ class SecurityConfig {
                         // A manager's approval at a till: one void or refund (ApprovalTokens), nothing else.
                         .requestMatchers(HttpMethod.POST, "/api/v1/orders/*/void", "/api/v1/orders/*/refund")
                                 .access(allow(Set.of(Channel.TILL, Channel.APPROVAL)))
-                        // The dashboard: the catalogue is head office's; sales for head office and managers.
+                        // The dashboard: the catalogue, outlets and staff are head office's; sales for head office and managers.
                         .requestMatchers("/api/v1/dashboard/catalog/**", "/api/v1/dashboard/discounts/**",
-                                "/api/v1/dashboard/vouchers/**")
+                                "/api/v1/dashboard/vouchers/**", "/api/v1/dashboard/admin/**")
                                 .access(allow(Set.of(Channel.TILL, Channel.DASHBOARD), TokenService.ADMIN_ROLE))
                         .requestMatchers("/api/v1/dashboard/**")
                                 .access(allow(Set.of(Channel.TILL, Channel.DASHBOARD), TokenService.ADMIN_ROLE, "MANAGER"))
@@ -83,7 +83,7 @@ class SecurityConfig {
                         // ...and the rest of the API is the till's: not a dashboard session or an approval.
                         .anyRequest().access(allow(Set.of(Channel.TILL))))
                 .oauth2ResourceServer(resourceServer -> resourceServer
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter(staffSessions)))
                         .authenticationEntryPoint(errors)
                         .accessDeniedHandler(errors))
                 .exceptionHandling(exceptions -> exceptions
@@ -140,13 +140,19 @@ class SecurityConfig {
         return auth.getAuthorities().stream().anyMatch(authority -> ("ROLE_" + role).equals(authority.getAuthority()));
     }
 
-    /** Maps the token's "role" claim (e.g. MANAGER) to the authority ROLE_MANAGER. */
-    private static JwtAuthenticationConverter jwtAuthenticationConverter() {
+    /**
+     * Maps the token's "role" claim (e.g. MANAGER) to the authority ROLE_MANAGER, and refuses a
+     * manager's dashboard token once the manager or their outlet is no longer active.
+     */
+    private static JwtAuthenticationConverter jwtAuthenticationConverter(StaffSessionGuard staffSessions) {
         JwtGrantedAuthoritiesConverter authorities = new JwtGrantedAuthoritiesConverter();
         authorities.setAuthoritiesClaimName(TokenService.ROLE_CLAIM);
         authorities.setAuthorityPrefix("ROLE_");
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-        converter.setJwtGrantedAuthoritiesConverter(authorities);
+        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            staffSessions.check(jwt);
+            return authorities.convert(jwt);
+        });
         return converter;
     }
 }

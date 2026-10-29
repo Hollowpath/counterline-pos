@@ -40,9 +40,8 @@ class BootstrapInitializer implements ApplicationRunner {
 
     private static final Pattern PIN = Pattern.compile("\\d{6}");
     private static final Pattern EMAIL = Pattern.compile("[^@\\s]+@[^@\\s]+\\.[^@\\s]+");
-    static final int MIN_PASSWORD_LENGTH = 12;
-    /** BCrypt ignores (or rejects) anything beyond 72 bytes, so a longer password is refused. */
-    static final int MAX_PASSWORD_BYTES = 72;
+    static final int MIN_PASSWORD_LENGTH = PasswordPolicy.MIN_LENGTH;
+    static final int MAX_PASSWORD_BYTES = PasswordPolicy.MAX_BYTES;
 
     private final BootstrapProperties properties;
     private final StaffRepository staffRepository;

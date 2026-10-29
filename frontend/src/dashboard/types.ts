@@ -216,4 +216,31 @@ export const dashboardPaths = {
   deviceReset: (id: number) => `/api/v1/dashboard/devices/${id}/reset`,
   pinLocks: '/api/v1/dashboard/pin-locks',
   pinUnlock: (outletId: number, pad: PinPad) => `/api/v1/dashboard/pin-locks/${outletId}/${pad}/unlock`,
+  adminOutlets: '/api/v1/dashboard/admin/outlets',
+  adminOutlet: (id: number) => `/api/v1/dashboard/admin/outlets/${id}`,
+  adminOutletAction: (id: number, action: 'deactivate' | 'reactivate') => `/api/v1/dashboard/admin/outlets/${id}/${action}`,
+  adminStaff: (outletId: number | null) => `/api/v1/dashboard/admin/staff${outletId === null ? '' : `?outletId=${outletId}`}`,
+  adminStaffMember: (id: number) => `/api/v1/dashboard/admin/staff/${id}`,
+  adminStaffAction: (id: number, action: 'deactivate' | 'reactivate') => `/api/v1/dashboard/admin/staff/${id}/${action}`,
+  adminStaffLogin: (id: number) => `/api/v1/dashboard/admin/staff/${id}/dashboard-login`,
+  adminStaffPin: (id: number) => `/api/v1/dashboard/admin/staff/${id}/pin`,
+}
+
+/** An outlet as head office manages it, deactivated ones included. */
+export interface AdminOutlet {
+  id: number
+  code: string
+  name: string
+  address: string | null
+  active: boolean
+}
+
+/** A staff member as head office manages them: never a PIN, password or hash. `email` is a manager's dashboard login. */
+export interface AdminStaff {
+  id: number
+  fullName: string
+  role: 'STAFF' | 'MANAGER'
+  outletId: number
+  active: boolean
+  email: string | null
 }

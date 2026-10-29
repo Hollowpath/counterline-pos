@@ -26,6 +26,8 @@ public class TokenService {
     static final String OUTLET_CLAIM = "outlet";
     static final String DISPLAY_CLAIM = "display";
     static final String CHANNEL_CLAIM = "channel";
+    /** A staff member's authentication session version (see StaffSessionGuard). */
+    static final String SESSION_VERSION_CLAIM = "sver";
     /** The role of a customer display's token: it may call only the display API. */
     public static final String DISPLAY_ROLE = "DISPLAY";
     /** A head-office account on the back-office dashboard: every outlet, no till. */
@@ -86,7 +88,7 @@ public class TokenService {
     private IssuedToken staffToken(Staff staff, Long outletId, Duration lifetime, Channel channel) {
         Instant now = clock.instant();
         Instant expiresAt = now.plus(lifetime);
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder builder = JwtClaimsSet.builder()
                 .issuer(ISSUER)
                 .id(UUID.randomUUID().toString())
                 .subject(staff.getId().toString())
@@ -96,8 +98,8 @@ public class TokenService {
                 .claim(ROLE_CLAIM, staff.getRole().name())
                 .claim(OUTLET_CLAIM, outletId)
                 .claim(CHANNEL_CLAIM, channel.claim())
-                .build();
-        return sign(claims, expiresAt);
+                .claim(SESSION_VERSION_CLAIM, staff.getAuthSessionVersion());
+        return sign(builder.build(), expiresAt);
     }
 
     /** For a head-office admin on the dashboard (no outlet: they see every outlet). */

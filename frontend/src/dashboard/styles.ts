@@ -14,6 +14,11 @@ export const field = [
 /** A checkbox, sized for a finger. */
 export const checkbox = 'size-[1.15rem] rounded accent-indigo-600'
 
+/** A result banner across a page: green when it worked, red when it did not. */
+export function noticeClass(tone: 'ok' | 'error') {
+  return `rounded-xl px-4 py-2.5 text-sm font-medium ring-1 ring-inset ${tone === 'ok' ? 'bg-green-50 text-green-700 ring-green-200' : 'bg-red-50 text-red-700 ring-red-200'}`
+}
+
 /** A small note under a value. */
 export const note = 'mt-0.5 block text-xs text-zinc-500'
 

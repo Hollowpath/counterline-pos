@@ -34,6 +34,9 @@ public class Staff {
     /** BCrypt; set together with {@code email}. */
     private String passwordHash;
 
+    /** Raised whenever how this person authenticates changes; every token issued to them carries it. */
+    private int authSessionVersion;
+
     protected Staff() {
     }
 
@@ -85,5 +88,34 @@ public class Staff {
 
     public void deactivate() {
         this.active = false;
+    }
+
+    public int getAuthSessionVersion() {
+        return authSessionVersion;
+    }
+
+    /** Ends every session (till, dashboard, approval) issued so far; none of them can become valid again. */
+    public void revokeAuthSessions() {
+        this.authSessionVersion++;
+    }
+
+    public void reactivate() {
+        this.active = true;
+    }
+
+    public void edit(String fullName, StaffRole role, Long outletId) {
+        this.fullName = fullName;
+        this.role = role;
+        this.outletId = outletId;
+    }
+
+    public void setPinHmac(String pinHmac) {
+        this.pinHmac = pinHmac;
+    }
+
+    /** Cashiers have no dashboard login. */
+    public void clearDashboardLogin() {
+        this.email = null;
+        this.passwordHash = null;
     }
 }

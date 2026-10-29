@@ -21,6 +21,15 @@ public interface StaffRepository extends JpaRepository<Staff, Long> {
 
     Optional<Staff> findByEmail(String email);
 
+    /** Ends the sessions of all of an outlet's staff (when the outlet is closed). */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("update Staff s set s.authSessionVersion = s.authSessionVersion + 1 where s.outletId = :outletId")
+    int revokeAuthSessions(@Param("outletId") Long outletId);
+
+    java.util.List<Staff> findAllByOrderByFullNameAscIdAsc();
+
+    java.util.List<Staff> findByOutletIdOrderByFullNameAscIdAsc(Long outletId);
+
     /** SELECT … FOR UPDATE: serialises per-staff state changes such as clocking in/out. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Staff s where s.id = :id")

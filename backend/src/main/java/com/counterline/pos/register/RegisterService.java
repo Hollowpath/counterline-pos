@@ -61,6 +61,12 @@ public class RegisterService {
                         openOrders));
     }
 
+    /** Whether the outlet has a register session that has not been closed. */
+    @Transactional(readOnly = true)
+    public boolean hasOpenRegister(Long outletId) {
+        return sessionRepository.findByOutletIdAndClosedAtIsNull(outletId).isPresent();
+    }
+
     public SessionResponse open(Terminal terminal) {
         Long staffId = terminal.staffId();
         if (sessionRepository.findByOutletIdAndClosedAtIsNull(terminal.outletId()).isPresent()) {
