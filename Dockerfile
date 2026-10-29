@@ -30,6 +30,8 @@ RUN ./mvnw -B -q -DskipTests package \
 
 # ---- 3. Runtime: a JRE only, as a non-root user ----
 FROM eclipse-temurin:21-jre-alpine
+# The base image can lag behind Alpine's security fixes for its packages: take the available updates.
+RUN apk upgrade --no-cache
 RUN addgroup -S pos && adduser -S -G pos pos
 WORKDIR /app
 # Spring Boot's layers, least to most often changed, so a code change ships a small layer.
