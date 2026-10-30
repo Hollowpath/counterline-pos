@@ -7,6 +7,7 @@ import com.counterline.pos.common.BadRequestException;
 import com.counterline.pos.common.ConflictException;
 import com.counterline.pos.common.ResourceNotFoundException;
 import com.counterline.pos.outlet.OutletService;
+import com.counterline.pos.timecards.OpenShifts;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -39,14 +40,16 @@ public class StaffAdminService {
     private final OutletService outletService;
     private final PinHasher pinHasher;
     private final PasswordEncoder passwordEncoder;
+    private final OpenShifts openShifts;
 
     StaffAdminService(StaffRepository staffRepository, AdminUserRepository adminRepository, OutletService outletService,
-                      PinHasher pinHasher, PasswordEncoder passwordEncoder) {
+                      PinHasher pinHasher, PasswordEncoder passwordEncoder, OpenShifts openShifts) {
         this.staffRepository = staffRepository;
         this.adminRepository = adminRepository;
         this.outletService = outletService;
         this.pinHasher = pinHasher;
         this.passwordEncoder = passwordEncoder;
+        this.openShifts = openShifts;
     }
 
     /** No PIN, password or hash: {@code email} is the dashboard login, if the manager has one. */
@@ -134,7 +137,10 @@ public class StaffAdminService {
     public AdminStaff update(Long id, StaffEdit request) {
         Staff staff = find(id);
         if (!request.outletId().equals(staff.getOutletId())) {
-            outletService.getActive(request.outletId());
+            // The new outlet's lock first, then the person's (the order Clock In and an outlet's deactivation
+            // use): the outlet cannot be deactivated between this check and the move.
+            outletService.getActiveHeldOpen(request.outletId());
+            requireNoOpenShift(staff, "moving them to another outlet");
         }
         String name = requireName(request.fullName());
         boolean hasEmail = present(request.email());
@@ -187,11 +193,27 @@ public class StaffAdminService {
     public AdminStaff deactivate(Long id) {
         Staff staff = find(id);
         if (staff.isActive()) {
+            requireNoOpenShift(staff, "deactivating them");
             staff.deactivate();
             staff.revokeAuthSessions();
             log.info("Head office deactivated staff {}", id);
         }
         return AdminStaff.from(staff);
+    }
+
+    /**
+     * An open shift belongs to the outlet it was started at, so the person stays there (and stays able to
+     * clock out) until it is closed. The row lock is the one Clock In/Out takes, so a clock-in cannot slip in
+     * between this check and the change.
+     *
+     * @throws ConflictException (409) while the staff member is clocked in
+     */
+    private void requireNoOpenShift(Staff staff, String action) {
+        staffRepository.lockById(staff.getId());
+        if (openShifts.has(staff.getId())) {
+            throw new ConflictException(staff.getFullName() + " is clocked in. Close the shift (Reports, Timecards) before "
+                    + action + ".");
+        }
     }
 
     /** @throws ConflictException (409) while the staff member's outlet is deactivated */

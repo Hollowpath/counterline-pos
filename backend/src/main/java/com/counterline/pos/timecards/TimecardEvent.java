@@ -39,6 +39,13 @@ public class TimecardEvent {
     /** Where they clocked: always their own outlet. */
     private Long outletId;
 
+    /** Set on an OUT that a head-office or manager correction made for the staff member. */
+    private String correctedBy;
+
+    private String correctedReason;
+
+    private Instant correctedAt;
+
     protected TimecardEvent() {
     }
 
@@ -47,6 +54,20 @@ public class TimecardEvent {
         this.staff = staff;
         this.type = type;
         this.occurredAt = occurredAt;
+    }
+
+    /** The OUT a correction adds to close an open shift; the IN is left alone. */
+    static TimecardEvent correctedOut(Long outletId, Staff staff, Instant occurredAt, String correctedBy, String reason,
+                                      Instant correctedAt) {
+        TimecardEvent event = new TimecardEvent(outletId, staff, Type.OUT, occurredAt);
+        event.correctedBy = correctedBy;
+        event.correctedReason = reason;
+        event.correctedAt = correctedAt;
+        return event;
+    }
+
+    public Long getOutletId() {
+        return outletId;
     }
 
     public Type getType() {

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { postJson } from '../api/http'
 import { useApi } from '../api/useApi'
 import type { Outlet } from '../auth/types'
 import { LoadState } from '../components/LoadState'
@@ -39,6 +40,9 @@ export function DashboardReports() {
           key={outlet.id}
           outletName={outlet.name}
           pathFor={(name, from, to) => dashboardPaths.report(outlet.id, name, from, to)}
+          onCloseShift={async (staffId, outAt, reason) => {
+            await postJson(dashboardPaths.closeShift(outlet.id, staffId), { outAt, reason })
+          }}
         />
       </div>
     </Page>

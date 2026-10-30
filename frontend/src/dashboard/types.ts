@@ -191,6 +191,7 @@ export const dashboardPaths = {
     `/api/v1/dashboard/overview?${new URLSearchParams({ from, to, ...(outletId === null ? {} : { outletId: String(outletId) }) })}`,
   report: (outletId: number, name: string, from: string, to: string) =>
     `/api/v1/dashboard/outlets/${outletId}/reports/${name}?${new URLSearchParams({ from, to })}`,
+  closeShift: (outletId: number, staffId: number) => `/api/v1/dashboard/outlets/${outletId}/timecards/${staffId}/close`,
   items: '/api/v1/dashboard/catalog/items',
   item: (id: number) => `/api/v1/dashboard/catalog/items/${id}`,
   folders: '/api/v1/dashboard/catalog/folders',

@@ -4,6 +4,8 @@ import com.counterline.pos.auth.LoginAttemptLimiter;
 import com.counterline.pos.auth.PinHasher;
 import com.counterline.pos.auth.PinPad;
 import com.counterline.pos.common.BusinessRuleException;
+import com.counterline.pos.common.ResourceNotFoundException;
+import com.counterline.pos.outlet.OutletService;
 import com.counterline.pos.staff.Staff;
 import com.counterline.pos.staff.StaffRepository;
 import com.counterline.pos.timecards.TimecardEvent.Type;
@@ -26,14 +28,16 @@ public class TimecardService {
     private static final Logger log = LoggerFactory.getLogger(TimecardService.class);
 
     private final StaffRepository staffRepository;
+    private final OutletService outletService;
     private final TimecardEventRepository eventRepository;
     private final PinHasher pinHasher;
     private final LoginAttemptLimiter limiter;
     private final Clock clock;
 
-    TimecardService(StaffRepository staffRepository, TimecardEventRepository eventRepository,
+    TimecardService(StaffRepository staffRepository, OutletService outletService, TimecardEventRepository eventRepository,
                     PinHasher pinHasher, LoginAttemptLimiter limiter, Clock clock) {
         this.staffRepository = staffRepository;
+        this.outletService = outletService;
         this.eventRepository = eventRepository;
         this.pinHasher = pinHasher;
         this.limiter = limiter;
@@ -63,6 +67,16 @@ public class TimecardService {
     @Transactional
     public ClockResult clock(String pin, Type type, Long outletId, String client) {
         Staff staff = staffAt(pin, outletId, client);
+
+        // A shift can only start at an open outlet, and the outlet stays open while it does (deactivating an
+        // outlet waits for this transaction). Outlet lock first, then the person's: the order everywhere.
+        if (type == Type.IN) {
+            try {
+                outletService.getActiveHeldOpen(outletId);
+            } catch (ResourceNotFoundException e) {
+                throw new BusinessRuleException("This outlet is closed");
+            }
+        }
 
         // Row lock: two quick submissions for the same person are serialised, so the second sees
         // the first one's event.

@@ -109,9 +109,19 @@ public final class ReportDtos {
     public record ModifierTotal(String groupName, String optionName, long quantity, BigDecimal amount) {
     }
 
-    public record Timecards(LocalDate from, LocalDate to, List<TimecardEntry> entries) {
+    /**
+     * {@code entries}: the clock events in the period. {@code openShifts}: everyone clocked in at the outlet now,
+     * however long ago they clocked in (a shift left open stays listed until it is closed).
+     */
+    public record Timecards(LocalDate from, LocalDate to, List<TimecardEntry> entries, List<OpenShift> openShifts) {
     }
 
-    public record TimecardEntry(String staffName, String type, Instant at) {
+    /** {@code correctedBy}/{@code correctedReason}: set on an OUT that head office or a manager entered for the person. */
+    public record TimecardEntry(String staffName, String type, Instant at, String correctedBy, String correctedReason,
+                                Instant correctedAt) {
+    }
+
+    /** {@code stale}: open for longer than a working shift can be, so most likely a clock-out was forgotten. */
+    public record OpenShift(Long staffId, String staffName, Instant since, boolean stale) {
     }
 }

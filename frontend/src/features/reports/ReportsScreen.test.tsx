@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { addDays, todayIso } from '../../lib/dates'
@@ -41,6 +41,17 @@ function fakeApi() {
         ] }] })
       case '/api/v1/reports/discounts':
         return json({ ...range, discounts: [{ name: 'Staff 10%', count: 1, amount: 2.9 }] })
+      case '/api/v1/reports/timecards':
+        return json({ ...range,
+          entries: [
+            { staffName: 'Aisyah Rahman', type: 'IN', at: '2026-10-12T02:00:00Z', correctedBy: null, correctedReason: null, correctedAt: null },
+            { staffName: 'Aisyah Rahman', type: 'OUT', at: '2026-10-12T10:00:00Z', correctedBy: 'Daniel Lim',
+              correctedReason: 'Forgot to clock out', correctedAt: '2026-10-13T01:00:00Z' },
+          ],
+          openShifts: [
+            { staffId: 7, staffName: 'Wei Ming', since: '2026-10-11T02:00:00Z', stale: true },
+            { staffId: 8, staffName: 'Siti Nur', since: '2026-10-13T01:00:00Z', stale: false },
+          ] })
       case '/api/v1/reports/modifiers':
         return json({ ...range, options: [
           { groupName: 'General Gift Box Paper Can', optionName: 'GB PC Tomato', quantity: 3, amount: 0 },
@@ -139,6 +150,58 @@ describe('ReportsScreen', () => {
       await screen.findByText(/^Generated on /)
       expect(screen.queryByTestId('before-refunds-note')).not.toBeInTheDocument()
     }
+  })
+
+  it('lists who is clocked in, flags a shift left open, and marks a correction with who made it and why', async () => {
+    fakeApi()
+    const user = userEvent.setup()
+    render(<ReportsScreen outletName="Counterline Bukit Bintang" onOpenMenu={() => {}} />)
+    await user.click(screen.getByRole('button', { name: 'Timecards' }))
+
+    const open = await screen.findByRole('region', { name: 'Open shifts' })
+    expect(within(open).getByText('Wei Ming')).toBeInTheDocument()
+    expect(within(open).getByText('Siti Nur')).toBeInTheDocument()
+    // Only the shift that has run too long is flagged.
+    expect(within(open).getAllByTestId('stale-shift')).toHaveLength(1)
+    expect(within(open).getByText('Wei Ming').closest('li')).toContainElement(within(open).getByTestId('stale-shift'))
+    // The till only shows them: closing a shift is the dashboard's.
+    expect(screen.queryByRole('button', { name: 'Close shift' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('correction')).toHaveTextContent(/Corrected by Daniel Lim on .*: Forgot to clock out/)
+    expect(screen.getAllByTestId('correction')).toHaveLength(1)
+  })
+
+  it('closes an open shift from the dashboard with a time and a reason, then shows the report again', async () => {
+    const urls = fakeApi()
+    const onCloseShift = vi.fn(async () => {})
+    const user = userEvent.setup()
+    render(<ReportsScreen outletName="Counterline Bukit Bintang" onCloseShift={onCloseShift} />)
+    await user.click(screen.getByRole('button', { name: 'Timecards' }))
+    await user.click((await screen.findAllByRole('button', { name: 'Close shift' }))[0])
+
+    const form = screen.getByRole('form', { name: "Close Wei Ming's shift" })
+    const submit = within(form).getByRole('button', { name: 'Close shift' })
+    expect(submit).toBeDisabled()
+    fireEvent.change(within(form).getByLabelText('Clocked out at'), { target: { value: '2026-10-12T10:00' } })
+    await user.type(within(form).getByLabelText('Reason'), '  Forgot to clock out ')
+    await user.click(submit)
+
+    await waitFor(() => expect(onCloseShift).toHaveBeenCalledWith(7, new Date('2026-10-12T10:00').toISOString(), 'Forgot to clock out'))
+    await waitFor(() => expect(urls.filter((url) => url.pathname.endsWith('/timecards'))).toHaveLength(2))
+  })
+
+  it('says why a shift could not be closed and keeps the form', async () => {
+    fakeApi()
+    const onCloseShift = vi.fn(async () => { throw new Error('The clock-out cannot be in the future') })
+    const user = userEvent.setup()
+    render(<ReportsScreen outletName="Counterline Bukit Bintang" onCloseShift={onCloseShift} />)
+    await user.click(screen.getByRole('button', { name: 'Timecards' }))
+    await user.click((await screen.findAllByRole('button', { name: 'Close shift' }))[0])
+    const form = screen.getByRole('form', { name: "Close Wei Ming's shift" })
+    await user.type(within(form).getByLabelText('Reason'), 'Left early')
+    await user.click(within(form).getByRole('button', { name: 'Close shift' }))
+
+    expect(await within(form).findByRole('alert')).toHaveTextContent('The clock-out cannot be in the future')
+    expect(within(form).getByLabelText('Reason')).toHaveValue('Left early')
   })
 
   it('steps through days and switches reports', async () => {

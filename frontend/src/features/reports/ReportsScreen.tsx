@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { useApi } from '../../api/useApi'
 import { AppBar } from '../../app/AppBar'
 import { LoadState } from '../../components/LoadState'
-import { addDays, daysBetween, formatDate, formatDateTime, formatTime, todayIso } from '../../lib/dates'
+import { addDays, daysBetween, formatDate, formatDateTime, todayIso } from '../../lib/dates'
 import { formatRM, formatSignedRM, toSen } from '../../lib/money'
 import { printScreen } from '../receipts/printReceipt'
 import { SalesSummaryView } from './SalesSummaryView'
+import { TimecardsView, type CloseShift } from './TimecardsView'
 import {
   reportPath,
   type CategorySales,
@@ -47,9 +48,11 @@ interface ReportsScreenProps {
   onOpenMenu?: () => void
   /** Where a report comes from (default: the terminal's outlet). */
   pathFor?: (name: ReportName, from: string, to: string) => string
+  /** Dashboard only: lets an open shift be closed from the Timecards report. */
+  onCloseShift?: CloseShift
 }
 
-export function ReportsScreen({ outletName, onOpenMenu, pathFor = reportPath }: ReportsScreenProps) {
+export function ReportsScreen({ outletName, onOpenMenu, pathFor = reportPath, onCloseShift }: ReportsScreenProps) {
   const [report, setReport] = useState<ReportName>('sales-summary')
   const [from, setFrom] = useState(todayIso)
   const [to, setTo] = useState(todayIso)
@@ -118,7 +121,7 @@ export function ReportsScreen({ outletName, onOpenMenu, pathFor = reportPath }: 
             <span>{period}</span>
           </header>
           <h2 className="mt-6 mb-3 text-2xl font-bold tracking-tight text-zinc-900 print:my-[0.4rem] print:border-x-0 print:border-t-0 print:border-b print:border-dashed print:border-black print:pb-[0.3rem] print:text-[12px]">{label}</h2>
-          <Report key={report} name={report} path={pathFor(report, from, to)} />
+          <Report key={report} name={report} path={pathFor(report, from, to)} onCloseShift={onCloseShift} />
         </div>
       </section>
 
@@ -131,7 +134,7 @@ export function ReportsScreen({ outletName, onOpenMenu, pathFor = reportPath }: 
   )
 }
 
-function Report({ name, path }: { name: ReportName; path: string }) {
+function Report({ name, path, onCloseShift }: { name: ReportName; path: string; onCloseShift?: CloseShift }) {
   const result = useApi<unknown>(path)
   if (result.status !== 'success') {
     return <LoadState status={result.status} message={result.status === 'error' ? result.message : undefined} onRetry={result.reload} />
@@ -143,13 +146,13 @@ function Report({ name, path }: { name: ReportName; path: string }) {
           Before refunds: a refunded sale is still counted here. Refunds are in the Sales Summary and Payment Methods.
         </p>
       )}
-      <ReportBody name={name} data={result.data} />
+      <ReportBody name={name} data={result.data} onCloseShift={onCloseShift} reload={result.reload} />
       <p className="mt-6 text-center text-xs text-zinc-400 print:text-[10px] print:text-black">Generated on {formatDateTime(new Date().toISOString())}</p>
     </>
   )
 }
 
-function ReportBody({ name, data }: { name: ReportName; data: unknown }) {
+function ReportBody({ name, data, onCloseShift, reload }: { name: ReportName; data: unknown; onCloseShift?: CloseShift; reload: () => void }) {
   switch (name) {
     case 'sales-summary':
       return <SalesSummaryView summary={data as SalesSummary} />
@@ -335,21 +338,8 @@ function ReportBody({ name, data }: { name: ReportName; data: unknown }) {
         </ul>
       )
     }
-    case 'timecards': {
-      const { entries } = data as Timecards
-      return entries.length === 0 ? <p className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">No clock-ins in this period.</p> : (
-        <ul className={detail.rows}>
-          {entries.map((entry, index) => (
-            <li key={index}>
-              <span>{entry.staffName}</span>
-              <span className={`font-semibold ${entry.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>
-                {entry.type} · {formatTime(entry.at)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )
-    }
+    case 'timecards':
+      return <TimecardsView data={data as Timecards} onCloseShift={onCloseShift} onClosed={reload} />
   }
 }
 

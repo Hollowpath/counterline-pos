@@ -5,6 +5,7 @@ import com.counterline.pos.common.ConflictException;
 import com.counterline.pos.common.ResourceNotFoundException;
 import com.counterline.pos.register.RegisterService;
 import com.counterline.pos.staff.StaffRepository;
+import com.counterline.pos.timecards.OpenShifts;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -30,11 +31,14 @@ public class OutletAdminService {
     private final OutletRepository outlets;
     private final RegisterService registers;
     private final StaffRepository staffRepository;
+    private final OpenShifts openShifts;
 
-    OutletAdminService(OutletRepository outlets, RegisterService registers, StaffRepository staffRepository) {
+    OutletAdminService(OutletRepository outlets, RegisterService registers, StaffRepository staffRepository,
+                       OpenShifts openShifts) {
         this.outlets = outlets;
         this.registers = registers;
         this.staffRepository = staffRepository;
+        this.openShifts = openShifts;
     }
 
     public record AdminOutlet(Long id, String code, String name, String address, boolean active) {
@@ -94,11 +98,17 @@ public class OutletAdminService {
 
     /** @throws ConflictException (409) while the outlet has an open register */
     public AdminOutlet deactivate(Long id) {
-        Outlet outlet = find(id);
+        // The outlet's lock first, as Clock In takes it (then the staff member's): a clock-in in progress is
+        // waited for and seen below; one that comes after is refused because the outlet is no longer open.
+        Outlet outlet = outlets.lockForUpdate(id).orElseThrow(() -> new ResourceNotFoundException("Outlet " + id + " not found"));
         if (outlet.isActive()) {
             if (registers.hasOpenRegister(id)) {
                 throw new ConflictException("Outlet " + outlet.getCode()
                         + " has an open register. Close it before deactivating the outlet.");
+            }
+            if (openShifts.at(id)) {
+                throw new ConflictException("Outlet " + outlet.getCode()
+                        + " has staff clocked in. Close their shifts (Reports, Timecards) before deactivating the outlet.");
             }
             outlet.setActive(false);
             // Everyone's sessions there end for good: reopening the outlet does not revive them.

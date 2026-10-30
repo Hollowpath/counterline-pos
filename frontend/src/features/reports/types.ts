@@ -92,8 +92,26 @@ export interface LoyaltyPointsReport {
   redemptions: { name: string; count: number; points: number }[]
 }
 
+export interface OpenShift {
+  staffId: number
+  staffName: string
+  since: string
+  /** Open for longer than a working shift: a clock-out was most likely forgotten. */
+  stale: boolean
+}
+
 export interface Timecards {
-  entries: { staffName: string; type: 'IN' | 'OUT'; at: string }[]
+  entries: {
+    staffName: string
+    type: 'IN' | 'OUT'
+    at: string
+    /** Set on a clock-out that head office or a manager entered for the person. */
+    correctedBy: string | null
+    correctedReason: string | null
+    correctedAt: string | null
+  }[]
+  /** Everyone clocked in at the outlet now, however long ago they clocked in. */
+  openShifts: OpenShift[]
 }
 
 export type ReportName =

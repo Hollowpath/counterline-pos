@@ -7,6 +7,7 @@ import com.counterline.pos.reports.ReportDtos.NamedTotal;
 import com.counterline.pos.reports.ReportDtos.PaymentMethodTotal;
 import com.counterline.pos.reports.ReportDtos.PointsTotal;
 import com.counterline.pos.reports.ReportDtos.TimecardEntry;
+import com.counterline.pos.reports.ReportDtos.OpenShift;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -250,14 +251,34 @@ class ReportQueries {
 
     List<TimecardEntry> timecards(Long outletId, Instant start, Instant end) {
         return jdbc.query("""
-                SELECT s.full_name, t.type, t.occurred_at
+                SELECT s.full_name, t.type, t.occurred_at, t.corrected_by, t.corrected_reason, t.corrected_at
                 FROM timecard_event t
                 JOIN staff s ON s.id = t.staff_id
                 WHERE t.outlet_id = :outlet AND t.occurred_at >= :start AND t.occurred_at < :end
                 ORDER BY t.occurred_at, t.id
                 """, range(outletId, start, end),
                 (rs, i) -> new TimecardEntry(rs.getString("full_name"), rs.getString("type"),
-                        rs.getObject("occurred_at", OffsetDateTime.class).toInstant()));
+                        rs.getObject("occurred_at", OffsetDateTime.class).toInstant(), rs.getString("corrected_by"),
+                        rs.getString("corrected_reason"),
+                        rs.getObject("corrected_at", OffsetDateTime.class) == null ? null
+                                : rs.getObject("corrected_at", OffsetDateTime.class).toInstant()));
+    }
+
+    /** Shifts open now at the outlet: an IN that is its staff member's latest event. */
+    List<OpenShift> openShifts(Long outletId, java.util.function.Predicate<Instant> stale) {
+        return jdbc.query("""
+                SELECT s.id, s.full_name, e.occurred_at
+                FROM timecard_event e
+                JOIN staff s ON s.id = e.staff_id
+                WHERE e.outlet_id = :outlet AND e.type = 'IN'
+                  AND NOT EXISTS (SELECT 1 FROM timecard_event n WHERE n.staff_id = e.staff_id
+                                  AND (n.occurred_at > e.occurred_at OR (n.occurred_at = e.occurred_at AND n.id > e.id)))
+                ORDER BY e.occurred_at, e.id
+                """, new MapSqlParameterSource("outlet", outletId),
+                (rs, i) -> {
+                    Instant since = rs.getObject("occurred_at", OffsetDateTime.class).toInstant();
+                    return new OpenShift(rs.getLong("id"), rs.getString("full_name"), since, stale.test(since));
+                });
     }
 
     private static ItemTotal itemTotal(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {

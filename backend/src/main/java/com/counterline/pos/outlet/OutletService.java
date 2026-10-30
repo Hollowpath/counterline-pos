@@ -38,6 +38,17 @@ public class OutletService {
                 .orElseThrow(() -> new ResourceNotFoundException("Outlet " + id + " not found"));
     }
 
+    /**
+     * For starting a shift: the outlet must be open, and stays open (it cannot be deactivated) until this
+     * transaction ends. Locking order everywhere: the outlet first, then the staff member.
+     *
+     * @throws ResourceNotFoundException for an unknown or closed outlet
+     */
+    public Outlet getActiveHeldOpen(Long id) {
+        return outletRepository.lockShared(id).filter(Outlet::isActive)
+                .orElseThrow(() -> new ResourceNotFoundException("Outlet " + id + " not found"));
+    }
+
     /** A reference without loading the row; the caller already knows the outlet exists (it is in the token). */
     public Outlet reference(Long id) {
         return outletRepository.getReferenceById(id);

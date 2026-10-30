@@ -27,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -47,13 +49,17 @@ import java.util.stream.Stream;
 public class ReportService {
 
     private static final long MAX_DAYS = 366;
+    /** A shift open for longer than this is shown as stale: a clock-out was most likely forgotten. */
+    static final Duration STALE_SHIFT = Duration.ofHours(16);
 
     private final ReportQueries queries;
     private final ZoneId zone;
+    private final Clock clock;
 
-    ReportService(ReportQueries queries, OutletProperties outlet) {
+    ReportService(ReportQueries queries, OutletProperties outlet, Clock clock) {
         this.queries = queries;
         this.zone = outlet.timeZone();
+        this.clock = clock;
     }
 
     public SalesSummary salesSummary(Long outletId, LocalDate from, LocalDate to) {
@@ -185,7 +191,9 @@ public class ReportService {
 
     public Timecards timecards(Long outletId, LocalDate from, LocalDate to) {
         Range range = range(from, to);
-        return new Timecards(from, to, queries.timecards(outletId, range.start(), range.end()));
+        Instant now = clock.instant();
+        return new Timecards(from, to, queries.timecards(outletId, range.start(), range.end()),
+                queries.openShifts(outletId, since -> Duration.between(since, now).compareTo(STALE_SHIFT) > 0));
     }
 
     private record Range(Instant start, Instant end) {
