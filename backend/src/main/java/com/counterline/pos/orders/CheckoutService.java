@@ -165,9 +165,13 @@ public class CheckoutService {
             SaleOrder order = buildOrder(request, activeStaff(terminal.staffId()), terminal.outletId(), now, 0, "",
                     voucherDiscount, keptMember(editedOrderId, terminal.outletId()));
             Customer member = order.getCustomer();
-            int balance = member == null ? 0 : loyaltyService.balance(member.getId());
-            LoyaltyPreview loyalty = member == null ? null
-                    : LoyaltyPreview.of(loyaltyService.preview(member.getId(), order.getTotal(), order.getPointsToRedeem()));
+            var standing = member == null ? null : loyaltyService.standing(member.getId(), now);
+            int balance = standing == null ? 0 : standing.balance();
+            LoyaltyPreview loyalty = null;
+            if (standing != null) {
+                var settlement = LoyaltyService.preview(standing, order.getTotal(), order.getPointsToRedeem());
+                loyalty = LoyaltyPreview.of(settlement, loyaltyService.expiresAfter(settlement, now));
+            }
             problems.addAll(promotionRules.problems(order, balance, order.getEligibilityAt(), editedOrderId == null ? 0L : editedOrderId));
             return new QuoteResponse(order.getSubtotal(), order.getDiscountTotal(), order.getTotal(), problems, loyalty);
         });

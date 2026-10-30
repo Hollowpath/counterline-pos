@@ -191,7 +191,7 @@ public final class OrderDtos {
                             : new LoyaltyPreview(order.getLoyaltyPointsBefore(), order.getLoyaltyPointsEarned(),
                                     order.getLoyaltyPointsRedeemed(),
                                     order.getLoyaltyPointsBefore() + order.getLoyaltyPointsEarned()
-                                            - order.getLoyaltyPointsRedeemed()));
+                                            - order.getLoyaltyPointsRedeemed(), null));
         }
 
         private static String name(Staff staff) {
@@ -238,11 +238,15 @@ public final class OrderDtos {
         }
     }
 
-    /** The receipt's LOYALTY PROGRAM block: points before, earned, redeemed, and after the sale. */
-    public record LoyaltyPreview(int before, int earned, int redeemed, int after) {
+    /**
+     * The receipt's LOYALTY PROGRAM block: points before, earned, redeemed, and after the sale. {@code expiresAt}: when
+     * the points left after the sale expire (365 days after this purchase, the member's latest); only in a cart's
+     * preview, null on a paid order and when there are no points to expire.
+     */
+    public record LoyaltyPreview(int before, int earned, int redeemed, int after, Instant expiresAt) {
 
-        static LoyaltyPreview of(Settlement settlement) {
-            return new LoyaltyPreview(settlement.before(), settlement.earned(), settlement.redeemed(), settlement.after());
+        static LoyaltyPreview of(Settlement settlement, Instant expiresAt) {
+            return new LoyaltyPreview(settlement.before(), settlement.earned(), settlement.redeemed(), settlement.after(), expiresAt);
         }
     }
 

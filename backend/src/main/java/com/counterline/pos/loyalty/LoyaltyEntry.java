@@ -23,7 +23,9 @@ class LoyaltyEntry {
         /** ...and gives back the points it spent. */
         REVERSE_REDEEM,
         /** Staff corrected the balance (e.g. points a sale should have earned), with a reason. */
-        ADJUST
+        ADJUST,
+        /** The positive balance ran out of time (365 days after the last entry) and went to zero. Not a sale's or a staff member's. */
+        EXPIRE
     }
 
     @Id
@@ -37,7 +39,7 @@ class LoyaltyEntry {
     @Enumerated(EnumType.STRING)
     private Type type;
 
-    /** Positive for EARN and REVERSE_REDEEM, negative otherwise. */
+    /** Positive for EARN and REVERSE_REDEEM, negative for REDEEM, REVERSE_EARN and EXPIRE, either for ADJUST. */
     private int points;
 
     private Instant createdAt;

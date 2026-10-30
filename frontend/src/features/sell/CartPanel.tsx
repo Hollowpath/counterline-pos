@@ -1,4 +1,5 @@
 import { useState, type Dispatch } from 'react'
+import { formatDate } from '../../lib/dates'
 import { formatRM } from '../../lib/money'
 import { maskPhone } from '../../lib/privacy'
 import { REGISTER_CLOSED_MESSAGE, useRegister } from '../register/registerApi'
@@ -79,7 +80,7 @@ export function CartPanel({
     setPerkShown(shownPerk === perk || !cart.customer ? null : { customerId: cart.customer.id, perk })
   // The server's preview once the cart is quoted; until then, the member's points as they stand.
   const loyalty = (quote.status === 'ready' ? quote.quote.loyalty : null)
-    ?? (perks ? { before: perks.points, earned: 0, redeemed: 0, after: perks.points } : null)
+    ?? (perks ? { before: perks.points, earned: 0, redeemed: 0, after: perks.points, expiresAt: perks.pointsExpireAt ?? null } : null)
   const mustRedeem = perks?.redemptionCost != null && loyalty !== null && loyalty.after >= perks.redemptionCost
   // Problems stop payment only: Place Order always saves the sale as it is.
   const blocked = problems.length > 0
@@ -225,6 +226,11 @@ export function CartPanel({
       {loyalty && loyalty.before < 0 && (
         <p className="px-3 pb-2 text-xs font-medium text-red-600" data-testid="points-owed">
           Owes {-loyalty.before} points: a refund took back points already spent. This purchase earns {loyalty.earned} towards them.
+        </p>
+      )}
+      {loyalty?.expiresAt && loyalty.after > 0 && (
+        <p className="px-3 pb-2 text-xs font-medium text-zinc-500" data-testid="points-expiry">
+          Points expire on {formatDate(loyalty.expiresAt)}
         </p>
       )}
 

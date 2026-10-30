@@ -112,6 +112,8 @@ export interface LoyaltyPoints {
   earned: number
   redeemed: number
   after: number
+  /** In a cart's preview: when the points left after the sale expire (365 days after this purchase); null with none. */
+  expiresAt?: string | null
 }
 
 /** The cart priced by the server; `problems` say why it can't be paid yet. */
@@ -173,6 +175,8 @@ export interface MemberPerks {
   newMemberGifts: { promotion: string; items: string[]; availableUntil: string }[]
   /** Free items the staff forgot last time, to give on this sale. */
   owedItems?: { promotion: string; quantity: number; items: string[]; reason: string }[]
+  /** When the member's points expire as things stand (365 days after their latest completed, unrefunded purchase); null with none, in debt, or with no purchase. */
+  pointsExpireAt?: string | null
 }
 
 export const checkoutPaths = {

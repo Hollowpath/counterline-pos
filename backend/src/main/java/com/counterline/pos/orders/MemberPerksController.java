@@ -33,8 +33,9 @@ class MemberPerksController {
      * {@code newMemberGifts}: free items the member may still take, with when the offer ends.
      */
     /** {@code owedItems}: free items the staff forgot last time, to give on this sale. */
+    /** {@code pointsExpireAt}: when the member's points expire as things stand (null with none, in debt, or with no purchase to count from). */
     record MemberPerks(int points, Integer redemptionCost, boolean birthdayMonth, List<Gift> newMemberGifts,
-                       List<Owed> owedItems) {
+                       List<Owed> owedItems, Instant pointsExpireAt) {
     }
 
     record Owed(String promotion, int quantity, List<String> items, String reason) {
@@ -78,8 +79,9 @@ class MemberPerksController {
                 .filter(gift -> !gift.items().isEmpty())
                 .toList();
         var cost = promotionRules.redemptionCost();
-        return new MemberPerks(loyaltyService.balance(customerId), cost.isPresent() ? cost.getAsInt() : null,
-                promotionRules.isBirthdayMonth(member, now), gifts, owedItems(customerId));
+        var standing = loyaltyService.standing(customerId, now);
+        return new MemberPerks(standing.balance(), cost.isPresent() ? cost.getAsInt() : null,
+                promotionRules.isBirthdayMonth(member, now), gifts, owedItems(customerId), standing.expiresAt());
     }
 
     private List<Owed> owedItems(Long customerId) {

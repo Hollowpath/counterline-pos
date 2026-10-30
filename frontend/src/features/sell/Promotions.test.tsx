@@ -207,6 +207,30 @@ describe('promotional items', () => {
     expect(cart().getByRole('button', { name: 'Pay' })).toBeEnabled()
   })
 
+  it('shows when the points expire, from the member’s perks and then from the server’s preview', async () => {
+    stubApi(() => quote({ total: 32, loyalty: { before: 8, earned: 3, redeemed: 0, after: 11, expiresAt: '2027-03-14T04:00:00Z' } }), {
+      '/api/v1/customers/5/perks': perks({ points: 8, pointsExpireAt: '2026-12-01T04:00:00Z' }),
+    })
+    const user = userEvent.setup()
+    await addItems(user, /PC Caramel/)
+    await addMember(user)
+
+    // This purchase earns points, so it starts a new year: the preview's date replaces the member's current one.
+    await vi.waitFor(() => expect(cart().getByTestId('points-expiry')).toHaveTextContent(/Points expire on [0-9]{1,2} Mar 2027/))
+  })
+
+  it('shows no expiry for a member without points or in debt', async () => {
+    stubApi(() => quote({ total: 32, loyalty: { before: -6, earned: 3, redeemed: 0, after: -3, expiresAt: null } }), {
+      '/api/v1/customers/5/perks': perks({ points: -6, pointsExpireAt: null }),
+    })
+    const user = userEvent.setup()
+    await addItems(user, /PC Caramel/)
+    await addMember(user)
+
+    await vi.waitFor(() => expect(cart().getByTestId('points-owed')).toBeInTheDocument())
+    expect(cart().queryByTestId('points-expiry')).not.toBeInTheDocument()
+  })
+
   it('cannot take a discount', async () => {
     stubApi(() => quote({}))
     const user = userEvent.setup()

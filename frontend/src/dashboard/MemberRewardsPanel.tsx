@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { ApiError, postJson } from '../api/http'
 import { useApi } from '../api/useApi'
 import { LoadState } from '../components/LoadState'
-import { formatDateTime } from '../lib/dates'
+import { formatDate, formatDateTime } from '../lib/dates'
 import { field } from './styles'
 import { dashboardPaths } from './types'
 import { detail } from '../styles/ui'
@@ -12,6 +12,8 @@ const form = 'my-2 flex flex-wrap items-center gap-2'
 
 interface PointsHistory {
   balance: number
+  /** When the points expire (365 days after the latest completed, unrefunded purchase); null with none, in debt, or with no purchase. */
+  expiresAt: string | null
   entries: { type: string; points: number; at: string; orderNumber: string | null; reason: string | null; adjustedBy: string | null }[]
 }
 
@@ -36,6 +38,7 @@ const ENTRY_TEXT: Record<string, string> = {
   REVERSE_EARN: 'Refund: earned points taken back',
   REVERSE_REDEEM: 'Refund: redeemed points given back',
   ADJUST: 'Adjusted',
+  EXPIRE: 'Expired: 365 days since the last purchase',
 }
 
 function message(error: unknown) {
@@ -58,6 +61,9 @@ export function MemberRewardsPanel({ customerId }: { customerId: number }) {
       ) : (
         <>
           <p className={`mt-1 mb-3 inline-flex rounded-2xl bg-linear-to-br px-5 py-3 text-2xl font-bold tracking-tight text-white shadow-lg ${points.data.balance < 0 ? 'from-red-600 to-rose-600 shadow-red-600/20' : 'from-indigo-600 to-violet-600 shadow-indigo-600/20'}`} data-testid="points-balance">{points.data.balance} points</p>
+          {points.data.expiresAt && (
+            <p className="mb-3 text-sm text-zinc-500" data-testid="points-expiry">Points expire on {formatDate(points.data.expiresAt)}</p>
+          )}
           {points.data.balance < 0 && (
             <p className="mb-3 text-sm font-medium text-red-600" data-testid="points-owed">
               Owes {-points.data.balance} points: a refund took back points that had already been spent. New purchases earn them back
