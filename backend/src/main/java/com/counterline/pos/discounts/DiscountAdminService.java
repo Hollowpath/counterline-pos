@@ -78,6 +78,9 @@ public class DiscountAdminService {
     public AdminDiscount update(Long discountId, DiscountRequest request) {
         Discount discount = discountRepository.findById(discountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Discount " + discountId + " not found"));
+        if (discount.getScope() == Discount.Scope.VOUCHER) {
+            throw new ConflictException("A voucher batch's discount can't be edited; it is managed with its vouchers");
+        }
         String name = validated(request);
         if (discountRepository.existsByNameIgnoreCaseAndIdNot(name, discountId)) {
             throw new ConflictException("There is already a discount called " + name);
