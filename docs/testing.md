@@ -70,7 +70,7 @@ The Docker image build skips tests (`-DskipTests`); run them separately before b
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` (GitHub Actions, workflow `CI`) runs on pushes to `main`, on pull requests and on manual dispatch. It has four independent jobs on `ubuntu-latest`, with read-only repository permissions and no secrets:
+`.github/workflows/ci.yml` (GitHub Actions, workflow `CI`) runs on pushes to `main`, on pull requests and on manual dispatch. It has four independent jobs on `ubuntu-24.04`, with read-only repository permissions and no secrets:
 
 - **Backend:** Java 21 (Temurin) with the Maven cache, then `sh ./mvnw -B verify` in `backend`. This runs the full backend suite, with PostgreSQL provided by Testcontainers through the runner's Docker, and packages the Spring Boot jar.
 - **Frontend:** Node.js 22 with the npm cache, then `npm ci`, `npm run lint`, `npm test` and `npm run build` in `frontend`, as separate steps.

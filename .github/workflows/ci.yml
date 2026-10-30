@@ -16,7 +16,7 @@ concurrency:
 jobs:
   backend:
     name: Backend verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
@@ -40,7 +40,7 @@ jobs:
 
   frontend:
     name: Frontend lint, test and build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -72,7 +72,7 @@ jobs:
 
   infrastructure:
     name: Infrastructure build and test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -101,7 +101,7 @@ jobs:
 
   image:
     name: Packaged image scan and smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Check out the repository
