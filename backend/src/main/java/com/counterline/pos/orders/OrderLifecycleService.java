@@ -82,13 +82,14 @@ public class OrderLifecycleService {
         // The member's points account before the register, as at checkout: the same lock order
         // everywhere, so a payment and a sale for one member can't deadlock with a register close.
         int pointsBalance = order.getCustomer() == null ? 0 : loyaltyService.lock(order.getCustomer().getId(), now);
-        registerGate.requireOpenForPayment(terminal.outletId());
+        // The payment is dated once the register is locked, so it can't fall in a session that closed meanwhile.
+        Instant paidAt = registerGate.lockForDrawerEvent(terminal.outletId());
         // Judged as of when it was placed or last edited; the points and once-only rewards, as they are now.
         promotionRules.requireSatisfied(order, pointsBalance, order.getEligibilityAt(), order.getId());
-        paymentRecorder.addPayments(order, request.payments(), staff, now);
-        order.closeWithPaymentRequest(request.clientRequestId(), now);
+        paymentRecorder.addPayments(order, request.payments(), staff, paidAt);
+        order.closeWithPaymentRequest(request.clientRequestId(), paidAt);
         orderRepository.saveAndFlush(order);
-        orderLoyalty.settle(order, now);
+        orderLoyalty.settle(order, paidAt);
         orderRepository.flush();
         log.info("Order {} paid: RM{} by staff {}", order.getDisplayNumber(), order.getTotal(), staffId);
         return OrderResponse.from(order);
@@ -113,10 +114,13 @@ public class OrderLifecycleService {
     public OrderResponse refund(Long orderId, String reason, Terminal manager) {
         Long managerId = manager.staffId();
         SaleOrder order = lockOrder(orderId, manager.outletId());
-        Instant now = clock.instant();
-        order.refund(reason.strip(), activeStaff(managerId), now);
-        orderLoyalty.reverse(order, now);
-        registerGate.requireOpenForPayment(manager.outletId());
+        Staff staff = activeStaff(managerId);
+        order.requireRefundable();
+        // The points are taken back (locking the member's account) before the register is locked, and the
+        // refund is dated only after that lock, so it belongs to the session that is open when it is made.
+        orderLoyalty.reverse(order, clock.instant());
+        Instant refundedAt = registerGate.lockForDrawerEvent(manager.outletId());
+        order.refund(reason.strip(), staff, refundedAt);
         orderRepository.saveAndFlush(order);
         // The whole sale is undone, so the customer gets their voucher back too.
         voucherService.releaseFor(order.getId());

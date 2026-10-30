@@ -96,7 +96,7 @@ class RegisterAndTimecardApiIntegrationTest {
                 {"clientRequestId":"%s","lines":[{"itemId":4,"quantity":1}],"payments":[{"paymentMethodId":2,"reference":"ref","amount":29}]}"""
                 .formatted(UUID.randomUUID())).andExpect(status().isCreated());
 
-        perform(post("/api/v1/register/close"), "{\"version\":0,\"note\":\" All good \"}")
+        perform(post("/api/v1/register/close"), closeBody(openSessionId(), currentVersion(), " All good "))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.closedBy").value("Test Cashier"))
                 .andExpect(jsonPath("$.closingNote").value("All good"))
@@ -115,8 +115,46 @@ class RegisterAndTimecardApiIntegrationTest {
         perform(post("/api/v1/register/open"), "").andExpect(status().isCreated());
         perform(post("/api/v1/register/open"), "").andExpect(status().isConflict());
 
-        perform(post("/api/v1/register/close"), "{\"version\":7}").andExpect(status().isConflict());
+        perform(post("/api/v1/register/close"), closeBody(openSessionId(), 7, null)).andExpect(status().isConflict());
         perform(post("/api/v1/register/close"), "{}").andExpect(status().isBadRequest());
+    }
+
+    /** Authenticated till staff, whatever their role, open and close the register and record movements: policy, pinned. */
+    @Test
+    void anyTillStaffMayOpenCloseAndRecordMovementsButNoOneElse() throws Exception {
+        Long managerId = staffRepository.save(new Staff("Test Manager", pinHasher.hash("654321"), StaffRole.MANAGER, 1L)).getId();
+        RequestPostProcessor manager = jwt().jwt(token -> token.claim("outlet", 1L).subject(managerId.toString()).claim("role", "MANAGER"));
+
+        mockMvc.perform(post("/api/v1/register/open")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/register/movements").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"direction\":\"IN\",\"amount\":1,\"reason\":\"x\"}")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/register/close").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"sessionId\":1,\"version\":0}")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/register")).andExpect(status().isUnauthorized());
+
+        // A dashboard or approval session is not a till's: no register, whoever it belongs to.
+        for (String channel : List.of("dashboard", "approval")) {
+            RequestPostProcessor other = jwt().jwt(token -> token.claim("outlet", 1L).subject(cashierId.toString())
+                    .claim("role", "MANAGER").claim("channel", channel));
+            mockMvc.perform(post("/api/v1/register/open").with(other)).andExpect(status().isForbidden());
+            mockMvc.perform(post("/api/v1/register/movements").with(other).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"direction\":\"IN\",\"amount\":1,\"reason\":\"x\"}")).andExpect(status().isForbidden());
+            mockMvc.perform(post("/api/v1/register/close").with(other).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"sessionId\":1,\"version\":0}")).andExpect(status().isForbidden());
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM register_session", Integer.class)).isZero();
+
+        // A cashier (role STAFF) does all of it, and so does a manager.
+        perform(post("/api/v1/register/open"), "").andExpect(status().isCreated());
+        perform(post("/api/v1/register/movements"), "{\"direction\":\"IN\",\"amount\":5,\"reason\":\"Float\"}")
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/register/movements").with(manager).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"direction\":\"OUT\",\"amount\":2,\"reason\":\"Supplies\"}")).andExpect(status().isOk());
+        perform(post("/api/v1/register/close"), closeBody(openSessionId(), currentVersion(), null)).andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/register/open").with(manager)).andExpect(status().isCreated());
+        mockMvc.perform(post("/api/v1/register/close").with(manager).contentType(MediaType.APPLICATION_JSON)
+                .content(closeBody(openSessionId(), currentVersion(), null))).andExpect(status().isOk());
     }
 
     @Test
@@ -128,13 +166,13 @@ class RegisterAndTimecardApiIntegrationTest {
 
         mockMvc.perform(get("/api/v1/register").with(cashier()))
                 .andExpect(jsonPath("$.openOrders").value(1));
-        perform(post("/api/v1/register/close"), "{\"version\":0}")
+        perform(post("/api/v1/register/close"), closeBody(openSessionId(), 0, null))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value(
                         "1 open order"));
 
         jdbc.update("UPDATE sale_order SET status = 'VOIDED', void_reason = 'test', voided_by = ?, voided_at = now()", cashierId);
-        perform(post("/api/v1/register/close"), "{\"version\":0}").andExpect(status().isOk());
+        perform(post("/api/v1/register/close"), closeBody(openSessionId(), 0, null)).andExpect(status().isOk());
     }
 
     @Test
@@ -191,6 +229,19 @@ class RegisterAndTimecardApiIntegrationTest {
     }
 
     // ---- helpers ----
+
+    private Long openSessionId() {
+        return jdbc.queryForObject("SELECT id FROM register_session WHERE closed_at IS NULL", Long.class);
+    }
+
+    private long currentVersion() {
+        return jdbc.queryForObject("SELECT version FROM register_session WHERE closed_at IS NULL", Long.class);
+    }
+
+    private static String closeBody(long sessionId, long version, String note) {
+        return "{\"sessionId\":" + sessionId + ",\"version\":" + version
+                + (note == null ? "" : ",\"note\":\"" + note + "\"") + "}";
+    }
 
     private ResultActions clock(String pin, String type) throws Exception {
         return perform(post("/api/v1/timecards/clock"), "{\"pin\":\"" + pin + "\",\"type\":\"" + type + "\"}");

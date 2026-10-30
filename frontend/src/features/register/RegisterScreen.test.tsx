@@ -191,7 +191,7 @@ describe('RegisterScreen', () => {
     expect(within(drawer).getAllByRole('listitem').map((row) => row.textContent)).toEqual(['Opening floatRM20.00', 'Expected cash(RM9.00)'])
   })
 
-  it('closes the register after a confirmation, with the version shown', async () => {
+  it('closes the register after a confirmation, naming the session and version it showed', async () => {
     const calls = fakeApi(true)
     const user = userEvent.setup()
     render(<RegisterScreen onOpenMenu={() => {}} />)
@@ -203,7 +203,7 @@ describe('RegisterScreen', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Close Register' }))
 
     expect(await screen.findByRole('button', { name: 'Open Register' })).toBeInTheDocument()
-    expect(calls.find((call) => call.path === '/api/v1/register/close')!.body).toEqual({ version: 0, note: null })
+    expect(calls.find((call) => call.path === '/api/v1/register/close')!.body).toEqual({ sessionId: 1, version: 0, note: null })
   })
 
   it('can’t be closed while a sale is open in the cart', async () => {
@@ -218,8 +218,8 @@ describe('RegisterScreen', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Sale open')
   })
 
-  it('keeps the dialog open and explains a conflicting close', async () => {
-    fakeApi(true, () => json({ title: 'Conflicting change', detail: 'Changed elsewhere. Reload.' }, 409))
+  it('keeps the dialog open and explains a refused close', async () => {
+    fakeApi(true, () => json({ title: 'Unprocessable', detail: '1 open order' }, 422))
     const user = userEvent.setup()
     render(<RegisterScreen onOpenMenu={() => {}} />)
 
@@ -227,6 +227,44 @@ describe('RegisterScreen', () => {
     const dialog = screen.getByRole('dialog', { name: 'Close Register' })
     await user.click(within(dialog).getByRole('button', { name: 'Close Register' }))
 
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Changed elsewhere')
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('1 open order')
+  })
+
+  it('reloads the register after a close from a stale view, then closes it with the new id and version', async () => {
+    // The drawer moved on (a sale at another till) after this screen loaded: version 0 is stale, version 3 is current.
+    let server = session({ id: 4, version: 0, expectedCash: 0 })
+    const closes: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const path = String(input)
+      if (path === '/api/v1/register/close') {
+        const body = JSON.parse(String(init.body)) as { sessionId: number; version: number }
+        closes.push(body)
+        if (body.sessionId !== server.id || body.version !== server.version) {
+          return json({ title: 'Conflicting change', detail: 'Changed elsewhere. Reload.' }, 409)
+        }
+        return json({ ...server, closedAt: '2026-10-12T10:00:00Z' })
+      }
+      return json({ open: true, session: server, lastClosed: null, openOrders: 0 })
+    }))
+    const user = userEvent.setup()
+    render(<RegisterScreen onOpenMenu={() => {}} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Close Register' }))
+    server = session({ id: 4, version: 3, expectedCash: 29 })
+    await user.click(within(screen.getByRole('dialog', { name: 'Close Register' })).getByRole('button', { name: 'Close Register' }))
+
+    // Nothing was closed: the register is shown as it is now, with why.
+    expect(await screen.findByText(/Expected cash:/)).toHaveTextContent('Expected cash: RM29.00')
+    expect(screen.getByRole('alert')).toHaveTextContent('The register changed since this screen was loaded')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Close Register' }))
+    await user.click(within(screen.getByRole('dialog', { name: 'Close Register' })).getByRole('button', { name: 'Close Register' }))
+
+    await waitFor(() => expect(closes).toHaveLength(2))
+    expect(closes).toEqual([
+      { sessionId: 4, version: 0, note: null },
+      { sessionId: 4, version: 3, note: null },
+    ])
   })
 })

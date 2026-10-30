@@ -367,17 +367,22 @@ public class SaleOrder {
 
     /** Full refund to the original payment methods. */
     public void refund(String reason, Staff manager, Instant at) {
+        requireRefundable();
+        // A zero-total sale (free items, or a voucher that covered it) has no money to return, but is
+        // still refunded once: that is what gives back its voucher and points.
+        this.refundReason = reason;
+        this.refundedBy = manager;
+        this.refundedAt = at;
+    }
+
+    /** Paid and not yet refunded: checked before anything is locked or reversed for a refund. */
+    void requireRefundable() {
         if (status != OrderStatus.CLOSED) {
             throw new BusinessRuleException("Only a paid order can be refunded");
         }
         if (isRefunded()) {
             throw new BusinessRuleException("Order " + getDisplayNumber() + " has already been refunded");
         }
-        // A zero-total sale (free items, or a voucher that covered it) has no money to return, but is
-        // still refunded once: that is what gives back its voucher and points.
-        this.refundReason = reason;
-        this.refundedBy = manager;
-        this.refundedAt = at;
     }
 
     private void requireLines() {

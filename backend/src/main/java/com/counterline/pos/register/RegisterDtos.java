@@ -55,7 +55,10 @@ public final class RegisterDtos {
             @NotBlank @Size(max = 200) String reason) {
     }
 
-    /** {@code version} is the session the cashier is looking at, so a stale screen cannot close it. */
-    public record CloseRequest(@NotNull Long version, @Size(max = 500) String note) {
+    /**
+     * {@code sessionId} and {@code version} are the session the cashier is looking at, so a stale screen cannot
+     * close it: not a session opened since, nor one whose drawer has moved on (a payment, refund or pay in / out).
+     */
+    public record CloseRequest(@NotNull Long sessionId, @NotNull Long version, @Size(max = 500) String note) {
     }
 }

@@ -41,7 +41,8 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const register = useRegister()
 
-  async function act(action: () => Promise<unknown>) {
+  /** `staleMessage`: what a conflict means for this action (a close made from an out-of-date view of the register). */
+  async function act(action: () => Promise<unknown>, staleMessage?: string) {
     setError(null)
     try {
       await action()
@@ -49,7 +50,14 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
       status.reload()
       register.refresh()
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : 'Offline')
+      if (staleMessage && caught instanceof ApiError && caught.status === 409) {
+        // Show the register as it is now, and say why nothing was closed.
+        setDialog(null)
+        status.reload()
+        setError(staleMessage)
+      } else {
+        setError(caught instanceof ApiError ? caught.message : 'Offline')
+      }
       throw caught
     }
   }
@@ -204,7 +212,10 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
       {dialog === 'close' && session && (
         <CloseDialog
           error={error}
-          onConfirm={() => act(() => postJson(`${PATH}/close`, { version: session.version, note: null }))}
+          onConfirm={() => act(
+            () => postJson(`${PATH}/close`, { sessionId: session.id, version: session.version, note: null }),
+            'The register changed since this screen was loaded (a sale, refund or Pay In / Out), or it was reopened. It is shown as it is now: check the expected cash, then close it again.',
+          )}
           onCancel={() => {
             setDialog(null)
             setError(null)

@@ -28,6 +28,7 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 
 @Service
 @Transactional
@@ -92,15 +93,18 @@ public class RegisterService {
 
     /**
      * Pay In / Out. A pay-out may not take more than the register's expected cash. The open session is
-     * locked first (as a close does, and as every payment's share lock waits for), so the balance is read
-     * after every sale and pay-out already under way has finished, and the movement is recorded in the same
-     * transaction: two pay-outs cannot spend the same cash.
+     * locked first, for pay-ins too (as a close does, and as every payment and refund does), and its version
+     * advances: the balance is read after every sale and pay-out already under way has finished, a close that
+     * wins the wait makes the movement fail, and two pay-outs cannot spend the same cash.
      */
     public SessionResponse recordMovement(MovementRequest request, Terminal terminal) {
-        if (request.direction() == Direction.OUT) {
-            jdbc.queryForList("SELECT id FROM register_session WHERE outlet_id = ? AND closed_at IS NULL FOR UPDATE",
-                    Long.class, terminal.outletId());
+        int locked = jdbc.update(
+                "UPDATE register_session SET version = version + 1 WHERE outlet_id = ? AND closed_at IS NULL",
+                terminal.outletId());
+        if (locked == 0) {
+            throw new BusinessRuleException("The register is not open");
         }
+        // Loaded after the lock, so it carries the version just written and nothing else can change it meanwhile.
         RegisterSession session = openSession(terminal.outletId());
         if (request.direction() == Direction.OUT) {
             BigDecimal expected = expectedCash(session, clock.instant());
@@ -116,13 +120,20 @@ public class RegisterService {
 
     public SessionResponse close(CloseRequest request, Terminal terminal) {
         Long staffId = terminal.staffId();
-        RegisterSession session = openSession(terminal.outletId());
-        if (request.version() != session.getVersion()) {
-            throw new ObjectOptimisticLockingFailureException(RegisterSession.class, session.getId());
+        // Locked before anything is read or counted: a Place Order holds the row FOR SHARE and a payment, refund
+        // or pay in / out updates it (RegisterGate), so each either commits first and is counted, or waits and
+        // then finds the register closed. The id and version are compared under the lock, so they are current.
+        List<long[]> held = jdbc.query(
+                "SELECT id, version FROM register_session WHERE outlet_id = ? AND closed_at IS NULL FOR UPDATE",
+                (rs, row) -> new long[] {rs.getLong(1), rs.getLong(2)}, terminal.outletId());
+        if (held.isEmpty()) {
+            throw new BusinessRuleException("The register is not open");
         }
-        // Locked before counting: a Place Order or payment holds the row FOR SHARE (RegisterGate), so it
-        // either commits first and is counted, or waits and then finds the register closed.
-        jdbc.queryForObject("SELECT id FROM register_session WHERE id = ? FOR UPDATE", Long.class, session.getId());
+        long[] open = held.get(0);
+        if (request.sessionId() != open[0] || request.version() != open[1]) {
+            throw new ObjectOptimisticLockingFailureException(RegisterSession.class, open[0]);
+        }
+        RegisterSession session = openSession(terminal.outletId());
         long openOrders = countOpenOrders(terminal.outletId());
         if (openOrders > 0) {
             throw new BusinessRuleException(openOrders + (openOrders == 1 ? " open order" : " open orders"));

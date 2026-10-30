@@ -210,24 +210,26 @@ public class CheckoutService {
      */
     private void complete(SaleOrder order, CheckoutRequest request, Voucher voucher, Staff staff, Terminal terminal,
                           Instant now, UUID paymentRequestId) {
-        // Placing an order, like paying, needs the outlet's register open.
-        registerGate.requireOpenForPayment(terminal.outletId());
+        // Placing an order, like paying, needs the outlet's register open. A payment is a drawer event: it
+        // locks the session, advances its version and is dated only once that lock is held.
         if (request.modeOrDefault() == CheckoutMode.PLACE_ORDER) {
+            registerGate.requireOpenForPayment(terminal.outletId());
             paymentRecorder.addPayments(order, request.payments(), staff, now);
             order.place();
             orderRepository.saveAndFlush(order);
             useVoucher(voucher, order);
         } else {
-            paymentRecorder.addPayments(order, request.payments(), staff, now);
+            Instant paidAt = registerGate.lockForDrawerEvent(terminal.outletId());
+            paymentRecorder.addPayments(order, request.payments(), staff, paidAt);
             if (paymentRequestId == null) {
-                order.close(now);
+                order.close(paidAt);
             } else {
-                order.closeWithPaymentRequest(paymentRequestId, now);
+                order.closeWithPaymentRequest(paymentRequestId, paidAt);
             }
             // Flush inside the transaction so constraint violations surface here, not at commit.
             orderRepository.saveAndFlush(order);
             useVoucher(voucher, order);
-            orderLoyalty.settle(order, now);
+            orderLoyalty.settle(order, paidAt);
             orderRepository.flush();
         }
     }

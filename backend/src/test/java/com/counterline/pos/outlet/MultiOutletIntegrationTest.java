@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -126,7 +127,40 @@ class MultiOutletIntegrationTest {
         // The second outlet's open order doesn't stop the first outlet closing its register.
         mockMvc.perform(get("/api/v1/register").with(cashier(FIRST))).andExpect(jsonPath("$.openOrders").value(0));
         mockMvc.perform(get("/api/v1/register").with(cashier(second))).andExpect(jsonPath("$.openOrders").value(1));
-        perform(post("/api/v1/register/close"), cashier(FIRST), "{\"version\":0}").andExpect(status().isOk());
+        close(FIRST, session(FIRST)).andExpect(status().isOk());
+    }
+
+    @Test
+    void aDrawerEventAtOneOutletNeverTouchesOrClosesTheOthersRegister() throws Exception {
+        openWithFloat(FIRST, 10).andExpect(status().isCreated());
+        openWithFloat(second, 20).andExpect(status().isCreated());
+        long[] first = session(FIRST);
+        long[] other = session(second);
+
+        // The second outlet's cash is its own: it can't pay out the first's float, and its events leave the first's version alone.
+        movement(second, "OUT", "20.01").andExpect(status().isConflict());
+        movement(second, "OUT", "20").andExpect(status().isOk());
+        movement(second, "IN", "3").andExpect(status().isOk());
+        cashSale(second).andExpect(status().isCreated());
+        assertThat(session(FIRST)).containsExactly(first);
+
+        movement(FIRST, "IN", "5").andExpect(status().isOk());
+        cashSale(FIRST).andExpect(status().isCreated());
+        long[] firstNow = session(FIRST);
+        long[] otherNow = session(second);
+        assertThat(firstNow[1]).isGreaterThan(first[1]);
+        assertThat(otherNow[1]).isGreaterThan(other[1]);
+        mockMvc.perform(get("/api/v1/register").with(cashier(FIRST))).andExpect(jsonPath("$.session.expectedCash").value(31.0));
+        mockMvc.perform(get("/api/v1/register").with(cashier(second))).andExpect(jsonPath("$.session.expectedCash").value(19.0));
+
+        // Neither can close the other's session, by its id or by its version.
+        close(FIRST, new long[] {otherNow[0], firstNow[1]}).andExpect(status().isConflict());
+        close(second, new long[] {firstNow[0], otherNow[1]}).andExpect(status().isConflict());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM register_session WHERE closed_at IS NULL", Integer.class)).isEqualTo(2);
+
+        close(FIRST, firstNow).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/register").with(cashier(second))).andExpect(jsonPath("$.open").value(true));
+        close(second, otherNow).andExpect(status().isOk());
     }
 
     @Test
@@ -199,6 +233,35 @@ class MultiOutletIntegrationTest {
 
     private ResultActions open(long outletId) throws Exception {
         return mockMvc.perform(post("/api/v1/register/open").with(cashier(outletId)));
+    }
+
+    private ResultActions openWithFloat(long outletId, int openingFloat) throws Exception {
+        return perform(post("/api/v1/register/open"), cashier(outletId), "{\"openingFloat\":" + openingFloat + "}");
+    }
+
+    /** The outlet's open session as a screen would show it: its id and version. */
+    private long[] session(long outletId) {
+        return jdbc.queryForObject("SELECT id, version FROM register_session WHERE outlet_id = ? AND closed_at IS NULL",
+                (rs, row) -> new long[] {rs.getLong(1), rs.getLong(2)}, outletId);
+    }
+
+    private ResultActions close(long outletId, long[] seen) throws Exception {
+        return perform(post("/api/v1/register/close"), cashier(outletId),
+                "{\"sessionId\":" + seen[0] + ",\"version\":" + seen[1] + "}");
+    }
+
+    private ResultActions movement(long outletId, String direction, String amount) throws Exception {
+        return perform(post("/api/v1/register/movements"), cashier(outletId),
+                "{\"direction\":\"" + direction + "\",\"amount\":" + amount + ",\"reason\":\"Test\"}");
+    }
+
+    /** A RM16.00 cash sale. */
+    private ResultActions cashSale(long outletId) throws Exception {
+        Long cash = jdbc.queryForObject("SELECT id FROM payment_method WHERE kind = 'CASH' ORDER BY id LIMIT 1", Long.class);
+        return perform(post("/api/v1/orders"), cashier(outletId), """
+                {"clientRequestId":"%s","lines":[{"itemId":1,"quantity":1}],
+                 "payments":[{"paymentMethodId":%d,"reference":"ref","amount":16.00}]}"""
+                .formatted(UUID.randomUUID(), cash));
     }
 
     private ResultActions sell(long outletId, long itemId, String amount) throws Exception {

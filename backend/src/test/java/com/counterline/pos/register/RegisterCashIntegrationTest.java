@@ -28,8 +28,11 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -37,6 +40,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -252,40 +256,276 @@ class RegisterCashIntegrationTest {
     @Test
     void aPayOutWaitingOnACloseThatWinsIsRefusedAndNeverAttachesToTheClosedSession() throws Exception {
         open("{\"openingFloat\":100}").andExpect(status().isCreated());
-        CountDownLatch locked = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        ExecutorService pool = Executors.newFixedThreadPool(2);
-        try {
-            // A close, as it stands in the database: holding the session row, then closing it.
-            Future<?> closing = pool.submit(() -> new TransactionTemplate(transactions).executeWithoutResult(tx -> {
-                jdbc.queryForObject("SELECT id FROM register_session WHERE closed_at IS NULL FOR UPDATE", Long.class);
-                locked.countDown();
-                try {
-                    assertThat(release.await(20, TimeUnit.SECONDS)).isTrue();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-                jdbc.update("UPDATE register_session SET closed_at = now(), closed_by = opened_by, version = version + 1 WHERE closed_at IS NULL");
-            }));
-            assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
-            Future<Integer> payingOut = pool.submit(() -> movement("OUT", "10", "Supplies").andReturn().getResponse().getStatus());
 
-            // Release the close only once the pay-out is queued behind its lock.
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
-            while (jdbc.queryForObject("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%register_session%FOR UPDATE%'",
-                    Integer.class) < 1) {
-                assertThat(System.nanoTime()).isLessThan(deadline);
-                Thread.sleep(25);
-            }
-            release.countDown();
-            closing.get(20, TimeUnit.SECONDS);
+        Queued<Integer> payOut = queuedBehindTheSessionLock(true, () -> movement("OUT", "10", "Supplies").andReturn().getResponse().getStatus());
 
-            assertThat(payingOut.get(20, TimeUnit.SECONDS)).isEqualTo(422);
-        } finally {
-            release.countDown();
-            pool.shutdownNow();
-        }
+        assertThat(payOut.result()).isEqualTo(422);
         assertThat(movementCount()).isZero();
+    }
+
+    @Test
+    void aPayInWaitingOnACloseThatWinsIsRefusedAndNeverAttachesToTheClosedSession() throws Exception {
+        open("{\"openingFloat\":100}").andExpect(status().isCreated());
+
+        Queued<Integer> payIn = queuedBehindTheSessionLock(true, () -> movement("IN", "10", "Float").andReturn().getResponse().getStatus());
+
+        assertThat(payIn.result()).isEqualTo(422);
+        assertThat(movementCount()).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM register_session WHERE closed_at IS NULL", Integer.class)).isZero();
+    }
+
+    @Test
+    void aPaymentWaitingOnACloseThatWinsIsRefusedAndRecordsNothing() throws Exception {
+        open("").andExpect(status().isCreated());
+
+        Queued<Integer> payment = queuedBehindTheSessionLock(true, () -> placeSale(cash).andReturn().getResponse().getStatus());
+
+        assertThat(payment.result()).isEqualTo(422);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM sale_order", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment", Integer.class)).isZero();
+    }
+
+    @Test
+    void aRefundWaitingOnACloseThatWinsIsRefusedAndTheOrderStaysPaid() throws Exception {
+        open("").andExpect(status().isCreated());
+        long order = cashSale();
+
+        Queued<Integer> refund = queuedBehindTheSessionLock(true, () -> refund(order).andReturn().getResponse().getStatus());
+
+        assertThat(refund.result()).isEqualTo(422);
+        assertThat(jdbc.queryForObject("SELECT refunded_at FROM sale_order WHERE id = ?", java.sql.Timestamp.class, order)).isNull();
+    }
+
+    @Test
+    void aPaymentAndARefundAreDatedOnlyOnceTheRegisterIsLocked() throws Exception {
+        open("").andExpect(status().isCreated());
+
+        // The session is held without closing it; the sale is queued behind the lock and released later.
+        Queued<Long> sale = queuedBehindTheSessionLock(false, this::cashSale);
+        Instant paidAt = jdbc.queryForObject("SELECT closed_at FROM sale_order WHERE id = ?", java.sql.Timestamp.class, sale.result()).toInstant();
+        assertThat(paidAt).isAfter(sale.releasedAt());
+
+        Queued<Integer> refund = queuedBehindTheSessionLock(false, () -> refund(sale.result()).andReturn().getResponse().getStatus());
+        Instant refundedAt = jdbc.queryForObject("SELECT refunded_at FROM sale_order WHERE id = ?", java.sql.Timestamp.class, sale.result()).toInstant();
+        assertThat(refund.result()).isEqualTo(200);
+        assertThat(refundedAt).isAfter(refund.releasedAt());
+    }
+
+    @RepeatedTest(3)
+    void aPayInRacingTheCloseLandsBeforeItOrIsRefusedAndNeverAfter() throws Exception {
+        open("").andExpect(status().isCreated());
+        View seen = view();
+
+        List<Integer> statuses = together(List.of(
+                () -> close(seen).andReturn().getResponse().getStatus(),
+                () -> movement("IN", "10", "Float").andReturn().getResponse().getStatus()));
+
+        // The pay-in came first (the close is then stale) or the close did (the pay-in finds the register closed).
+        assertThat(statuses).isIn(List.of(200, 422), List.of(409, 200));
+        assertThat(movementCount()).isEqualTo(statuses.get(1) == 200 ? 1 : 0);
+        assertNothingFollowsTheClose();
+    }
+
+    @RepeatedTest(3)
+    void aCashSaleRacingTheCloseLandsBeforeItOrIsRefusedAndNeverAfter() throws Exception {
+        open("").andExpect(status().isCreated());
+        View seen = view();
+
+        List<Integer> statuses = together(List.of(
+                () -> close(seen).andReturn().getResponse().getStatus(),
+                () -> placeSale(cash).andReturn().getResponse().getStatus()));
+
+        assertThat(statuses).isIn(List.of(200, 422), List.of(409, 201));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM sale_order WHERE status = 'CLOSED'", Integer.class))
+                .isEqualTo(statuses.get(1) == 201 ? 1 : 0);
+        assertNothingFollowsTheClose();
+    }
+
+    @Test
+    void aCloseNamesTheSessionAndItsVersion() throws Exception {
+        open("").andExpect(status().isCreated());
+        View seen = view();
+
+        perform(post("/api/v1/register/close"), "{\"version\":" + seen.version() + "}").andExpect(status().isBadRequest());
+        perform(post("/api/v1/register/close"), "{\"sessionId\":" + seen.id() + "}").andExpect(status().isBadRequest());
+        perform(post("/api/v1/register/close"), "{\"sessionId\":" + (seen.id() + 1) + ",\"version\":" + seen.version() + "}")
+                .andExpect(status().isConflict());
+        register().andExpect(jsonPath("$.open").value(true));
+
+        close(seen).andExpect(status().isOk());
+    }
+
+    @Test
+    void aScreenFromAnEarlierSessionCannotCloseTheNextOne() throws Exception {
+        open("").andExpect(status().isCreated());
+        View earlier = view();
+        close(earlier).andExpect(status().isOk());
+        open("").andExpect(status().isCreated());
+        View current = view();
+        // Both are a first view of a session (version 0): only the session id tells them apart.
+        assertThat(current.version()).isEqualTo(earlier.version());
+        assertThat(current.id()).isNotEqualTo(earlier.id());
+
+        close(earlier).andExpect(status().isConflict());
+        register().andExpect(jsonPath("$.open").value(true));
+
+        close(current).andExpect(status().isOk());
+        close(earlier).andExpect(status().isUnprocessableContent());
+    }
+
+    @Test
+    void anyDrawerEventMakesAnEarlierViewOfTheRegisterStale() throws Exception {
+        open("{\"openingFloat\":100}").andExpect(status().isCreated());
+        AtomicLong sold = new AtomicLong();
+        Map<String, Callable<?>> events = new LinkedHashMap<>();
+        events.put("pay-in", () -> movement("IN", "5", "Float").andExpect(status().isOk()));
+        events.put("pay-out", () -> movement("OUT", "5", "Supplies").andExpect(status().isOk()));
+        events.put("cash sale", () -> {
+            sold.set(cashSale());
+            return null;
+        });
+        events.put("card sale", () -> cardSale());
+        events.put("refund", () -> refund(sold.get()).andExpect(status().isOk()));
+
+        for (Map.Entry<String, Callable<?>> event : events.entrySet()) {
+            View seen = view();
+            event.getValue().call();
+
+            assertThat(view().version()).as("version after a " + event.getKey()).isGreaterThan(seen.version());
+            close(seen).andExpect(status().isConflict());
+            register().andExpect(jsonPath("$.open").value(true));
+        }
+        close(view()).andExpect(status().isOk());
+    }
+
+    @Test
+    void aPlacedOrderIsNotADrawerEventSoItLeavesTheViewCurrent() throws Exception {
+        open("").andExpect(status().isCreated());
+        View seen = view();
+        perform(post("/api/v1/orders"), """
+                {"clientRequestId":"%s","mode":"PLACE_ORDER","lines":[{"itemId":4,"quantity":1}],"payments":[]}"""
+                .formatted(UUID.randomUUID())).andExpect(status().isCreated());
+
+        assertThat(view().version()).isEqualTo(seen.version());
+    }
+
+    // ---- The version moves once per successful drawer event, and never for a failed or replayed one ----
+
+    @Test
+    void eachSuccessfulDrawerEventAdvancesTheVersionExactlyOnce() throws Exception {
+        open("{\"openingFloat\":100}").andExpect(status().isCreated());
+        long version = sessionVersion();
+
+        movement("IN", "5", "Float").andExpect(status().isOk());
+        assertThat(sessionVersion()).as("after a pay-in").isEqualTo(version + 1);
+        movement("OUT", "5", "Supplies").andExpect(status().isOk());
+        assertThat(sessionVersion()).as("after a pay-out").isEqualTo(version + 2);
+        long order = cashSale();
+        assertThat(sessionVersion()).as("after a sale").isEqualTo(version + 3);
+        refund(order).andExpect(status().isOk());
+        assertThat(sessionVersion()).as("after a refund").isEqualTo(version + 4);
+        // What the screen is shown is the stored version.
+        assertThat(view().version()).isEqualTo(version + 4);
+    }
+
+    @Test
+    void aRefusedPayOutLeavesTheVersionAlone() throws Exception {
+        open("{\"openingFloat\":10}").andExpect(status().isCreated());
+        long version = sessionVersion();
+
+        movement("OUT", "10.01", "Supplies").andExpect(status().isConflict());
+
+        assertThat(sessionVersion()).isEqualTo(version);
+        assertThat(movementCount()).isZero();
+    }
+
+    @Test
+    void aPaymentThatDoesNotMatchTheTotalLeavesTheVersionAlone() throws Exception {
+        open("").andExpect(status().isCreated());
+        long version = sessionVersion();
+
+        perform(post("/api/v1/orders"), """
+                {"clientRequestId":"%s","lines":[{"itemId":4,"quantity":1}],
+                 "payments":[{"paymentMethodId":%d,"reference":"ref","amount":10}]}"""
+                .formatted(UUID.randomUUID(), cash)).andExpect(status().isUnprocessableContent());
+
+        assertThat(sessionVersion()).isEqualTo(version);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM sale_order", Integer.class)).isZero();
+    }
+
+    @Test
+    void aFailedRefundLeavesTheVersionAlone() throws Exception {
+        open("").andExpect(status().isCreated());
+        long paid = cashSale();
+        long placed = placedOrder();
+        long version = sessionVersion();
+
+        refund(placed).andExpect(status().isUnprocessableContent()); // not paid
+        assertThat(sessionVersion()).isEqualTo(version);
+
+        refund(paid).andExpect(status().isOk());
+        long afterRefund = sessionVersion();
+        assertThat(afterRefund).isEqualTo(version + 1);
+        refund(paid).andExpect(status().isUnprocessableContent()); // already refunded
+        assertThat(sessionVersion()).isEqualTo(afterRefund);
+    }
+
+    @Test
+    void aReplayedCheckoutAndAReplayedPaymentLeaveTheVersionAlone() throws Exception {
+        open("").andExpect(status().isCreated());
+        long version = sessionVersion();
+
+        String checkout = """
+                {"clientRequestId":"%s","lines":[{"itemId":4,"quantity":1}],
+                 "payments":[{"paymentMethodId":%d,"reference":"ref","amount":29}]}""".formatted(UUID.randomUUID(), cash);
+        perform(post("/api/v1/orders"), checkout).andExpect(status().isCreated());
+        assertThat(sessionVersion()).isEqualTo(version + 1);
+        perform(post("/api/v1/orders"), checkout).andExpect(status().isOk());
+        assertThat(sessionVersion()).as("after a replayed checkout").isEqualTo(version + 1);
+
+        long placed = placedOrder();
+        assertThat(sessionVersion()).as("placing an order is not a drawer event").isEqualTo(version + 1);
+        String payment = """
+                {"clientRequestId":"%s","payments":[{"paymentMethodId":%d,"reference":"ref","amount":29}]}"""
+                .formatted(UUID.randomUUID(), cash);
+        perform(post("/api/v1/orders/" + placed + "/payments"), payment).andExpect(status().is2xxSuccessful());
+        assertThat(sessionVersion()).isEqualTo(version + 2);
+        perform(post("/api/v1/orders/" + placed + "/payments"), payment).andExpect(status().is2xxSuccessful());
+        assertThat(sessionVersion()).as("after a replayed payment").isEqualTo(version + 2);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM payment", Integer.class)).isEqualTo(2);
+    }
+
+    // ---- Split payments ----
+
+    @Test
+    void aSplitSaleAddsOnlyItsCashPartToTheDrawer() throws Exception {
+        open("{\"openingFloat\":50}").andExpect(status().isCreated());
+
+        long order = splitSale(10, 19);
+
+        register().andExpect(jsonPath("$.session.expectedCash").value(60.0));
+        // The card part is not in the drawer to be paid out.
+        movement("OUT", "60.01", "Supplies").andExpect(status().isConflict());
+        movement("OUT", "60", "Supplies").andExpect(status().isOk());
+        movement("IN", "60", "Back").andExpect(status().isOk());
+
+        refund(order).andExpect(status().isOk());
+        register().andExpect(jsonPath("$.session.expectedCash").value(50.0));
+    }
+
+    @Test
+    void aSplitRefundComesOutOfTheSessionItIsMadeInAndOnlyForTheCashPart() throws Exception {
+        open("{\"openingFloat\":50}").andExpect(status().isCreated());
+        long order = splitSale(10, 19);
+        closeIt();
+
+        open("").andExpect(status().isCreated());
+        refund(order).andExpect(status().isOk());
+
+        // RM10.00 of cash goes back, never the card's RM19.00; a refund is owed even below zero.
+        register().andExpect(jsonPath("$.session.expectedCash").value(-10.0));
+        closeIt();
+        register().andExpect(jsonPath("$.lastClosed.expectedCash").value(-10.0));
     }
 
     @RepeatedTest(3)
@@ -336,9 +576,100 @@ class RegisterCashIntegrationTest {
                 "{\"direction\":\"" + direction + "\",\"amount\":" + amount + ",\"reason\":\"" + reason + "\"}");
     }
 
+    /** The open session as a screen shows it: what a close has to name. */
+    private record View(long id, long version) {
+    }
+
+    private View view() throws Exception {
+        String body = register().andReturn().getResponse().getContentAsString();
+        return new View(((Number) JsonPath.read(body, "$.session.id")).longValue(),
+                ((Number) JsonPath.read(body, "$.session.version")).longValue());
+    }
+
+    private ResultActions close(View seen) throws Exception {
+        return perform(post("/api/v1/register/close"), "{\"sessionId\":" + seen.id() + ",\"version\":" + seen.version() + "}");
+    }
+
+    /** The stored version of the open session. */
+    private long sessionVersion() {
+        return jdbc.queryForObject("SELECT version FROM register_session WHERE closed_at IS NULL", Long.class);
+    }
+
+    /** A placed (unpaid) RM29.00 order. */
+    private long placedOrder() throws Exception {
+        String body = perform(post("/api/v1/orders"), """
+                {"clientRequestId":"%s","mode":"PLACE_ORDER","lines":[{"itemId":4,"quantity":1}],"payments":[]}"""
+                .formatted(UUID.randomUUID())).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        return ((Number) JsonPath.read(body, "$.id")).longValue();
+    }
+
     private void closeIt() throws Exception {
-        long version = ((Number) JsonPath.read(register().andReturn().getResponse().getContentAsString(), "$.session.version")).longValue();
-        perform(post("/api/v1/register/close"), "{\"version\":" + version + "}").andExpect(status().isOk());
+        close(view()).andExpect(status().isOk());
+    }
+
+    /** No movement or sale was made after its session closed. */
+    private void assertNothingFollowsTheClose() {
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM register_movement m JOIN register_session s ON s.id = m.session_id
+                WHERE s.closed_at IS NOT NULL AND m.created_at > s.closed_at""", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM sale_order o JOIN register_session s ON s.outlet_id = o.outlet_id
+                WHERE s.closed_at IS NOT NULL AND o.closed_at > s.closed_at""", Integer.class)).isZero();
+    }
+
+    /** An action's result, and when the session lock it queued behind was let go. */
+    private record Queued<T>(T result, Instant releasedAt) {
+    }
+
+    /**
+     * Holds the open session's row locked as a close does (and closes it if {@code closing}), starts the
+     * action, and lets the lock go only once the action is queued behind it. Every wait is bounded.
+     */
+    private <T> Queued<T> queuedBehindTheSessionLock(boolean closing, Callable<T> action) throws Exception {
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> holding = pool.submit(() -> new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+                jdbc.queryForObject("SELECT id FROM register_session WHERE closed_at IS NULL FOR UPDATE", Long.class);
+                locked.countDown();
+                try {
+                    assertThat(release.await(20, TimeUnit.SECONDS)).isTrue();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                if (closing) {
+                    jdbc.update("UPDATE register_session SET closed_at = now(), closed_by = opened_by, version = version + 1 WHERE closed_at IS NULL");
+                }
+            }));
+            assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+            Future<T> running = pool.submit(action);
+
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+            while (jdbc.queryForObject("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%UPDATE register_session SET version = version + 1%'",
+                    Integer.class) < 1) {
+                assertThat(System.nanoTime()).isLessThan(deadline);
+                Thread.sleep(25);
+            }
+            Instant releasedAt = Instant.now();
+            release.countDown();
+            holding.get(20, TimeUnit.SECONDS);
+            return new Queued<>(running.get(20, TimeUnit.SECONDS), releasedAt);
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    /** A RM29.00 sale paid part in cash and part by card. */
+    private long splitSale(int cashPart, int cardPart) throws Exception {
+        String body = perform(post("/api/v1/orders"), """
+                {"clientRequestId":"%s","lines":[{"itemId":4,"quantity":1}],
+                 "payments":[{"paymentMethodId":%d,"reference":"ref","amount":%d},
+                             {"paymentMethodId":%d,"reference":"ref","amount":%d}]}"""
+                .formatted(UUID.randomUUID(), cash, cashPart, CARD, cardPart))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        return ((Number) JsonPath.read(body, "$.id")).longValue();
     }
 
     private int movementCount() {
@@ -355,11 +686,15 @@ class RegisterCashIntegrationTest {
 
     /** A RM29.00 sale (Tin Caramel) paid in full by {@code method}. */
     private long sale(long method) throws Exception {
-        String body = perform(post("/api/v1/orders"), """
+        String body = placeSale(method).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        return ((Number) JsonPath.read(body, "$.id")).longValue();
+    }
+
+    private ResultActions placeSale(long method) throws Exception {
+        return perform(post("/api/v1/orders"), """
                 {"clientRequestId":"%s","lines":[{"itemId":4,"quantity":1}],
                  "payments":[{"paymentMethodId":%d,"reference":"ref","amount":29}]}"""
-                .formatted(UUID.randomUUID(), method)).andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
-        return ((Number) JsonPath.read(body, "$.id")).longValue();
+                .formatted(UUID.randomUUID(), method));
     }
 
     private ResultActions refund(long order) throws Exception {
