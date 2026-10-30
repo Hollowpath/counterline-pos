@@ -24,7 +24,7 @@ Java 21, Spring Boot 4.1, Maven wrapper. Organised by feature, each package hold
 | `orders` | Checkout, order lifecycle (place, pay, void, refund), payments, receipts, promotions applied to a sale |
 | `discounts`, `promotions`, `loyalty`, `vouchers` | Discount arithmetic, promotion rules, points and member entitlements, vouchers |
 | `customers` | Members and phone-number handling |
-| `display` | Customer-display pairing and its own restricted API |
+| `display` | Customer-display pairing and its own restricted API, including `GET /api/v1/display/posters`: the closed set of poster keys for promotions that are active and run today in the outlet time zone (the seasonal one also needs a seasonal item on sale), with a `validUntil` of five minutes or the outlet's next midnight, whichever is first, sent `no-store`. The display owns the wording, shows only unexpired answers and otherwise shows neutral posters. |
 | `register`, `timecards` | Cash register sessions, staff clock-in/out |
 | `reports`, `dashboard` | Sales reports and the head-office/manager API |
 | `outlet`, `staff` | Outlets and per-outlet staff |

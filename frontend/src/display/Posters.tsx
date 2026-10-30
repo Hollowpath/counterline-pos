@@ -2,13 +2,53 @@ import { useEffect, useState } from 'react'
 
 /**
  * Idle-screen posters, full screen while no sale is open on the till.
+ *
+ * A promotion's poster is shown only while the server says that promotion runs (its key is in `keys`);
+ * the wording is here. Without an answer (not yet, failed, expired) only the neutral posters show,
+ * which promise no particular reward.
  */
-const POSTERS = [
-  { title: 'Buy 3, get 1 free', text: 'Any 3 stand pouches, paper cans or gift boxes earn a free baby can.', tone: 'teal' },
-  { title: 'Seasonal flavours are here', text: 'Pick a seasonal flavour among your 3 and get one more free baby can.', tone: 'berry' },
-  { title: 'Become a member', text: 'Members earn rewards with every purchase: a free paper can or crispy pouch along the way.', tone: 'amber' },
-  { title: 'Birthday month treat', text: 'Members get a free birthday can with every 3 items in their birthday month.', tone: 'berry' },
-  { title: 'Spend RM150, get a tote bag', text: 'Members get a free tote bag for every RM150. Spend RM50 for a free recycle bag.', tone: 'teal' },
+interface Poster {
+  title: string
+  text: string
+  tone: 'teal' | 'berry' | 'amber'
+}
+
+const PROMOTION_POSTERS: Record<string, Poster> = {
+  BUY_THREE: {
+    title: 'Buy 3, get 1 free',
+    text: 'Members get a free item for every 3 qualifying items. Not with vouchers or discounts. Terms apply.',
+    tone: 'teal',
+  },
+  SEASONAL: {
+    title: 'Seasonal flavours are here',
+    text: 'Members get one more free item for every 3 items with a seasonal flavour among them. Not with vouchers or discounts. Terms apply.',
+    tone: 'berry',
+  },
+  MEMBER_POINTS: {
+    title: 'Become a member',
+    text: 'Members earn points on every purchase and can redeem them for free items. Ask the cashier to join. Terms apply.',
+    tone: 'amber',
+  },
+  BIRTHDAY: {
+    title: 'Birthday month treat',
+    text: 'Members get a free birthday reward with every 3 qualifying items in their birthday month, up to a limit per receipt. Not with vouchers or discounts. Terms apply.',
+    tone: 'berry',
+  },
+  SPEND_MEMBERS: {
+    title: 'Free gift for members',
+    text: 'Members get a free gift when a sale reaches the spend needed. Ask the cashier how much. Terms apply.',
+    tone: 'teal',
+  },
+  SPEND_ANYONE: {
+    title: 'Free gift with your spend',
+    text: 'Spend enough in one sale and take home a free gift, subject to limits. Ask the cashier how much. Terms apply.',
+    tone: 'amber',
+  },
+}
+
+const NEUTRAL_POSTERS: Poster[] = [
+  { title: 'Become a member', text: 'Ask the cashier about membership and today’s rewards. Terms apply.', tone: 'amber' },
+  { title: 'Welcome', text: 'Thank you for visiting. Ask us about today’s rewards.', tone: 'teal' },
 ]
 
 /** How long each poster stays before the next slides in. */
@@ -22,16 +62,30 @@ const POSTER_TONE: Record<string, string> = {
 
 const PADDING = 'p-[clamp(2rem,6vw,5rem)]'
 
-export function Posters({ outletName }: { outletName: string }) {
-  // How many times the posters have moved on: the poster shown is turns % POSTERS.length.
+/** The server's keys that have a poster, in its order and without repeats; keys not known here are ignored. */
+function postersFor(keys: readonly string[] | null): Poster[] {
+  const known = [...new Set(keys ?? [])].flatMap((key) => (Object.hasOwn(PROMOTION_POSTERS, key) ? [PROMOTION_POSTERS[key]] : []))
+  return known.length > 0 ? known : NEUTRAL_POSTERS
+}
+
+/** `keys`: the posters the server allows now (null: no valid answer, so only neutral ones). */
+export function Posters({ outletName, keys = null }: { outletName: string; keys?: readonly string[] | null }) {
+  const posters = postersFor(keys)
+  // A new set of posters starts over from its first, so the one shown is always one of them.
+  return <Rotation key={posters.map((poster) => poster.title).join('|')} outletName={outletName} posters={posters} />
+}
+
+function Rotation({ outletName, posters }: { outletName: string; posters: Poster[] }) {
+  // How many times the posters have moved on: the poster shown is turns % posters.length.
   const [turns, setTurns] = useState(0)
 
   useEffect(() => {
+    if (posters.length < 2) return
     const timer = window.setInterval(() => setTurns((current) => current + 1), ROTATE_MS)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [posters.length])
 
-  const index = turns % POSTERS.length
+  const index = turns % posters.length
   // Each move slides the last poster out to the left as the next comes in from the right.
   const slides = turns === 0
     ? [{ turn: 0, motion: '' }]
@@ -39,7 +93,7 @@ export function Posters({ outletName }: { outletName: string }) {
   return (
     <div className="relative flex-1 overflow-hidden text-white" aria-label="Posters">
       {slides.map(({ turn, motion }) => {
-        const poster = POSTERS[turn % POSTERS.length]
+        const poster = posters[turn % posters.length]
         const leaving = turn !== turns
         return (
           <div
@@ -57,7 +111,7 @@ export function Posters({ outletName }: { outletName: string }) {
       })}
       {/* The dots stay put at the bottom while the posters slide. */}
       <div className="pointer-events-none absolute bottom-[clamp(1.5rem,4vw,3rem)] left-[clamp(2rem,6vw,5rem)] flex gap-2" aria-hidden="true">
-        {POSTERS.map((entry, i) => (
+        {posters.map((entry, i) => (
           <span key={entry.title} className={`h-2 rounded-full transition-all duration-500 ${i === index ? 'w-8 bg-white' : 'w-2 bg-white/40'}`} />
         ))}
       </div>

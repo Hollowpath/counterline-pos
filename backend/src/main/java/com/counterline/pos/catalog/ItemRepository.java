@@ -18,6 +18,15 @@ interface ItemRepository extends JpaRepository<Item, Long> {
 
     List<Item> findByPromotionIdAndActiveTrueOrderBySortOrderAsc(Long promotionId);
 
+    /** Whether any item on sale is a seasonal flavour on that day (both ends of its window included). */
+    @org.springframework.data.jpa.repository.Query("""
+            select count(i) > 0 from Item i
+            where i.active = true and i.seasonal = true
+              and (i.seasonalFrom is null or i.seasonalFrom <= :day)
+              and (i.seasonalUntil is null or i.seasonalUntil >= :day)
+            """)
+    boolean existsSeasonalOn(@org.springframework.data.repository.query.Param("day") java.time.LocalDate day);
+
     /** Every item, active or not, for the dashboard: folders in till order (tab, then grid), off-grid folders last. */
     @org.springframework.data.jpa.repository.Query("""
             select i from Item i join fetch i.category c left join fetch c.tab t left join fetch i.promotion

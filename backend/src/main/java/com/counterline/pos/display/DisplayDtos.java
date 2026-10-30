@@ -87,6 +87,17 @@ public final class DisplayDtos {
     public record DisplayState(long version, String outletName, CartView cart, MemberState member) {
     }
 
+    /**
+     * The promotional posters the display may show: a closed set of keys, whose wording the display
+     * owns. {@code validUntil}: after this the answer must not be shown (the display asks again).
+     */
+    public enum Poster {
+        BUY_THREE, SEASONAL, MEMBER_POINTS, BIRTHDAY, SPEND_MEMBERS, SPEND_ANYONE
+    }
+
+    public record DisplayPosters(List<Poster> posters, Instant validUntil) {
+    }
+
     // ---- Pairing and the customer's actions ----
 
     public record ConnectRequest(@NotNull @Pattern(regexp = "\\d{6}", message = "must be 6 digits") String accessCode) {

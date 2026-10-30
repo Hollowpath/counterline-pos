@@ -5,6 +5,7 @@ import { clearConnection, loadConnection, saveConnection } from './displayStore'
 import { MemberPanel } from './MemberPanel'
 import { Posters } from './Posters'
 import { displayPaths, type CartView, type DisplayConnection } from './types'
+import { useDisplayPosters } from './useDisplayPosters'
 import { useDisplayState } from './useDisplayState'
 import { formatRM, toSen } from '../lib/money'
 
@@ -84,6 +85,8 @@ function CustomerScreen({ outletName, onDisconnected }: { outletName: string; on
   const state = useDisplayState(onDisconnected)
   const cart = state?.cart ?? null
   const thanks = useThankYou(cart)
+  // The posters are for the idle screen only: asked for when it comes back, never during a sale.
+  const posterKeys = useDisplayPosters(!thanks && cart?.stage !== 'CART')
 
   if (thanks) {
     return (
@@ -96,7 +99,7 @@ function CustomerScreen({ outletName, onDisconnected }: { outletName: string; on
     // No sale open on the till: posters, full screen.
     return (
       <div className="flex h-dvh min-h-dvh bg-zinc-100">
-        <Posters outletName={state?.outletName ?? outletName} />
+        <Posters outletName={state?.outletName ?? outletName} keys={posterKeys} />
       </div>
     )
   }

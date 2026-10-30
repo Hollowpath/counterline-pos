@@ -15,6 +15,7 @@ import com.counterline.pos.customers.CustomerService;
 import com.counterline.pos.display.CustomerDisplay.MemberResult;
 import com.counterline.pos.display.DisplayDtos.CartView;
 import com.counterline.pos.display.DisplayDtos.DisplayConnection;
+import com.counterline.pos.display.DisplayDtos.DisplayPosters;
 import com.counterline.pos.display.DisplayDtos.DisplayState;
 import com.counterline.pos.display.DisplayDtos.DisplayStatus;
 import com.counterline.pos.display.DisplayDtos.MemberState;
@@ -67,10 +68,11 @@ public class DisplayService {
     private final LoginAttemptLimiter limiter;
     private final JsonMapper json;
     private final Clock clock;
+    private final DisplayPosterService posters;
 
     DisplayService(CustomerDisplayRepository displayRepository, CustomerService customerService,
                    OutletService outletService, TokenService tokenService, LoginAttemptLimiter limiter,
-                   JsonMapper json, Clock clock) {
+                   JsonMapper json, Clock clock, DisplayPosterService posters) {
         this.displayRepository = displayRepository;
         this.customerService = customerService;
         this.outletService = outletService;
@@ -78,6 +80,7 @@ public class DisplayService {
         this.limiter = limiter;
         this.json = json;
         this.clock = clock;
+        this.posters = posters;
     }
 
     // ---- The POS ----
@@ -159,6 +162,21 @@ public class DisplayService {
             displayRepository.markSeen(display.getId(), now);
         }
         return display.getVersion() == sinceVersion ? Optional.empty() : Optional.of(toState(display));
+    }
+
+    /**
+     * The posters this display may show now. Needs a display still connected, at an outlet still open;
+     * the answer is the same for every customer and carries nothing about any sale.
+     */
+    public DisplayPosters posters(DisplaySession session) {
+        CustomerDisplay display = active(session);
+        try {
+            outletService.getActive(display.getOutletId());
+        } catch (ResourceNotFoundException e) {
+            // Whatever the outlet's state, the display is told nothing about it.
+            throw new ResourceNotFoundException("No posters available");
+        }
+        return posters.at(clock.instant());
     }
 
     /**

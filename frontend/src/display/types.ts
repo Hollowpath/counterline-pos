@@ -56,7 +56,14 @@ export interface SignUpRequest {
   marketingCall: boolean
 }
 
+/** The promotional posters the server allows now; not to be shown after validUntil. */
+export interface DisplayPosters {
+  posters: string[]
+  validUntil: string
+}
+
 export const displayPaths = {
+  posters: '/api/v1/display/posters',
   connect: '/api/v1/display/connect',
   state: (since: number) => `/api/v1/display/state?since=${since}`,
   memberLogin: '/api/v1/display/member-login',

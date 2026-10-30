@@ -17,6 +17,8 @@ function stubServer() {
   const server = {
     state: { version: 1, outletName: 'Counterline Cheras', cart: null, member: { status: 'NONE', firstName: null } } as DisplayState,
     disconnected: false,
+    /** What the posters ask gets: the keys (valid for a minute), or null for a failure. */
+    posters: null as string[] | null,
     calls: [] as { key: string; body: unknown }[],
   }
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -33,6 +35,10 @@ function stubServer() {
         const since = Number(url.searchParams.get('since'))
         return since === server.state.version ? new Response(null, { status: 204 }) : json(server.state)
       }
+      case 'GET /api/v1/display/posters':
+        return server.posters
+          ? json({ posters: server.posters, validUntil: new Date(Date.now() + 60_000).toISOString() })
+          : json({ title: 'Server error' }, 500)
       case 'POST /api/v1/display/member-login':
         return (JSON.parse(String(init.body)) as { phone: string }).phone === '+60112345678'
           ? json({ status: 'WAITING', firstName: 'Nur' })
@@ -139,6 +145,35 @@ describe('customer display', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('shows only neutral posters until the server names the promotions running, and none while a sale is open', async () => {
+    localStorage.setItem(KEY, CONNECTION)
+    const server = stubServer()
+    const asked = () => server.calls.filter((call) => call.key === 'GET /api/v1/display/posters').length
+    const { unmount } = render(<DisplayApp />)
+
+    expect(await screen.findByRole('heading', { name: 'Become a member' })).toBeInTheDocument()
+    expect(screen.queryByText('Buy 3, get 1 free')).not.toBeInTheDocument()
+    unmount()
+
+    server.posters = ['SPEND_MEMBERS']
+    render(<DisplayApp />)
+    expect(await screen.findByRole('heading', { name: 'Free gift for members' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Become a member' })).not.toBeInTheDocument()
+
+    // A sale opens: the posters go, and nothing is asked for them meanwhile.
+    const before = asked()
+    server.state = { ...server.state, version: 2, cart: cart({}) }
+    expect(await screen.findByText('Your items will appear here.', {}, WAIT)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Posters')).not.toBeInTheDocument()
+    expect(asked()).toBe(before)
+
+    // The sale ends: back to the posters, asking again at once.
+    server.posters = ['SPEND_ANYONE']
+    server.state = { ...server.state, version: 3, cart: cart({ stage: 'IDLE' }) }
+    expect(await screen.findByRole('heading', { name: 'Free gift with your spend' }, WAIT)).toBeInTheDocument()
+    expect(asked()).toBe(before + 1)
   })
 
   it('goes back to asking for a code when the till disconnects it', async () => {

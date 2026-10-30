@@ -3,6 +3,7 @@ package com.counterline.pos.display;
 import com.counterline.pos.auth.DisplaySession;
 import com.counterline.pos.display.DisplayDtos.ConnectRequest;
 import com.counterline.pos.display.DisplayDtos.DisplayConnection;
+import com.counterline.pos.display.DisplayDtos.DisplayPosters;
 import com.counterline.pos.display.DisplayDtos.DisplayState;
 import com.counterline.pos.display.DisplayDtos.MemberLoginRequest;
 import com.counterline.pos.display.DisplayDtos.MemberState;
@@ -11,6 +12,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -53,6 +55,14 @@ class DisplaySessionController {
         return displays.state(DisplaySession.of(jwt), since)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @Operation(summary = "Which promotional posters the display may show now",
+            description = "Keys only, for the promotions running today at the outlet; not to be shown after `validUntil`.",
+            security = @SecurityRequirement(name = "bearer"))
+    @GetMapping("/posters")
+    ResponseEntity<DisplayPosters> posters(@AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(displays.posters(DisplaySession.of(jwt)));
     }
 
     @Operation(summary = "Member Login by phone number, while a sale is open; the till adds them to it",

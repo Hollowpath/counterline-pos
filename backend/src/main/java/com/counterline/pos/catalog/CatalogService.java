@@ -38,6 +38,11 @@ public class CatalogService {
         this.modifierGroupRepository = modifierGroupRepository;
     }
 
+    /** Whether an item on sale is a seasonal flavour on that day (in the outlet's time zone). */
+    public boolean hasSeasonalItemOn(java.time.LocalDate day) {
+        return itemRepository.existsSeasonalOn(day);
+    }
+
     /** All tabs in display order, each with its folder grid. Two queries regardless of catalogue size. */
     public List<TabResponse> getTabs() {
         Map<Long, List<FolderResponse>> foldersByTab = categoryRepository.findFolderTiles().stream()

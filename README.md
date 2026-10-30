@@ -15,7 +15,7 @@ A multi-outlet retail point-of-sale system: a tablet POS for the till, a custome
 
 **Customer display**
 
-- A paired second screen showing the current sale and member sign-up/sign-in by phone number.
+- A paired second screen showing the current sale and member sign-up/sign-in by phone number. While no sale is open it rotates posters; a promotion's poster appears only while the server reports that promotion running today at the outlet (otherwise only neutral posters that promise no reward).
 
 **Dashboard**
 

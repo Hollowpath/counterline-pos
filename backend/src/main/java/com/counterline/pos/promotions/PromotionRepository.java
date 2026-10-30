@@ -7,4 +7,6 @@ import java.util.List;
 public interface PromotionRepository extends JpaRepository<Promotion, Long> {
 
     List<Promotion> findByTypeAndActiveTrue(Promotion.Type type);
+
+    List<Promotion> findByActiveTrue();
 }
