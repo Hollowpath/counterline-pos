@@ -249,6 +249,7 @@ export function OrderDetail({ orderId, staff, onChanged, onVoided, onEdit }: Ord
 
       {action === 'void' && (
         <ManagerActionDialog
+          operation="VOID"
           title={`Void ${order.orderNumber}`}
           confirmLabel="Void Order"
           description={<p>The unpaid order ({formatRM(totalSen)}) will be cancelled.</p>}
@@ -263,6 +264,7 @@ export function OrderDetail({ orderId, staff, onChanged, onVoided, onEdit }: Ord
       )}
       {action === 'refund' && (
         <ManagerActionDialog
+          operation="REFUND"
           title={`Refund ${order.orderNumber}`}
           confirmLabel="Issue Refund"
           description={

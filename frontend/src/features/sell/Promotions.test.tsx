@@ -261,9 +261,12 @@ describe('a department comp', () => {
     await user.click(await screen.findByRole('button', { name: /Marketing Department Special Approved/ }))
     await user.click(cart().getByRole('button', { name: 'Pay' }))
     const approval = await screen.findByRole('dialog', { name: 'Special Access Required' })
-    expect(approval).toHaveTextContent('Manager PIN · Marketing Department Special Approved')
+    expect(approval).toHaveTextContent('Manager PIN · Discount: Marketing Department Special Approved')
     for (const digit of '999999') await user.click(within(approval).getByRole('button', { name: digit }))
     expect(await screen.findByText(/Total \(1 items\)/)).toBeInTheDocument()
+    // The approval is asked for this one action.
+    const [, request] = fetchMock.mock.calls.find(([input]) => String(input) === '/api/v1/auth/special-access')!
+    expect(JSON.parse(String(request!.body))).toEqual({ pin: '999999', operation: 'DISCOUNT' })
   })
 
   it('needs no PIN when a manager is at the till', async () => {

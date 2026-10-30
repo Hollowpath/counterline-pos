@@ -21,6 +21,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
@@ -28,6 +34,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -73,6 +80,12 @@ class OrderLifecycleApiIntegrationTest {
 
     @Autowired
     OrderLifecycleService lifecycle;
+
+    @Autowired
+    JwtEncoder jwtEncoder;
+
+    @Autowired
+    JwtDecoder jwtDecoder;
 
     private Long cashierId;
     private Long managerId;
@@ -198,7 +211,7 @@ class OrderLifecycleApiIntegrationTest {
 
         String body = mockMvc.perform(post("/api/v1/auth/special-access")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + cashierToken)
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"pin\":\"654321\"}"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"pin\":\"654321\",\"operation\":\"VOID\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.staff.role").value("MANAGER"))
                 .andReturn().getResponse().getContentAsString();
@@ -238,10 +251,90 @@ class OrderLifecycleApiIntegrationTest {
                                 request.setRemoteAddr("10.4.0.1"); // keep failures away from other tests' throttle
                                 return request;
                             })
-                            .contentType(MediaType.APPLICATION_JSON).content("{\"pin\":\"" + pin + "\"}"))
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"pin\":\"" + pin + "\",\"operation\":\"VOID\"}"))
                     .andExpect(status().isForbidden())
                     .andExpect(jsonPath("$.title").value("Special access required"));
         }
+    }
+
+    @Test
+    void anApprovalMustNameOneKnownOperation() throws Exception {
+        String cashierToken = login("123456");
+        for (String body : List.of("{\"pin\":\"654321\"}", "{\"pin\":\"654321\",\"operation\":null}",
+                "{\"pin\":\"654321\",\"operation\":\"PAYOUT\"}", "{\"pin\":\"654321\",\"operation\":\"void\"}",
+                "{\"pin\":\"654321\",\"operation\":7}")) {
+            mockMvc.perform(post("/api/v1/auth/special-access")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + cashierToken)
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test
+    void anApprovalWorksForItsOwnOperationOnly() throws Exception {
+        String cashierToken = login("123456");
+        long toVoid = placeOrder(4, 1);
+        long toRefund = payNow(4, 1, "29.00");
+        String voidToken = approval(cashierToken, "VOID");
+        String refundToken = approval(cashierToken, "REFUND");
+        String discountToken = approval(cashierToken, "DISCOUNT");
+
+        // The wrong operation is refused, in the same words whatever is wrong, and spends nothing.
+        for (String wrong : List.of(refundToken, discountToken)) {
+            expectApprovalNeeded("/api/v1/orders/" + toVoid + "/void", wrong);
+        }
+        for (String wrong : List.of(voidToken, discountToken)) {
+            expectApprovalNeeded("/api/v1/orders/" + toRefund + "/refund", wrong);
+        }
+
+        mockMvc.perform(post("/api/v1/orders/" + toVoid + "/void").header(HttpHeaders.AUTHORIZATION, "Bearer " + voidToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Customer left\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/orders/" + toRefund + "/refund").header(HttpHeaders.AUTHORIZATION, "Bearer " + refundToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Wrong item\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void anApprovalWithoutAKnownOperationIsRefusedAndNotUsedUp() throws Exception {
+        long id = placeOrder(4, 1);
+        // An approval as the system issued them before operations existed, and unknown or odd spellings.
+        for (Object operation : java.util.Arrays.asList(null, "PAYOUT", "void", "", 7)) {
+            String token = approvalWithOperation(operation);
+            expectApprovalNeeded("/api/v1/orders/" + id + "/void", token);
+            expectApprovalNeeded("/api/v1/orders/" + id + "/refund", token);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM used_approval_token WHERE token_id = ?", Integer.class,
+                    tokenId(token))).isZero();
+        }
+    }
+
+    @Test
+    void oneVoidApprovalIsUsedOnceEvenWhenTwoRequestsRaceForIt() throws Exception {
+        String cashierToken = login("123456");
+        long first = placeOrder(4, 1);
+        long second = placeOrder(4, 1);
+        String token = approval(cashierToken, "VOID");
+        CountDownLatch start = new CountDownLatch(1);
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            List<Future<Integer>> outcomes = List.of(first, second).stream().map(id -> pool.submit(() -> {
+                assertThat(start.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                return mockMvc.perform(post("/api/v1/orders/" + id + "/void").header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Race\"}"))
+                        .andReturn().getResponse().getStatus();
+            })).toList();
+            start.countDown();
+            List<Integer> statuses = new java.util.ArrayList<>();
+            for (Future<Integer> outcome : outcomes) {
+                statuses.add(outcome.get(30, java.util.concurrent.TimeUnit.SECONDS));
+            }
+            assertThat(statuses).containsExactlyInAnyOrder(200, 403);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM sale_order WHERE id IN (?, ?) AND status = 'VOIDED'",
+                Integer.class, first, second)).isEqualTo(1);
     }
 
     // ---- Search ----
@@ -354,6 +447,40 @@ class OrderLifecycleApiIntegrationTest {
     }
 
     // ---- helpers ----
+
+    private String approval(String cashierToken, String operation) throws Exception {
+        String body = mockMvc.perform(post("/api/v1/auth/special-access")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + cashierToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"pin\":\"654321\",\"operation\":\"" + operation + "\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        return JsonPath.read(body, "$.token");
+    }
+
+    /** A manager's approval token as {@code operation} says (absent when null), signed like the real ones. */
+    private String approvalWithOperation(Object operation) {
+        Staff manager = staffRepository.findById(managerId).orElseThrow();
+        Instant now = Instant.now();
+        JwtClaimsSet.Builder claims = JwtClaimsSet.builder().issuer("counterline-pos").id(UUID.randomUUID().toString())
+                .subject(managerId.toString()).issuedAt(now).expiresAt(now.plusSeconds(300)).claim("name", manager.getFullName())
+                .claim("role", "MANAGER").claim("outlet", 1L).claim("channel", "approval")
+                .claim("sver", manager.getAuthSessionVersion());
+        if (operation != null) {
+            claims.claim("operation", operation);
+        }
+        return jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims.build())).getTokenValue();
+    }
+
+    private String tokenId(String token) {
+        return jwtDecoder.decode(token).getId();
+    }
+
+    private void expectApprovalNeeded(String path, String token) throws Exception {
+        mockMvc.perform(post(path).header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"Check\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("Manager approval needed"));
+    }
 
     private long placeOrder(long itemId, int quantity) throws Exception {
         return idOf(perform(post("/api/v1/orders"), cashier(), """

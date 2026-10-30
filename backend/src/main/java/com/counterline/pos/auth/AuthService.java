@@ -105,10 +105,11 @@ public class AuthService {
      *
      * @throws SpecialAccessDeniedException if the PIN is wrong or not a manager's
      */
-    public LoginResponse specialAccess(String pin, String client, Terminal requestedBy) {
+    public LoginResponse specialAccess(String pin, ApprovalOperation operation, String client, Terminal requestedBy) {
         Staff manager = requireManager(pin, requestedBy.outletId(), PinPad.TILL, client);
-        IssuedToken token = tokenService.issueApproval(manager, requestedBy.outletId(), specialAccessTtl);
-        log.info("Manager {} granted special access to the session of staff {}", manager.getId(), requestedBy.staffId());
+        IssuedToken token = tokenService.issueApproval(manager, requestedBy.outletId(), specialAccessTtl, operation);
+        log.info("Manager {} granted {} approval to the session of staff {}", manager.getId(), operation,
+                requestedBy.staffId());
         return new LoginResponse(token.value(), token.expiresAt(), StaffResponse.from(manager),
                 outletService.get(requestedBy.outletId()));
     }

@@ -8,7 +8,7 @@ import { dialogActions } from '../../styles/ui'
 interface DiscountApprovalDialogProps {
   /** The discount being approved, e.g. "Marketing Department Special Approved". */
   discountName: string
-  /** `token`: the manager's short-lived special-access token, sent with the sale. */
+  /** `token`: the manager's short-lived special-access token, good for one completed sale. */
   onApproved: (token: string) => void
   onCancel: () => void
 }
@@ -17,7 +17,7 @@ interface DiscountApprovalDialogProps {
 export function DiscountApprovalDialog({ discountName, onApproved, onCancel }: DiscountApprovalDialogProps) {
   async function approve(pin: string) {
     try {
-      const response = await requestSpecialAccess(pin)
+      const response = await requestSpecialAccess(pin, 'DISCOUNT')
       onApproved(response.token)
     } catch (caught) {
       return pinLockout(caught) ?? (caught instanceof ApiError ? caught.message : 'Offline')
@@ -26,7 +26,7 @@ export function DiscountApprovalDialog({ discountName, onApproved, onCancel }: D
 
   return (
     <Dialog title="Special Access Required" onClose={onCancel}>
-      <p className="mb-5 rounded-xl bg-orange-50 px-3 py-2.5 text-sm text-orange-800 ring-1 ring-orange-200 ring-inset">Manager PIN · <strong className="font-semibold">{discountName}</strong></p>
+      <p className="mb-5 rounded-xl bg-orange-50 px-3 py-2.5 text-sm text-orange-800 ring-1 ring-orange-200 ring-inset">Manager PIN · <strong className="font-semibold">Discount: {discountName}</strong></p>
       <PinEntry onSubmit={approve} lockStatus={tillLockStatus} />
       <div className={dialogActions}>
         <button type="button" className="btn" onClick={onCancel}>

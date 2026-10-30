@@ -28,6 +28,8 @@ public class TokenService {
     static final String CHANNEL_CLAIM = "channel";
     /** A staff member's authentication session version (see StaffSessionGuard). */
     static final String SESSION_VERSION_CLAIM = "sver";
+    /** The one action an approval token authorises (see {@link ApprovalOperation}). */
+    static final String OPERATION_CLAIM = "operation";
     /** The role of a customer display's token: it may call only the display API. */
     public static final String DISPLAY_ROLE = "DISPLAY";
     /** A head-office account on the back-office dashboard: every outlet, no till. */
@@ -72,20 +74,24 @@ public class TokenService {
 
     /** A staff member's session at the outlet's till. */
     public IssuedToken issue(Staff staff, Long outletId) {
-        return staffToken(staff, outletId, ttl, Channel.TILL);
+        return staffToken(staff, outletId, ttl, Channel.TILL, null);
     }
 
     /** An outlet manager's session on the dashboard: it does not open the till's API. */
     public IssuedToken issueDashboard(Staff manager) {
-        return staffToken(manager, manager.getOutletId(), ttl, Channel.DASHBOARD);
+        return staffToken(manager, manager.getOutletId(), ttl, Channel.DASHBOARD, null);
     }
 
-    /** "Special Access Required": a manager's approval of one action at {@code outletId}, for {@code lifetime}. */
-    public IssuedToken issueApproval(Staff manager, Long outletId, Duration lifetime) {
-        return staffToken(manager, outletId, lifetime, Channel.APPROVAL);
+    /**
+     * "Special Access Required": a manager's approval of one {@code operation} at {@code outletId}, for
+     * {@code lifetime}. Only that operation accepts it, once.
+     */
+    public IssuedToken issueApproval(Staff manager, Long outletId, Duration lifetime, ApprovalOperation operation) {
+        return staffToken(manager, outletId, lifetime, Channel.APPROVAL, operation);
     }
 
-    private IssuedToken staffToken(Staff staff, Long outletId, Duration lifetime, Channel channel) {
+    private IssuedToken staffToken(Staff staff, Long outletId, Duration lifetime, Channel channel,
+                                   ApprovalOperation operation) {
         Instant now = clock.instant();
         Instant expiresAt = now.plus(lifetime);
         JwtClaimsSet.Builder builder = JwtClaimsSet.builder()
@@ -99,6 +105,9 @@ public class TokenService {
                 .claim(OUTLET_CLAIM, outletId)
                 .claim(CHANNEL_CLAIM, channel.claim())
                 .claim(SESSION_VERSION_CLAIM, staff.getAuthSessionVersion());
+        if (operation != null) {
+            builder.claim(OPERATION_CLAIM, operation.name());
+        }
         return sign(builder.build(), expiresAt);
     }
 

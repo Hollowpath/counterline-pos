@@ -2,6 +2,7 @@ package com.counterline.pos.orders;
 
 import com.counterline.pos.TestRegister;
 import com.counterline.pos.TestcontainersConfiguration;
+import com.counterline.pos.auth.ApprovalOperation;
 import com.counterline.pos.auth.PinHasher;
 import com.counterline.pos.auth.TokenService;
 import com.counterline.pos.staff.Staff;
@@ -111,7 +112,7 @@ class OptionsAndDiscountsIntegrationTest {
                 .andExpect(jsonPath("$.status").value("OPEN"));
 
         // The manager's special-access token approves it; the sale stays the cashier's.
-        String approval = tokenService.issueApproval(manager, 1L, Duration.ofMinutes(5)).value();
+        String approval = tokenService.issueApproval(manager, 1L, Duration.ofMinutes(5), ApprovalOperation.DISCOUNT).value();
         payNothing("[5]", approval)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.total").value(0.0))

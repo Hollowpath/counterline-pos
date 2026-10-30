@@ -173,8 +173,8 @@ class MultiOutletIntegrationTest {
         jdbc.update("UPDATE till_device SET reset_at = now(), reset_by = 'Test' WHERE outlet_id = ?", second);
         perform(post("/api/v1/auth/terminal-setup"), anonymous(), "{\"pin\":\"888888\",\"outletId\":" + second + "}")
                 .andExpect(status().isOk());
-        perform(post("/api/v1/auth/special-access"), cashier(FIRST), "{\"pin\":\"888888\"}").andExpect(status().isForbidden());
-        perform(post("/api/v1/auth/special-access"), cashier(FIRST), "{\"pin\":\"654321\"}").andExpect(status().isOk());
+        perform(post("/api/v1/auth/special-access"), cashier(FIRST), "{\"pin\":\"888888\",\"operation\":\"VOID\"}").andExpect(status().isForbidden());
+        perform(post("/api/v1/auth/special-access"), cashier(FIRST), "{\"pin\":\"654321\",\"operation\":\"VOID\"}").andExpect(status().isOk());
     }
 
     /** Logs in on an iPad set up at that outlet by its manager (replacing the outlet's till, if any). */

@@ -4,7 +4,7 @@ import com.counterline.pos.auth.AuthDtos.LoginRequest;
 import com.counterline.pos.auth.AuthDtos.LoginResponse;
 import com.counterline.pos.auth.AuthDtos.PinLockRequest;
 import com.counterline.pos.auth.AuthDtos.PinLockStatus;
-import com.counterline.pos.auth.AuthDtos.PinRequest;
+import com.counterline.pos.auth.AuthDtos.SpecialAccessRequest;
 import com.counterline.pos.auth.AuthDtos.StaffResponse;
 import com.counterline.pos.auth.AuthDtos.TerminalSetupRequest;
 import com.counterline.pos.auth.AuthDtos.TerminalSetupResponse;
@@ -51,13 +51,14 @@ class AuthController {
     }
 
     @Operation(summary = "Manager approval at a logged-in terminal (\"Special Access Required\")",
-            description = "Returns a short-lived manager token for one restricted action. A wrong or "
+            description = "Returns a short-lived manager token for one operation (DISCOUNT, VOID or REFUND, "
+                    + "required), good once and only for that operation. A wrong or "
                     + "non-manager PIN is 403 (the terminal's session stays valid).",
             security = @SecurityRequirement(name = "bearer"))
     @PostMapping("/special-access")
-    LoginResponse specialAccess(@Valid @RequestBody PinRequest request, HttpServletRequest httpRequest,
+    LoginResponse specialAccess(@Valid @RequestBody SpecialAccessRequest request, HttpServletRequest httpRequest,
                                 @AuthenticationPrincipal Jwt jwt) {
-        return authService.specialAccess(request.pin(), httpRequest.getRemoteAddr(), Terminal.of(jwt));
+        return authService.specialAccess(request.pin(), request.operation(), httpRequest.getRemoteAddr(), Terminal.of(jwt));
     }
 
     @Operation(summary = "Is the login (or set-up) PIN pad locked?",

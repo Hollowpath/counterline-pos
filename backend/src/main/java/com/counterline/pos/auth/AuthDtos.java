@@ -60,6 +60,17 @@ public final class AuthDtos {
         }
     }
 
+    /** A manager's PIN approving one {@code operation} at a logged-in terminal. */
+    public record SpecialAccessRequest(
+            @NotNull @Pattern(regexp = "\\d{6}", message = "must be exactly 6 digits") String pin,
+            @NotNull ApprovalOperation operation) {
+
+        @Override
+        public String toString() {
+            return "SpecialAccessRequest[pin=******, operation=" + operation + "]";
+        }
+    }
+
     public record LoginResponse(String token, Instant expiresAt, StaffResponse staff, OutletResponse outlet) {
     }
 

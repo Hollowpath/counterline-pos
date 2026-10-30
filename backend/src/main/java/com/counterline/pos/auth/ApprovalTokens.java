@@ -10,9 +10,15 @@ import java.time.Duration;
 import java.time.Instant;
 
 /**
- * A manager's approval token ("Special Access Required") opens one void or refund: the first use
- * records its id, and any later use is refused. Recorded at once (not in the action's transaction),
- * so two requests racing with the same token can't both get through.
+ * A manager's approval token ("Special Access Required") is for one operation ({@link ApprovalOperation})
+ * and one use: the first use records its id, and any later use is refused. A token whose operation
+ * is missing, unknown or not the one being done is refused and not used up.
+ * <p>
+ * A void or refund carries its token as the request's bearer token and records it at once (not in the
+ * action's transaction), so two requests racing with the same token can't both get through. A
+ * discount's token travels in the sale's body: {@link #consume} records it inside the sale's own
+ * transaction, so a sale that is rolled back leaves it unused, and two sales racing with the same
+ * token can't both commit (the second waits for the first, then finds it used).
  */
 @Component
 public class ApprovalTokens {
@@ -29,16 +35,34 @@ public class ApprovalTokens {
     }
 
     /**
-     * Uses up {@code jwt} if it is an approval token; a till's own session is not affected.
+     * Uses up {@code jwt} as the approval of {@code operation} if it is an approval token; a till's own
+     * session is not affected.
      *
-     * @throws SpecialAccessDeniedException if this approval was used before
+     * @throws SpecialAccessDeniedException if the token is for another operation, or was used before
      */
-    public void useOnce(Jwt jwt) {
+    public void useOnce(Jwt jwt, ApprovalOperation operation) {
         if (TokenService.Channel.of(jwt.getClaim(TokenService.CHANNEL_CLAIM)) != TokenService.Channel.APPROVAL) {
             return;
         }
+        consume(jwt, operation);
+    }
+
+    /**
+     * Records the approval token {@code jwt} as used by {@code operation}, joining the transaction in
+     * progress, if any.
+     *
+     * @throws SpecialAccessDeniedException if the token is for another operation, or was used before
+     */
+    void consume(Jwt jwt, ApprovalOperation operation) {
+        if (ApprovalOperation.of(jwt.getClaim(TokenService.OPERATION_CLAIM)) != operation) {
+            throw new SpecialAccessDeniedException("Manager approval needed");
+        }
         Instant now = clock.instant();
-        jdbc.update("DELETE FROM used_approval_token WHERE used_at < ?", Timestamp.from(now.minus(KEEP)));
+        // Forgetting old ids never waits on, or deadlocks with, a sale that is deleting the same rows.
+        jdbc.update("""
+                DELETE FROM used_approval_token WHERE token_id IN (
+                    SELECT token_id FROM used_approval_token WHERE used_at < ? FOR UPDATE SKIP LOCKED)""",
+                Timestamp.from(now.minus(KEEP)));
         boolean first = jdbc.update("INSERT INTO used_approval_token (token_id, used_at) VALUES (?, ?) ON CONFLICT DO NOTHING",
                 String.valueOf(jwt.getId()), Timestamp.from(now)) == 1;
         if (!first) {

@@ -3,10 +3,12 @@ import { ApiError, pinLockout } from '../../api/http'
 import { PinEntry } from '../../auth/PinEntry'
 import { pinLockStatus } from '../../auth/pinLock'
 import { Dialog } from '../../components/Dialog'
-import { requestSpecialAccess } from './ordersApi'
+import { requestSpecialAccess, type ApprovalOperation } from './ordersApi'
 import { dialogActions } from '../../styles/ui'
 
 interface ManagerActionDialogProps {
+  /** The manager's approval is asked for this action, and is good for it alone. */
+  operation: Exclude<ApprovalOperation, 'DISCOUNT'>
   title: string
   confirmLabel: string
   /** What will happen, e.g. the amount to be refunded. */
@@ -22,7 +24,7 @@ interface ManagerActionDialogProps {
  * A manager-only action with a mandatory reason. For a cashier, a manager first enters their PIN
  * ("Special Access Required"); the action is then recorded as theirs.
  */
-export function ManagerActionDialog({ title, confirmLabel, description, needsApproval, onConfirm, onCancel }: ManagerActionDialogProps) {
+export function ManagerActionDialog({ operation, title, confirmLabel, description, needsApproval, onConfirm, onCancel }: ManagerActionDialogProps) {
   const [approval, setApproval] = useState<{ token: string; managerName: string } | null>(null)
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -30,7 +32,7 @@ export function ManagerActionDialog({ title, confirmLabel, description, needsApp
 
   async function approve(pin: string) {
     try {
-      const response = await requestSpecialAccess(pin)
+      const response = await requestSpecialAccess(pin, operation)
       setApproval({ token: response.token, managerName: response.staff.fullName })
     } catch (caught) {
       return pinLockout(caught) ?? (caught instanceof ApiError ? caught.message : 'Offline')
@@ -52,7 +54,7 @@ export function ManagerActionDialog({ title, confirmLabel, description, needsApp
   if (needsApproval && !approval) {
     return (
       <Dialog title="Special Access Required" onClose={onCancel}>
-        <p className="mb-5 rounded-xl bg-orange-50 px-3 py-2.5 text-sm text-orange-800 ring-1 ring-orange-200 ring-inset">Manager PIN</p>
+        <p className="mb-5 rounded-xl bg-orange-50 px-3 py-2.5 text-sm text-orange-800 ring-1 ring-orange-200 ring-inset">Manager PIN · <strong className="font-semibold">{title}</strong></p>
         <PinEntry onSubmit={approve} lockStatus={tillLockStatus} />
         <div className={dialogActions}>
           <button type="button" className="btn" onClick={onCancel}>

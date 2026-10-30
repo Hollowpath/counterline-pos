@@ -197,6 +197,8 @@ describe('PastOrdersScreen', () => {
     await user.click(await detail().findByRole('button', { name: 'Void Order' }))
 
     const approval = screen.getByRole('dialog', { name: 'Special Access Required' })
+    // The manager sees which action they are approving while they enter the PIN.
+    expect(approval).toHaveTextContent('Manager PIN · Void R5')
     for (const digit of '999999') await user.click(within(approval).getByRole('button', { name: digit }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Void R5' })
@@ -206,6 +208,8 @@ describe('PastOrdersScreen', () => {
 
     expect(await detail().findByText('Order Cancelled')).toBeInTheDocument()
     expect(detail().getByText(/Customer left/)).toBeInTheDocument()
+    const approvalCall = calls.find((call) => call.url.pathname === '/api/v1/auth/special-access')!
+    expect(approvalCall.body).toEqual({ pin: '999999', operation: 'VOID' })
     const voidCall = calls.find((call) => call.url.pathname.endsWith('/void'))!
     expect(voidCall.body).toEqual({ reason: 'Customer left' })
     expect(voidCall.authorization).toBe('Bearer manager-token')
@@ -246,6 +250,28 @@ describe('PastOrdersScreen', () => {
     expect(detail().queryByRole('button', { name: 'Issue Refund' })).not.toBeInTheDocument()
     const refundCall = calls.find((call) => call.url.pathname.endsWith('/refund'))!
     expect(refundCall.authorization).toBe('Bearer manager-session')
+  })
+
+  it('a cashier’s refund asks a manager to approve a refund, and the approval is for a refund', async () => {
+    setAuthToken('cashier-session')
+    const calls = fakeApi([makeOrder(3, 'CLOSED')], { managerPin: '999999' })
+    const user = userEvent.setup()
+    renderScreen(cashier)
+
+    await user.click(await list().findByRole('button', { name: /R3/ }))
+    await user.click(await detail().findByRole('button', { name: 'Issue Refund' }))
+    const approval = screen.getByRole('dialog', { name: 'Special Access Required' })
+    expect(approval).toHaveTextContent('Manager PIN · Refund R3')
+    for (const digit of '999999') await user.click(within(approval).getByRole('button', { name: digit }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Refund R3' })
+    await user.type(within(dialog).getByLabelText('Reason'), 'Damaged tin')
+    await user.click(within(dialog).getByRole('button', { name: 'Issue Refund' }))
+
+    expect(await detail().findByText('Order Refunded')).toBeInTheDocument()
+    const approvalCall = calls.find((call) => call.url.pathname === '/api/v1/auth/special-access')!
+    expect(approvalCall.body).toEqual({ pin: '999999', operation: 'REFUND' })
+    expect(calls.find((call) => call.url.pathname.endsWith('/refund'))!.authorization).toBe('Bearer manager-token')
   })
 
   it('sends a placed order back to the cart with Edit Order, instead of paying it here', async () => {

@@ -1,5 +1,6 @@
 package com.counterline.pos.orders;
 
+import com.counterline.pos.auth.ApprovalOperation;
 import com.counterline.pos.auth.ApprovalTokens;
 import com.counterline.pos.auth.Terminal;
 import com.counterline.pos.orders.CheckoutService.CheckoutResult;
@@ -122,7 +123,7 @@ class OrderController {
     @PostMapping("/orders/{orderId}/void")
     OrderResponse voidOrder(@PathVariable Long orderId, @Valid @RequestBody ReasonRequest request,
                             @AuthenticationPrincipal Jwt jwt) {
-        approvalTokens.useOnce(jwt);
+        approvalTokens.useOnce(jwt, ApprovalOperation.VOID);
         return lifecycle.voidOrder(orderId, request.reason(), Terminal.of(jwt));
     }
 
@@ -131,7 +132,7 @@ class OrderController {
     @PostMapping("/orders/{orderId}/refund")
     OrderResponse refundOrder(@PathVariable Long orderId, @Valid @RequestBody ReasonRequest request,
                               @AuthenticationPrincipal Jwt jwt) {
-        approvalTokens.useOnce(jwt);
+        approvalTokens.useOnce(jwt, ApprovalOperation.REFUND);
         return lifecycle.refund(orderId, request.reason(), Terminal.of(jwt));
     }
 

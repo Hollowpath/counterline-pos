@@ -1,6 +1,8 @@
 package com.counterline.pos.auth;
 
 import com.counterline.pos.TestcontainersConfiguration;
+import com.counterline.pos.staff.Staff;
+import com.counterline.pos.staff.StaffRepository;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +28,7 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -64,6 +67,10 @@ class StaffSessionRevocationIntegrationTest {
     AdminUserRepository adminRepository;
     @Autowired
     PasswordEncoder passwordEncoder;
+    @Autowired
+    StaffRepository staffRepository;
+    @Autowired
+    ManagerApproval managerApproval;
 
     private String admin;
     private long outlet;
@@ -93,7 +100,7 @@ class StaffSessionRevocationIntegrationTest {
         jdbc.update("DELETE FROM admin_user WHERE email = ?", adminEmail);
     }
 
-    private record Tokens(String till, String approval, String dashboard) {
+    private record Tokens(String till, String approval, String discount, String dashboard) {
     }
 
     /** What each kind of change does to a token issued before it, and that undoing it does not help. */
@@ -137,6 +144,7 @@ class StaffSessionRevocationIntegrationTest {
             expectWorking(before.till());
             expectApprovalAccepted(before.approval());
             call(get("/api/v1/dashboard/outlets"), before.dashboard(), null).andExpect(status().isOk());
+            Staff cashier = staffRepository.findById(createStaff(outlet, "STAFF", pin(), "Counter " + change, null)).orElseThrow();
 
             switch (change) {
                 case "deactivate" -> call(post(STAFF + "/" + manager + "/deactivate"), admin, null).andExpect(status().isOk());
@@ -147,6 +155,7 @@ class StaffSessionRevocationIntegrationTest {
                 default -> call(post(OUTLETS + "/" + outlet + "/deactivate"), admin, null).andExpect(status().isOk());
             }
             expectAllRefused(before, "Manager " + change, email);
+            expectDiscountRefused(cashier, before.discount(), "Manager " + change, email);
 
             // Restore everything, recreating the very same login and PIN.
             switch (change) {
@@ -157,9 +166,11 @@ class StaffSessionRevocationIntegrationTest {
                 default -> call(post(OUTLETS + "/" + outlet + "/reactivate"), admin, null).andExpect(status().isOk());
             }
             expectAllRefused(before, "Manager " + change, email);
+            expectDiscountRefused(cashier, before.discount(), "Manager " + change, email);
             Tokens after = tokens(pin, email);
             expectWorking(after.till());
             expectApprovalAccepted(after.approval());
+            assertThat(managerApproval.requireManager(cashier, after.discount()).getId()).isEqualTo(manager);
             call(get("/api/v1/dashboard/outlets"), after.dashboard(), null).andExpect(status().isOk());
         }
     }
@@ -215,12 +226,23 @@ class StaffSessionRevocationIntegrationTest {
         assertThat(dashboard).doesNotContain(name).doesNotContain(email).doesNotContain("sver");
     }
 
+    /** A body-carried discount approval is refused like a bearer token, and says no more than that it is needed. */
+    private void expectDiscountRefused(Staff cashier, String discountToken, String name, String email) {
+        assertThatThrownBy(() -> managerApproval.requireManager(cashier, discountToken))
+                .isInstanceOf(SpecialAccessDeniedException.class)
+                .hasMessage("Manager approval needed")
+                .satisfies(refused -> assertThat(refused.getMessage()).doesNotContain(name).doesNotContain(email));
+    }
+
     private Tokens tokens(String pin, String email) throws Exception {
         String till = tillLogin(pin);
-        String approval = JsonPath.read(mockMvc.perform(post("/api/v1/auth/special-access").contentType(MediaType.APPLICATION_JSON)
-                        .content(json("pin", pin)).header(HttpHeaders.AUTHORIZATION, "Bearer " + till))
+        return new Tokens(till, approval(till, pin, "VOID"), approval(till, pin, "DISCOUNT"), dashboardToken(email, password));
+    }
+
+    private String approval(String till, String pin, String operation) throws Exception {
+        return JsonPath.read(mockMvc.perform(post("/api/v1/auth/special-access").contentType(MediaType.APPLICATION_JSON)
+                        .content(json("pin", pin, "operation", operation)).header(HttpHeaders.AUTHORIZATION, "Bearer " + till))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.token");
-        return new Tokens(till, approval, dashboardToken(email, password));
     }
 
     private long createOutlet(String code) throws Exception {

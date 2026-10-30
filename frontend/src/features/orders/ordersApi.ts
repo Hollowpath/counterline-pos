@@ -28,9 +28,12 @@ export const ordersPaths = {
   order: (orderId: number) => `/api/v1/orders/${orderId}`,
 }
 
-/** Manager approval at this terminal; returns a short-lived manager token for one action. */
-export function requestSpecialAccess(pin: string): Promise<LoginResponse> {
-  return postJson<LoginResponse>('/api/v1/auth/special-access', { pin })
+/** What a manager's approval is for: the token works for this one action, once. Mirrors backend ApprovalOperation. */
+export type ApprovalOperation = 'DISCOUNT' | 'VOID' | 'REFUND'
+
+/** Manager approval at this terminal; returns a short-lived manager token for `operation`, used once. */
+export function requestSpecialAccess(pin: string, operation: ApprovalOperation): Promise<LoginResponse> {
+  return postJson<LoginResponse>('/api/v1/auth/special-access', { pin, operation })
 }
 
 /** `token`: the approving manager's special-access token, or undefined to use the session. */

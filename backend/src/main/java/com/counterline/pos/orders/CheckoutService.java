@@ -1,6 +1,7 @@
 package com.counterline.pos.orders;
 
 import com.counterline.pos.auth.ManagerApproval;
+import com.counterline.pos.auth.SpecialAccessDeniedException;
 import com.counterline.pos.auth.Terminal;
 import com.counterline.pos.catalog.CatalogDtos.PromotionSummary;
 import com.counterline.pos.catalog.CatalogService;
@@ -132,8 +133,9 @@ public class CheckoutService {
                     order.status() == OrderStatus.OPEN ? "placed" : "closed", terminal.outletId(), order.total(),
                     terminal.staffId());
             return new CheckoutResult(order, true);
-        } catch (DataIntegrityViolationException e) {
-            // Lost a race with a concurrent request carrying the same clientRequestId.
+        } catch (DataIntegrityViolationException | SpecialAccessDeniedException e) {
+            // Lost a race with a concurrent request carrying the same clientRequestId. (The loser of a
+            // race on one approval token finds it spent by that very sale: it gets the sale, not a refusal.)
             return orderQueries.findByClientRequestId(request.clientRequestId(), terminal.outletId())
                     .map(existing -> new CheckoutResult(existing, false))
                     .orElseThrow(() -> e);
