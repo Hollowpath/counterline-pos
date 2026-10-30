@@ -17,14 +17,23 @@ final class PhoneNumbers {
 
     /** @return the E.164 number, or empty if the input cannot be a valid phone number */
     static Optional<String> normalize(String input, String defaultCountryCode) {
-        String digits = toInternationalDigits(SEPARATORS.matcher(input.strip()).replaceAll(""), defaultCountryCode);
+        String digits = withoutTrunkZero(toInternationalDigits(SEPARATORS.matcher(input.strip()).replaceAll(""), defaultCountryCode),
+                defaultCountryCode);
         return digits != null && E164_DIGITS.matcher(digits).matches() ? Optional.of("+" + digits) : Optional.empty();
+    }
+
+    /** "+60 011…" is "+6011…": the 0 that local numbers start with is not part of the number after the country code. */
+    private static String withoutTrunkZero(String digits, String defaultCountryCode) {
+        String trunk = defaultCountryCode + "0";
+        return digits != null && digits.startsWith(trunk) ? defaultCountryCode + digits.substring(trunk.length()) : digits;
     }
 
     /** Digits to search for: "0112345" → "60112345", so a local-format search finds stored numbers. */
     static String searchDigits(String input, String defaultCountryCode) {
         String digits = input.replaceAll("\\D", "");
-        return digits.startsWith("0") && !digits.startsWith("00") ? defaultCountryCode + digits.substring(1) : digits;
+        String international = digits.startsWith("0") && !digits.startsWith("00") ? defaultCountryCode + digits.substring(1) : digits;
+        String trunk = defaultCountryCode + "0";
+        return international.startsWith(trunk) ? defaultCountryCode + international.substring(trunk.length()) : international;
     }
 
     private static String toInternationalDigits(String compact, String defaultCountryCode) {

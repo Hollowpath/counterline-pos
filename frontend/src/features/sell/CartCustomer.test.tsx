@@ -8,7 +8,7 @@ const longName = 'Nur Aisyah Binti Muhammad Zulkarnain Abdul Rahman Al-Hakim Ibr
 const routes: Record<string, unknown> = {
   '/api/v1/catalog/tabs': [{ id: 1, name: 'Selling Items', folders: [{ categoryId: 10, name: 'Pouch', row: 1, col: 1, itemCount: 1 }] }],
   '/api/v1/catalog/categories/10/items': { categoryId: 10, name: 'Pouch', items: [{ id: 100, name: 'Pouch Caramel', price: 16, imageUrl: null }] },
-  '/api/v1/customers?field=NAME&page=0&size=20': {
+  '/api/v1/customers?field=NAME&page=0&size=20&q=nur': {
     items: [{ id: 5, fullName: longName, phone: '+601234567891', email: null, referenceId: null }],
     page: 0, size: 20, totalItems: 1, totalPages: 1,
   },
@@ -28,6 +28,7 @@ describe('the selected customer in the cart', () => {
     await user.click(await within(screen.getByRole('region', { name: 'Products' })).findByRole('button', { name: /pouch caramel/i }))
     const cart = within(screen.getByRole('complementary', { name: 'Current sale' }))
     await user.click(cart.getByRole('button', { name: '+ Add customer' }))
+    await user.type(await screen.findByRole('searchbox', { name: 'Search customers' }), 'nur')
     await user.click(await screen.findByRole('button', { name: new RegExp(longName) }))
 
     const name = await cart.findByText(longName)

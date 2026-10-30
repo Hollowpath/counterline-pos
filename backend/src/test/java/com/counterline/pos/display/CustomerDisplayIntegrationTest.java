@@ -21,6 +21,15 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.containsString;
@@ -241,7 +250,134 @@ class CustomerDisplayIntegrationTest {
         pos(get("/api/v1/displays/" + displayId), null).andExpect(status().isNotFound());
     }
 
+    // ---- A member who becomes inactive in flight ----
+
+    @Test
+    void aWaitingMemberDeactivatedMeanwhileIsSimplyNotWaiting() throws Exception {
+        String created = pos(post("/api/v1/displays"), null).andReturn().getResponse().getContentAsString();
+        Integer displayId = JsonPath.read(created, "$.id");
+        String token = token(JsonPath.read(created, "$.accessCode"));
+        pos(put("/api/v1/displays/" + displayId + "/cart"), NEW_SALE).andExpect(status().isNoContent());
+        display(post("/api/v1/display/member-login"), token, "{\"phone\":\"0112345678\"}").andExpect(status().isOk());
+        pos(get("/api/v1/displays/" + displayId), null).andExpect(jsonPath("$.waitingMember.customerId").value(memberId));
+
+        deactivate(memberId);
+
+        // Normal answers, not errors: the display shows no waiting member, the POS none to add.
+        display(get("/api/v1/display/state"), token, null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.member.status").value("NONE")).andExpect(jsonPath("$.member.firstName").doesNotExist());
+        pos(get("/api/v1/displays/" + displayId), null).andExpect(status().isOk()).andExpect(jsonPath("$.waitingMember").doesNotExist());
+        pos(post("/api/v1/displays/" + displayId + "/member/confirm"), "{\"customerId\":" + memberId + "}")
+                .andExpect(status().isUnprocessableContent());
+        // The next thing the POS publishes clears them for good, and the display can log someone in again.
+        pos(put("/api/v1/displays/" + displayId + "/cart"), NEW_SALE).andExpect(status().isNoContent());
+        assertThat(jdbc.queryForObject("SELECT pending_customer_id FROM customer_display WHERE id = ?", Long.class, displayId)).isNull();
+        display(post("/api/v1/display/member-login"), token, "{\"phone\":\"0112345678\"}").andExpect(status().isNotFound());
+    }
+
+    @Test
+    void aConfirmedMemberDeactivatedMeanwhileDoesNotBreakTheDisplay() throws Exception {
+        String created = pos(post("/api/v1/displays"), null).andReturn().getResponse().getContentAsString();
+        Integer displayId = JsonPath.read(created, "$.id");
+        String token = token(JsonPath.read(created, "$.accessCode"));
+        pos(put("/api/v1/displays/" + displayId + "/cart"), NEW_SALE).andExpect(status().isNoContent());
+        display(post("/api/v1/display/member-login"), token, "{\"phone\":\"0112345678\"}").andExpect(status().isOk());
+        pos(post("/api/v1/displays/" + displayId + "/member/confirm"), "{\"customerId\":" + memberId + "}").andExpect(status().isNoContent());
+        display(get("/api/v1/display/state"), token, null).andExpect(jsonPath("$.member.status").value("CONFIRMED"));
+
+        deactivate(memberId);
+        display(get("/api/v1/display/state"), token, null).andExpect(status().isOk()).andExpect(jsonPath("$.member.status").value("NONE"));
+    }
+
+    @Test
+    void aSignUpWithADeactivatedMembersNumberIsRefusedCountedAndMakesNoNewMember() throws Exception {
+        String created = pos(post("/api/v1/displays"), null).andReturn().getResponse().getContentAsString();
+        Integer displayId = JsonPath.read(created, "$.id");
+        String token = token(JsonPath.read(created, "$.accessCode"));
+        pos(put("/api/v1/displays/" + displayId + "/cart"), NEW_SALE).andExpect(status().isNoContent());
+        deactivate(memberId);
+        long before = jdbc.queryForObject("SELECT count(*) FROM customer", Long.class);
+
+        String signUp = "{\"phone\":\"+60 11-234 5678\",\"firstName\":\"Someone\",\"lastName\":\"Else\"}";
+        int refused = 0;
+        int attempts = 0;
+        // Each refused attempt counts against the display's tries, until it is told to wait.
+        while (attempts++ < 15) {
+            int statusCode = display(post("/api/v1/display/members"), token, signUp).andReturn().getResponse().getStatus();
+            if (statusCode == 429) {
+                break;
+            }
+            assertThat(statusCode).isEqualTo(409);
+            refused++;
+        }
+        assertThat(refused).isBetween(1, 12);
+        assertThat(attempts).isLessThanOrEqualTo(15);
+        display(post("/api/v1/display/members"), token, signUp.replace("+60 11-234 5678", "0127778888")).andExpect(status().isTooManyRequests());
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM customer", Long.class)).isEqualTo(before);
+    }
+
+    @Test
+    void theRefusalNamesNothingAboutADeactivatedMemberAndTheSameEmailIsEmailsNotPhones() throws Exception {
+        String created = pos(post("/api/v1/displays"), null).andReturn().getResponse().getContentAsString();
+        Integer displayId = JsonPath.read(created, "$.id");
+        String token = token(JsonPath.read(created, "$.accessCode"));
+        pos(put("/api/v1/displays/" + displayId + "/cart"), NEW_SALE).andExpect(status().isNoContent());
+        jdbc.update("UPDATE customer SET email = 'nur@example.com' WHERE id = ?", memberId);
+        deactivate(memberId);
+
+        display(post("/api/v1/display/members"), token, "{\"phone\":\"+60 11-234 5678\",\"firstName\":\"S\",\"lastName\":\"E\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("This phone number can't be registered here. Please ask the cashier."));
+        display(post("/api/v1/display/members"), token, "{\"phone\":\"0127778888\",\"firstName\":\"S\",\"lastName\":\"E\",\"email\":\"Nur@example.com\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("This email is already used by a member. Use another, or leave it blank."));
+    }
+
+    @Test
+    void twoSignUpsWithTheSameNewNumberAtOnceMakeOneMemberAndTheOtherIsToldItIsAMember() throws Exception {
+        String created = pos(post("/api/v1/displays"), null).andReturn().getResponse().getContentAsString();
+        Integer displayId = JsonPath.read(created, "$.id");
+        String token = token(JsonPath.read(created, "$.accessCode"));
+        pos(put("/api/v1/displays/" + displayId + "/cart"), NEW_SALE).andExpect(status().isNoContent());
+        long before = jdbc.queryForObject("SELECT count(*) FROM customer", Long.class);
+
+        CountDownLatch go = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        List<Integer> statuses = new ArrayList<>();
+        List<String> details = new ArrayList<>();
+        try {
+            List<Future<org.springframework.mock.web.MockHttpServletResponse>> signUps = new ArrayList<>();
+            for (String first : List.of("Lim", "Tan")) {
+                signUps.add(pool.submit(() -> {
+                    go.await();
+                    return display(post("/api/v1/display/members"), token,
+                            "{\"phone\":\"0127778888\",\"firstName\":\"" + first + "\",\"lastName\":\"Wei\"}").andReturn().getResponse();
+                }));
+            }
+            go.countDown();
+            for (Future<org.springframework.mock.web.MockHttpServletResponse> signUp : signUps) {
+                var response = signUp.get(20, TimeUnit.SECONDS);
+                statuses.add(response.getStatus());
+                if (response.getStatus() == 409) {
+                    details.add(JsonPath.read(response.getContentAsString(), "$.detail"));
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(statuses).containsExactlyInAnyOrder(201, 409);
+        assertThat(details).containsExactly("This phone number is already a member. Tap Login instead.");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM customer", Long.class)).isEqualTo(before + 1);
+    }
+
     // ---- helpers ----
+
+    private void deactivate(Long customerId) throws Exception {
+        mockMvc.perform(post("/api/v1/customers/" + customerId + "/deactivate")
+                        .with(jwt().jwt(t -> t.claim("outlet", 1L).subject(cashierId.toString()).claim("role", "MANAGER"))
+                                .authorities(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_MANAGER"))))
+                .andExpect(status().isOk());
+    }
 
     private String newCode() throws Exception {
         return JsonPath.read(pos(post("/api/v1/displays"), null).andReturn().getResponse().getContentAsString(),

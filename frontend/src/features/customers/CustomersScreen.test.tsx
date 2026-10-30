@@ -57,20 +57,21 @@ function fakeApi(customers: Customer[], options: { onPut?: () => Response } = {}
         byId.set(created.id, created)
         return json(created, 201)
       }
-      const match = /^\/api\/v1\/customers\/(\d+)(\/analytics)?$/.exec(url.pathname)
+      const match = /^\/api\/v1\/customers\/(\d+)(\/analytics|\/deactivate|\/reactivate)?$/.exec(url.pathname)
       const customer = match ? byId.get(Number(match[1])) : undefined
       if (!customer) return json({ title: 'Not found', detail: 'Customer not found' }, 404)
-      if (match![2]) return json(analytics)
+      if (match![2] === '/analytics') return json(analytics)
+      if (match![2] === '/deactivate' || match![2] === '/reactivate') {
+        const changed = { ...customer, active: match![2] === '/reactivate', version: customer.version + 1 }
+        byId.set(customer.id, changed)
+        return json(changed)
+      }
       if (method === 'GET') return json(customer)
       if (method === 'PUT') {
         if (options.onPut) return options.onPut()
         const updated = { ...customer, ...body, version: customer.version + 1 }
         byId.set(customer.id, updated)
         return json(updated)
-      }
-      if (method === 'DELETE') {
-        byId.delete(customer.id)
-        return json(undefined, 204)
       }
       return json({}, 405)
     }),
@@ -199,19 +200,42 @@ describe('CustomersScreen', () => {
     expect(calls.find((call) => call.method === 'PUT')!.body).toMatchObject({ phone: '+60112345678', email: 'nur@example.com' })
   })
 
-  it('deletes a customer after confirmation', async () => {
+  it('deactivates a customer after confirmation, who stays listed as inactive with their history', async () => {
     const calls = fakeApi([makeCustomer(1, 'Nur')])
+    const user = userEvent.setup()
+    render(<CustomersScreen onOpenMenu={() => {}} renderExtra={() => <p>Points and rewards</p>} />)
+
+    await user.click(await list().findByRole('button', { name: /Nur/ }))
+    expect(await detail().findByText('Points and rewards')).toBeInTheDocument()
+    await user.click(await detail().findByRole('button', { name: 'Edit Customer Details' }))
+    await user.click(screen.getByRole('button', { name: 'Deactivate customer' }))
+    expect(screen.getByText(/They keep their points and order history, can't be used on a sale, and can be reactivated/)).toBeInTheDocument()
+    expect(calls.some((call) => call.url.pathname.endsWith('/deactivate'))).toBe(false)
+    await user.click(screen.getByRole('button', { name: 'Confirm deactivate' }))
+
+    expect(await detail().findByTestId('inactive-note')).toHaveTextContent('Deactivated')
+    expect(calls.some((call) => call.method === 'POST' && call.url.pathname === '/api/v1/customers/1/deactivate')).toBe(true)
+    expect(calls.some((call) => call.method === 'DELETE')).toBe(false)
+    // Still there, flagged; their rewards panel and the edit button give way to Reactivate.
+    expect(await list().findByText('Inactive')).toBeInTheDocument()
+    expect(detail().queryByText('Points and rewards')).not.toBeInTheDocument()
+    expect(detail().queryByRole('button', { name: 'Edit Customer Details' })).not.toBeInTheDocument()
+    expect(detail().getByRole('button', { name: 'Reactivate Customer' })).toBeInTheDocument()
+    expect(await detail().findByText('RM80.74')).toBeInTheDocument()
+  })
+
+  it('reactivates an inactive customer, the same person again', async () => {
+    const calls = fakeApi([makeCustomer(1, 'Nur', { active: false })])
     const user = userEvent.setup()
     render(<CustomersScreen onOpenMenu={() => {}} />)
 
+    expect(await list().findByText('Inactive')).toBeInTheDocument()
     await user.click(await list().findByRole('button', { name: /Nur/ }))
-    await user.click(await detail().findByRole('button', { name: 'Edit Customer Details' }))
-    await user.click(screen.getByRole('button', { name: 'Delete customer' }))
-    expect(calls.some((call) => call.method === 'DELETE')).toBe(false)
-    await user.click(screen.getByRole('button', { name: 'Confirm delete' }))
+    await user.click(await detail().findByRole('button', { name: 'Reactivate Customer' }))
 
-    expect(await screen.findByText('Select a customer')).toBeInTheDocument()
-    expect(await list().findByText('No customers yet.')).toBeInTheDocument()
-    expect(calls.some((call) => call.method === 'DELETE' && call.url.pathname === '/api/v1/customers/1')).toBe(true)
+    expect(await detail().findByRole('button', { name: 'Edit Customer Details' })).toBeInTheDocument()
+    expect(calls.some((call) => call.method === 'POST' && call.url.pathname === '/api/v1/customers/1/reactivate')).toBe(true)
+    expect(detail().queryByTestId('inactive-note')).not.toBeInTheDocument()
+    await waitFor(() => expect(list().queryByText('Inactive')).not.toBeInTheDocument())
   })
 })

@@ -5,7 +5,7 @@ import { Dialog } from '../../components/Dialog'
 import { PhoneInput } from '../../components/PhoneInput'
 import { FUTURE_BIRTH_DATE, isFutureDate, todayIso } from '../../lib/dates'
 import { maskEmail, maskPhone } from '../../lib/privacy'
-import { createCustomer, deleteCustomer, updateCustomer } from './customersApi'
+import { createCustomer, deactivateCustomer, updateCustomer } from './customersApi'
 import type { Customer, CustomerFields, Gender } from './types'
 import { dialogActions, input as textInput } from '../../styles/ui'
 
@@ -31,16 +31,17 @@ interface CustomerFormProps {
   /** Edit this customer; omit to add a new one. */
   customer?: Customer
   onSaved: (customer: Customer) => void
-  onDeleted?: () => void
+  /** Present for a manager editing a customer: offers to deactivate them. */
+  onDeactivated?: () => void
   onCancel: () => void
 }
 
 /** Add / Edit Customer, in sections. First name, last name and phone are required. */
-export function CustomerForm({ customer, onSaved, onDeleted, onCancel }: CustomerFormProps) {
+export function CustomerForm({ customer, onSaved, onDeactivated, onCancel }: CustomerFormProps) {
   const [fields, setFields] = useState<CustomerFields>(() => (customer ? pickFields(customer) : EMPTY))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [confirmingDeactivate, setConfirmingDeactivate] = useState(false)
   // An existing customer's phone and email stay hidden, as everywhere on the till; "Change" types a new one.
   const [changing, setChanging] = useState({ phone: !customer?.phone, email: !customer?.email })
 
@@ -132,12 +133,14 @@ export function CustomerForm({ customer, onSaved, onDeleted, onCancel }: Custome
   return (
     <Dialog title={customer ? 'Edit Customer' : 'Add Customer'} wide onClose={busy ? undefined : onCancel}>
       <form className={form} onSubmit={save}>
-        {customer && onDeleted && (
+        {customer && onDeactivated && (
           <div className="flex flex-wrap items-center gap-2">
-            {confirmingDelete ? (
+            {confirmingDeactivate ? (
               <>
-                <span className="flex-1 text-sm font-medium text-red-600">Delete {customer.fullName}? Past orders keep their history.</span>
-                <button type="button" className="btn" disabled={busy} onClick={() => setConfirmingDelete(false)}>
+                <span className="flex-1 text-sm font-medium text-red-600">
+                  Deactivate {customer.fullName}? They keep their points and order history, can't be used on a sale, and can be reactivated.
+                </span>
+                <button type="button" className="btn" disabled={busy} onClick={() => setConfirmingDeactivate(false)}>
                   Keep
                 </button>
                 <button
@@ -145,16 +148,16 @@ export function CustomerForm({ customer, onSaved, onDeleted, onCancel }: Custome
                   className="btn btn-danger"
                   disabled={busy}
                   onClick={() => void run(async () => {
-                    await deleteCustomer(customer.id)
-                    onDeleted()
+                    await deactivateCustomer(customer.id)
+                    onDeactivated()
                   })}
                 >
-                  Confirm delete
+                  Confirm deactivate
                 </button>
               </>
             ) : (
-              <button type="button" className="btn btn-danger w-full" disabled={busy} onClick={() => setConfirmingDelete(true)}>
-                Delete customer
+              <button type="button" className="btn btn-danger w-full" disabled={busy} onClick={() => setConfirmingDeactivate(true)}>
+                Deactivate customer
               </button>
             )}
           </div>

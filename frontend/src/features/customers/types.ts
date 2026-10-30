@@ -29,6 +29,8 @@ export interface Customer extends CustomerFields {
   fullName: string
   createdAt: string
   updatedAt: string
+  /** False once a manager has deactivated the member (absent: active). */
+  active?: boolean
 }
 
 export interface CustomerSummary {
@@ -37,6 +39,8 @@ export interface CustomerSummary {
   phone: string | null
   email: string | null
   referenceId: string | null
+  /** False for a deactivated member, listed only on the dashboard (absent: active). */
+  active?: boolean
 }
 
 export interface CustomerAnalytics {
@@ -47,6 +51,16 @@ export interface CustomerAnalytics {
   mostOrderedItems: { itemName: string; quantity: number }[]
 }
 
+/** A till finds someone, it does not list everyone: this much is needed before it asks (as the server requires). */
+export const MIN_SEARCH_CHARS = 3
+export const MIN_SEARCH_PHONE_DIGITS = 4
+
+export function searchIsMeaningful(field: SearchField, query: string): boolean {
+  if (field === 'REFERENCE') return query.length > 0
+  if (field === 'PHONE') return query.replace(/\D/g, '').length >= MIN_SEARCH_PHONE_DIGITS
+  return query.length >= MIN_SEARCH_CHARS
+}
+
 export const customerPaths = {
   search: (field: SearchField, query: string, page: number) => {
     const params = new URLSearchParams({ field, page: String(page), size: '20' })
@@ -54,5 +68,7 @@ export const customerPaths = {
     return `/api/v1/customers?${params}`
   },
   customer: (id: number) => `/api/v1/customers/${id}`,
+  deactivate: (id: number) => `/api/v1/customers/${id}/deactivate`,
+  reactivate: (id: number) => `/api/v1/customers/${id}/reactivate`,
   analytics: (id: number) => `/api/v1/customers/${id}/analytics`,
 }

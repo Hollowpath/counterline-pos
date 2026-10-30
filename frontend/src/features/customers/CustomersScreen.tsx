@@ -81,7 +81,10 @@ export function CustomersScreen({ onOpenMenu, renderExtra }: CustomersScreenProp
                     aria-current={customer.id === selectedId ? 'true' : undefined}
                     onClick={() => setSelectedId(customer.id)}
                   >
-                    <span className={customerRow.name}>{customer.fullName}</span>
+                    <span className={customerRow.name}>
+                      {customer.fullName}
+                      {customer.active === false && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Inactive</span>}
+                    </span>
                     <span className={customerRow.contact}>{maskContact(customer.phone, customer.email)}</span>
                   </button>
                 </li>
@@ -108,10 +111,7 @@ export function CustomersScreen({ onOpenMenu, renderExtra }: CustomersScreenProp
               key={selectedId}
               customerId={selectedId}
               extra={renderExtra?.(selectedId)}
-              onChanged={(deleted) => {
-                if (deleted) setSelectedId(null)
-                refresh()
-              }}
+              onChanged={refresh}
             />
           </>
         )}

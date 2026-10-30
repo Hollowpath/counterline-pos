@@ -143,8 +143,7 @@ public class SalesOverviewService {
                        (SELECT count(*) FROM sale_order o WHERE %1$s AND o.customer_id IS NOT NULL) AS member_orders,
                        (SELECT coalesce(sum(l.quantity), 0) FROM sale_order o JOIN sale_order_line l ON l.order_id = o.id
                         WHERE %1$s AND l.line_total > 0) AS items,
-                       (SELECT count(*) FROM customer c WHERE c.deleted_at IS NULL
-                          AND c.created_at >= :start AND c.created_at < :end
+                       (SELECT count(*) FROM customer c WHERE c.created_at >= :start AND c.created_at < :end
                           AND EXISTS (SELECT 1 FROM sale_order o WHERE %1$s AND o.customer_id = c.id)) AS new_members,
                        (SELECT coalesce(sum(l.quantity), 0) FROM sale_order o
                           JOIN sale_order_promotion sp ON sp.order_id = o.id JOIN sale_order_line l ON l.id = sp.line_id

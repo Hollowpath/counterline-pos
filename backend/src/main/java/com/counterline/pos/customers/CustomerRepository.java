@@ -8,30 +8,38 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
-/** Searches cover active (not deleted) customers only. LIKE patterns use '!' as the escape character. */
+/**
+ * Searches cover active members; {@code includeInactive} (the dashboard) adds deactivated ones. Phone, email and
+ * reference ID are unique across every member, deactivated included. LIKE patterns use '!' as the escape character.
+ */
 interface CustomerRepository extends JpaRepository<Customer, Long> {
 
-    Optional<Customer> findByIdAndDeletedAtIsNull(Long id);
+    Optional<Customer> findByIdAndDeactivatedAtIsNull(Long id);
 
-    Page<Customer> findByDeletedAtIsNull(Pageable pageable);
+    Page<Customer> findByDeactivatedAtIsNull(Pageable pageable);
 
     /** Case-insensitive "contains" (index: trigram on full_name). */
-    @Query("select c from Customer c where c.deletedAt is null and c.fullName ilike :pattern escape '!'")
-    Page<Customer> searchByName(@Param("pattern") String pattern, Pageable pageable);
+    @Query("select c from Customer c where (:includeInactive = true or c.deactivatedAt is null) and c.fullName ilike :pattern escape '!'")
+    Page<Customer> searchByName(@Param("pattern") String pattern, @Param("includeInactive") boolean includeInactive, Pageable pageable);
 
-    @Query("select c from Customer c where c.deletedAt is null and c.phone like :pattern escape '!'")
-    Page<Customer> searchByPhone(@Param("pattern") String pattern, Pageable pageable);
+    @Query("select c from Customer c where (:includeInactive = true or c.deactivatedAt is null) and c.phone like :pattern escape '!'")
+    Page<Customer> searchByPhone(@Param("pattern") String pattern, @Param("includeInactive") boolean includeInactive, Pageable pageable);
 
-    @Query("select c from Customer c where c.deletedAt is null and c.email ilike :pattern escape '!'")
-    Page<Customer> searchByEmail(@Param("pattern") String pattern, Pageable pageable);
+    @Query("select c from Customer c where (:includeInactive = true or c.deactivatedAt is null) and c.email ilike :pattern escape '!'")
+    Page<Customer> searchByEmail(@Param("pattern") String pattern, @Param("includeInactive") boolean includeInactive, Pageable pageable);
 
-    Page<Customer> findByReferenceIdAndDeletedAtIsNull(String referenceId, Pageable pageable);
+    @Query("select c from Customer c where (:includeInactive = true or c.deactivatedAt is null) and c.referenceId = :referenceId")
+    Page<Customer> searchByReferenceId(@Param("referenceId") String referenceId, @Param("includeInactive") boolean includeInactive,
+                                       Pageable pageable);
 
-    // Uniqueness checks among active customers, to report which field clashes.
+    /** The active member with this phone number (the display's Member Login). */
+    Optional<Customer> findByPhoneAndDeactivatedAtIsNull(String phone);
 
-    Optional<Customer> findByPhoneAndDeletedAtIsNull(String phone);
+    // Uniqueness checks among all members, to report which field clashes.
 
-    Optional<Customer> findByEmailAndDeletedAtIsNull(String email);
+    Optional<Customer> findByPhone(String phone);
 
-    Optional<Customer> findByReferenceIdAndDeletedAtIsNull(String referenceId);
+    Optional<Customer> findByEmail(String email);
+
+    Optional<Customer> findByReferenceId(String referenceId);
 }

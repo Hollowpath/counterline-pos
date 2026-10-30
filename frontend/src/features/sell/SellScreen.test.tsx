@@ -235,7 +235,7 @@ describe('SellScreen', () => {
     const fetchMock = stubApi({
       '/api/v1/catalog/tabs': () => jsonResponse(tabs),
       '/api/v1/catalog/categories/10/items': () => jsonResponse(pouchItems),
-      '/api/v1/customers?field=NAME&page=0&size=20': () =>
+      '/api/v1/customers?field=NAME&page=0&size=20&q=nur': () =>
         jsonResponse({ items: [{ id: 5, fullName: 'Nur Aisyah', phone: '+60112345678', email: null, referenceId: null }], page: 0, size: 20, totalItems: 1, totalPages: 1 }),
       '/api/v1/orders': () => jsonResponse({ id: 13, orderNumber: 'R13', status: 'OPEN', total: 16 }, 201),
     })
@@ -245,6 +245,7 @@ describe('SellScreen', () => {
     await user.click(await screen.findByRole('button', { name: /popcorn pouch/i }))
     await user.click(await products().findByRole('button', { name: /pouch caramel/i }))
     await user.click(screen.getByRole('button', { name: '+ Add customer' }))
+    await user.type(await screen.findByRole('searchbox', { name: 'Search customers' }), 'nur')
     await user.click(await screen.findByRole('button', { name: /Nur Aisyah/ }))
 
     const cart = within(screen.getByRole('complementary', { name: 'Current sale' }))

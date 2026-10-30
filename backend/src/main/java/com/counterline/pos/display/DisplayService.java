@@ -10,6 +10,7 @@ import com.counterline.pos.common.BusinessRuleException;
 import com.counterline.pos.common.ConflictException;
 import com.counterline.pos.common.ResourceNotFoundException;
 import com.counterline.pos.customers.Customer;
+import com.counterline.pos.customers.CustomerConflictException;
 import com.counterline.pos.customers.CustomerDtos.CustomerRequest;
 import com.counterline.pos.customers.CustomerDtos.CustomerResponse;
 import com.counterline.pos.customers.CustomerService;
@@ -130,13 +131,18 @@ public class DisplayService {
      * dropped: they were for the sale that ended.
      */
     public void publishCart(Long displayId, Long outletId, CartView cart) {
-        lockForPos(displayId, outletId).publishCart(json.writeValueAsString(cart), cart.stage() == Stage.IDLE);
+        CustomerDisplay display = lockForPos(displayId, outletId);
+        // A member deactivated while waiting is no longer waiting: the POS never has to deal with them.
+        if (display.getPendingCustomerId() != null && customerService.findActiveMember(display.getPendingCustomerId()).isEmpty()) {
+            display.cancelWaiting();
+        }
+        display.publishCart(json.writeValueAsString(cart), cart.stage() == Stage.IDLE);
     }
 
     /** The POS added the member waiting on the display to its sale. */
     public void confirmMember(Long displayId, Long outletId, Long customerId) {
         CustomerDisplay display = lockForPos(displayId, outletId);
-        if (!customerId.equals(display.getPendingCustomerId())) {
+        if (!customerId.equals(display.getPendingCustomerId()) || customerService.findActiveMember(customerId).isEmpty()) {
             throw new BusinessRuleException("That member is no longer waiting on the customer display");
         }
         display.answer(MemberResult.CONFIRMED);
@@ -267,8 +273,17 @@ public class DisplayService {
                     null, request.dateOfBirth(), request.gender(), request.email(), request.phone(),
                     request.marketingEmail(), request.marketingSms(), request.marketingCall(),
                     null, null, null, null, null, null));
+        } catch (CustomerConflictException e) {
+            // However it came about (a race between two sign-ups, a deactivated member's number), a refused
+            // sign-up counts against the same throttle as a failed login.
+            limiter.recordFailure(key);
+            throw new ConflictException(e.field() == CustomerConflictException.Field.EMAIL
+                    ? "This email is already used by a member. Use another, or leave it blank."
+                    : e.inactive() ? "This phone number can't be registered here. Please ask the cashier."
+                    : "This phone number is already a member. Tap Login instead.");
         } catch (ConflictException e) {
-            throw new ConflictException("This email is already used by a member. Use another, or leave it blank.");
+            limiter.recordFailure(key);
+            throw new ConflictException("This phone number or email can't be registered here. Please ask the cashier.");
         }
         lockActive(session).memberWaiting(created.id(), true);
         log.info("Customer {} signed up on display {}", created.id(), session.displayId());
@@ -333,8 +348,9 @@ public class DisplayService {
 
     private DisplayStatus toStatus(CustomerDisplay display) {
         WaitingMember waiting = null;
-        if (display.getPendingCustomerId() != null) {
-            Customer member = customerService.getForSale(display.getPendingCustomerId());
+        // A waiting member who has been deactivated since is simply not waiting.
+        Customer member = customerService.findActiveMember(display.getPendingCustomerId()).orElse(null);
+        if (member != null) {
             waiting = new WaitingMember(member.getId(), member.getFullName(), member.getPhone(),
                     display.isPendingNewMember());
         }
@@ -346,17 +362,17 @@ public class DisplayService {
     private DisplayState toState(CustomerDisplay display) {
         CartView cart = display.getCart() == null ? null : json.readValue(display.getCart(), CartView.class);
         MemberState member;
-        if (display.getPendingCustomerId() != null) {
-            member = new MemberState(MemberStatus.WAITING, firstName(display.getPendingCustomerId()));
-        } else if (display.getMemberResult() == MemberResult.CONFIRMED) {
-            member = new MemberState(MemberStatus.CONFIRMED, firstName(display.getResultCustomerId()));
+        Customer waiting = customerService.findActiveMember(display.getPendingCustomerId()).orElse(null);
+        Customer confirmed = display.getMemberResult() == MemberResult.CONFIRMED
+                ? customerService.findActiveMember(display.getResultCustomerId()).orElse(null) : null;
+        if (waiting != null) {
+            member = new MemberState(MemberStatus.WAITING, waiting.getFirstName());
+        } else if (confirmed != null) {
+            member = new MemberState(MemberStatus.CONFIRMED, confirmed.getFirstName());
         } else {
             member = new MemberState(MemberStatus.NONE, null);
         }
         return new DisplayState(display.getVersion(), outletService.get(display.getOutletId()).name(), cart, member);
     }
 
-    private String firstName(Long customerId) {
-        return customerId == null ? null : customerService.getForSale(customerId).getFirstName();
-    }
 }

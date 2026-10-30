@@ -1,17 +1,19 @@
 import { useState, type ReactNode } from 'react'
+import { ApiError } from '../../api/http'
 import { useApi } from '../../api/useApi'
 import { LoadState } from '../../components/LoadState'
 import { formatDate, formatDateTime } from '../../lib/dates'
 import { formatRM, toSen } from '../../lib/money'
 import { maskEmail, maskPhone } from '../../lib/privacy'
+import { reactivateCustomer } from './customersApi'
 import { CustomerForm } from './CustomerForm'
 import { customerPaths, type Customer, type CustomerAnalytics } from './types'
 import { detail } from '../../styles/ui'
 
 interface CustomerDetailProps {
   customerId: number
-  /** The customer was edited or deleted: the list should refresh. */
-  onChanged: (deleted: boolean) => void
+  /** The customer was edited, deactivated or reactivated: the list should refresh. */
+  onChanged: () => void
   /** Shown after the analytics (the dashboard's points and rewards). */
   extra?: ReactNode
 }
@@ -20,17 +22,39 @@ export function CustomerDetail({ customerId, onChanged, extra }: CustomerDetailP
   const customer = useApi<Customer>(customerPaths.customer(customerId))
   const analytics = useApi<CustomerAnalytics>(customerPaths.analytics(customerId))
   const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
 
   if (customer.status !== 'success') {
     return <LoadState status={customer.status} message={customer.status === 'error' ? customer.message : undefined} onRetry={customer.reload} />
   }
   const c = customer.data
+  const inactive = c.active === false
+
+  async function reactivate() {
+    setBusy(true)
+    setProblem(null)
+    try {
+      await reactivateCustomer(c.id)
+      customer.reload()
+      onChanged()
+    } catch (error) {
+      setProblem(error instanceof ApiError ? error.message : 'Offline')
+    } finally {
+      setBusy(false)
+    }
+  }
   const consent = [c.marketingEmail && 'Email', c.marketingSms && 'Text (SMS)', c.marketingCall && 'Phone (Call)'].filter(Boolean)
   const address = [c.streetAddress, c.aptSuite, c.city, c.postalCode, c.country].filter(Boolean).join(', ')
 
   return (
     <article className="[&_h2]:text-2xl [&_h2]:font-bold [&_h2]:tracking-tight" aria-label={c.fullName}>
       <h2>{c.fullName}</h2>
+      {inactive && (
+        <p className="mt-1 text-sm font-semibold text-amber-700" data-testid="inactive-note">
+          Deactivated: no sale can use this member until a manager reactivates them. Their points and orders are kept.
+        </p>
+      )}
 
       <h3 className={detail.section}>Customer Information</h3>
       <dl className={detail.info}>
@@ -74,11 +98,18 @@ export function CustomerDetail({ customerId, onChanged, extra }: CustomerDetailP
         </>
       )}
 
-      {extra}
+      {!inactive && extra}
 
-      <button type="button" className="btn btn-primary mt-6 w-full py-3.5!" onClick={() => setEditing(true)}>
-        Edit Customer Details
-      </button>
+      {problem && <p role="alert" className="mt-4 text-sm font-medium text-red-600">{problem}</p>}
+      {inactive ? (
+        <button type="button" className="btn btn-primary mt-6 w-full py-3.5!" disabled={busy} onClick={() => void reactivate()}>
+          Reactivate Customer
+        </button>
+      ) : (
+        <button type="button" className="btn btn-primary mt-6 w-full py-3.5!" onClick={() => setEditing(true)}>
+          Edit Customer Details
+        </button>
+      )}
 
       {editing && (
         <CustomerForm
@@ -86,9 +117,13 @@ export function CustomerDetail({ customerId, onChanged, extra }: CustomerDetailP
           onSaved={() => {
             setEditing(false)
             customer.reload()
-            onChanged(false)
+            onChanged()
           }}
-          onDeleted={() => onChanged(true)}
+          onDeactivated={() => {
+            setEditing(false)
+            customer.reload()
+            onChanged()
+          }}
           onCancel={() => setEditing(false)}
         />
       )}

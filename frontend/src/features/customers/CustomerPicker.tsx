@@ -6,7 +6,7 @@ import { maskContact } from '../../lib/privacy'
 import { useDebouncedValue } from '../../lib/useDebouncedValue'
 import type { CartCustomer } from '../sell/cart'
 import { CustomerForm } from './CustomerForm'
-import { customerPaths, type CustomerSummary, type SearchField } from './types'
+import { MIN_SEARCH_CHARS, MIN_SEARCH_PHONE_DIGITS, customerPaths, searchIsMeaningful, type CustomerSummary, type SearchField } from './types'
 import { customerRow, dialogActions, splitScreen } from '../../styles/ui'
 
 /** Digits with optional +, spaces or dashes: the cashier is typing a phone number. */
@@ -22,7 +22,9 @@ export function CustomerPicker({ onSelect, onCancel }: CustomerPickerProps) {
   const [input, setInput] = useState('')
   const query = useDebouncedValue(input.trim(), 300)
   const field: SearchField = PHONE_LIKE.test(query) ? 'PHONE' : 'NAME'
-  const { state, hasMore } = usePagedList<CustomerSummary>((page) => customerPaths.search(field, query, page))
+  // A till finds someone; it does not list everyone, so nothing is asked for until there is enough to go on.
+  const ready = searchIsMeaningful(field, query)
+  const { state, hasMore } = usePagedList<CustomerSummary>((page) => customerPaths.search(field, query, page), ready)
   const [adding, setAdding] = useState(false)
 
   if (adding) {
@@ -47,10 +49,14 @@ export function CustomerPicker({ onSelect, onCancel }: CustomerPickerProps) {
         onChange={(event) => setInput(event.target.value)}
       />
 
-      {state.phase !== 'ready' ? (
+      {!ready ? (
+        <p className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
+          Type at least {MIN_SEARCH_CHARS} letters of a name, or {MIN_SEARCH_PHONE_DIGITS} digits of a phone number.
+        </p>
+      ) : state.phase !== 'ready' ? (
         <LoadState status={state.phase} message={state.phase === 'error' ? state.message : undefined} />
       ) : state.items.length === 0 ? (
-        <p className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">{query ? 'No customers match your search.' : 'No customers yet.'}</p>
+        <p className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">No customers match your search.</p>
       ) : (
         <ul className="my-3 flex max-h-[50vh] list-none flex-col gap-1 overflow-y-auto">
           {state.items.map((customer) => (

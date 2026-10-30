@@ -18,7 +18,7 @@ const routes: Record<string, unknown> = {
       { id: 23, name: 'MFOC PC BBQ', price: 10, imageUrl: null, promotion: memberRedemption },
     ],
   },
-  '/api/v1/customers?field=NAME&page=0&size=20': {
+  '/api/v1/customers?field=NAME&page=0&size=20&q=nur': {
     items: [{ id: 5, fullName: 'Nur Aisyah', phone: '+60112345678', email: null, referenceId: null }],
     page: 0, size: 20, totalItems: 1, totalPages: 1,
   },
@@ -62,6 +62,7 @@ async function addMember(user: UserEvent) {
   const newSale = cart().queryByRole('button', { name: 'New Sale' })
   if (newSale) await user.click(newSale)
   await user.click(cart().getByRole('button', { name: '+ Add customer' }))
+  await user.type(await screen.findByRole('searchbox', { name: 'Search customers' }), 'nur')
   await user.click(await screen.findByRole('button', { name: /Nur Aisyah/ }))
 }
 

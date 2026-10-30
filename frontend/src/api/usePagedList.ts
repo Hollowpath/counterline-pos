@@ -19,12 +19,17 @@ export type PagedListState<T> =
  * A paged API list: loads the first page whenever the query changes (stale responses are
  * discarded) and appends further pages on demand.
  */
-export function usePagedList<T>(pathForPage: (page: number) => string) {
+/** {@code enabled} false: nothing is asked for, and the list is empty (a search that has not been typed yet). */
+export function usePagedList<T>(pathForPage: (page: number) => string, enabled = true) {
   const [state, setState] = useState<PagedListState<T>>({ phase: 'loading' })
   const [refreshKey, setRefreshKey] = useState(0)
   const firstPagePath = pathForPage(0)
 
   useEffect(() => {
+    if (!enabled) {
+      setState({ phase: 'ready', items: [], page: 0, totalPages: 0, loadingMore: false })
+      return
+    }
     const controller = new AbortController()
     setState({ phase: 'loading' })
     getJson<Page<T>>(firstPagePath, controller.signal)
@@ -36,7 +41,7 @@ export function usePagedList<T>(pathForPage: (page: number) => string) {
         setState({ phase: 'error', message: error instanceof Error ? error.message : 'Could not load the list' })
       })
     return () => controller.abort()
-  }, [firstPagePath, refreshKey])
+  }, [firstPagePath, refreshKey, enabled])
 
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), [])
 

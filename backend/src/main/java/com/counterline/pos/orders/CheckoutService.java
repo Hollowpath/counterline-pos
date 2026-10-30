@@ -161,7 +161,7 @@ public class CheckoutService {
                 }
             }
             SaleOrder order = buildOrder(request, activeStaff(terminal.staffId()), terminal.outletId(), now, 0, "",
-                    voucherDiscount);
+                    voucherDiscount, keptMember(editedOrderId, terminal.outletId()));
             Customer member = order.getCustomer();
             int balance = member == null ? 0 : loyaltyService.balance(member.getId());
             LoyaltyPreview loyalty = member == null ? null
@@ -177,7 +177,7 @@ public class CheckoutService {
         // Locked until this transaction ends, so another till can't use the same voucher meanwhile.
         Voucher voucher = request.hasVoucher() ? voucherService.forSale(request.voucherCode(), true) : null;
         SaleOrder order = buildOrder(request, staff, terminal.outletId(), now, orderRepository.nextOrderNumber(),
-                receiptCodes.next(), voucher == null ? null : voucherService.discountOf(voucher));
+                receiptCodes.next(), voucher == null ? null : voucherService.discountOf(voucher), null);
         requireReadyToPay(order, request, staff, now, 0L);
         complete(order, request, voucher, staff, terminal, now, null);
         return OrderResponse.from(order);
@@ -291,6 +291,8 @@ public class CheckoutService {
             Staff staff = activeStaff(terminal.staffId());
             Instant now = clock.instant();
 
+            // The member the order already has stays its member even if they were deactivated since.
+            Long keptMember = order.getCustomer() == null ? null : order.getCustomer().getId();
             // Empty it (the discounts first: they refer to the lines), then fill it from the cart.
             voucherService.releaseFor(order.getId());
             order.removeDeductions();
@@ -299,7 +301,7 @@ public class CheckoutService {
             orderRepository.saveAndFlush(order);
 
             Voucher voucher = request.hasVoucher() ? voucherService.forSale(request.voucherCode(), true) : null;
-            fill(order, request, voucher == null ? null : voucherService.discountOf(voucher));
+            fill(order, request, voucher == null ? null : voucherService.discountOf(voucher), keptMember);
             requireReadyToPay(order, request, staff, now, order.getId());
             complete(order, request, voucher, staff, terminal, now, request.clientRequestId());
             return OrderResponse.from(order);
@@ -307,6 +309,15 @@ public class CheckoutService {
         log.info("Order {} edited and {} at outlet {} by staff {}", edited.orderNumber(),
                 edited.status() == OrderStatus.OPEN ? "placed" : "paid", terminal.outletId(), terminal.staffId());
         return edited;
+    }
+
+    /** The member of the placed order being edited (this outlet's), who stays on it even if deactivated since. */
+    private Long keptMember(Long editedOrderId, Long outletId) {
+        if (editedOrderId == null) {
+            return null;
+        }
+        return orderRepository.findByIdAndOutletId(editedOrderId, outletId)
+                .map(SaleOrder::getCustomer).map(Customer::getId).orElse(null);
     }
 
     private void useVoucher(Voucher voucher, SaleOrder order) {
@@ -320,17 +331,17 @@ public class CheckoutService {
      * for a quote). {@code voucherDiscount}: a voucher's, applied as the order's discount.
      */
     private SaleOrder buildOrder(CheckoutRequest request, Staff staff, Long outletId, Instant now, long orderNumber,
-                                 String receiptCode, Discount voucherDiscount) {
+                                 String receiptCode, Discount voucherDiscount, Long keptMember) {
         SaleOrder order = new SaleOrder(outletId, orderNumber, receiptCode, request.clientRequestId(),
                 blankToNull(request.note()), staff, now);
-        fill(order, request, voucherDiscount);
+        fill(order, request, voucherDiscount, keptMember);
         return order;
     }
 
     /** Fills an empty order from the cart: its customer, lines (priced from the catalogue) and discounts. */
-    private void fill(SaleOrder order, CheckoutRequest request, Discount voucherDiscount) {
+    private void fill(SaleOrder order, CheckoutRequest request, Discount voucherDiscount, Long keptMember) {
         if (request.customerId() != null) {
-            order.assignCustomer(customerService.getForSale(request.customerId()));
+            order.assignCustomer(customerService.getForOrder(request.customerId(), keptMember));
         }
 
         Set<Long> itemIds = request.lines().stream()

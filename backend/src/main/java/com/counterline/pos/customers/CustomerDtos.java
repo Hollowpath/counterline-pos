@@ -69,22 +69,24 @@ public final class CustomerDtos {
             String country,
             String notes,
             Instant createdAt,
-            Instant updatedAt) {
+            Instant updatedAt,
+            /* False once a manager has deactivated the member. */
+            boolean active) {
 
         static CustomerResponse from(Customer c) {
             return new CustomerResponse(c.getId(), c.getVersion(), c.getReferenceId(), c.getFirstName(),
                     c.getLastName(), c.getFullName(), c.getCompanyName(), c.getDateOfBirth(), c.getGender(),
                     c.getEmail(), c.getPhone(), c.isMarketingEmail(), c.isMarketingSms(), c.isMarketingCall(),
                     c.getStreetAddress(), c.getAptSuite(), c.getCity(), c.getPostalCode(), c.getCountry(),
-                    c.getNotes(), c.getCreatedAt(), c.getUpdatedAt());
+                    c.getNotes(), c.getCreatedAt(), c.getUpdatedAt(), c.isActive());
         }
     }
 
     /** A row in the customer list or picker. */
-    public record CustomerSummary(Long id, String fullName, String phone, String email, String referenceId) {
+    public record CustomerSummary(Long id, String fullName, String phone, String email, String referenceId, boolean active) {
 
         static CustomerSummary from(Customer c) {
-            return new CustomerSummary(c.getId(), c.getFullName(), c.getPhone(), c.getEmail(), c.getReferenceId());
+            return new CustomerSummary(c.getId(), c.getFullName(), c.getPhone(), c.getEmail(), c.getReferenceId(), c.isActive());
         }
     }
 }

@@ -74,6 +74,11 @@ public class TokenService {
         this.clock = clock;
     }
 
+    /** Whether {@code jwt} is a manager's or head office's dashboard session (not a till's). */
+    public static boolean isDashboardSession(org.springframework.security.oauth2.jwt.Jwt jwt) {
+        return Channel.of(jwt.getClaim(CHANNEL_CLAIM)) == Channel.DASHBOARD;
+    }
+
     /** A staff member's session at the outlet's till, on the till device {@code deviceId}. */
     public IssuedToken issue(Staff staff, Long outletId, Long deviceId) {
         return staffToken(staff, outletId, deviceId, ttl, Channel.TILL, null);

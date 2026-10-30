@@ -54,7 +54,8 @@ public class Customer {
     private String notes;
     private Instant createdAt;
     private Instant updatedAt;
-    private Instant deletedAt;
+    /** Set while the member is deactivated: they stay on record with their points and orders, but no sale can use them. */
+    private Instant deactivatedAt;
 
     protected Customer() {
     }
@@ -70,14 +71,19 @@ public class Customer {
         this.updatedAt = now;
     }
 
-    /** Soft delete: the row stays so past orders still show who they were sold to. */
-    public void delete(Instant now) {
-        this.deletedAt = now;
+    /** The member stays on record (identity, points, orders); no new sale can use them until reactivated. */
+    public void deactivate(Instant now) {
+        this.deactivatedAt = now;
         this.updatedAt = now;
     }
 
-    public boolean isDeleted() {
-        return deletedAt != null;
+    public void reactivate(Instant now) {
+        this.deactivatedAt = null;
+        this.updatedAt = now;
+    }
+
+    public boolean isActive() {
+        return deactivatedAt == null;
     }
 
     private void apply(CustomerDetails details) {
