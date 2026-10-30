@@ -73,7 +73,9 @@ Owner (one IPv4 /32) ──HTTP :80──▶ ALB (public subnets) ──HTTP :80
 - **Channels.** Each token carries a channel claim: till, dashboard, display, or single-action approval. Route rules require the right channel, so a dashboard session cannot use till-only endpoints, a display token opens only `/api/v1/display/**`, and an approval token is accepted only for the one operation it names (discount, void or refund), once.
 - **Roles:** `STAFF`, `MANAGER` (till/dashboard) and `ADMIN` (head office). Catalogue, discount and voucher management is `ADMIN` only; other dashboard routes allow `ADMIN` or `MANAGER`.
 - **Staff PINs** are six digits, hashed with a server-side pepper; passwords for the dashboard use BCrypt. Failed PIN attempts are counted per outlet PIN pad (or per client address where there is no pad); the 10th failure locks it for 5 minutes by default. The counts are stored in PostgreSQL, so every API instance sees them, and a dashboard user can unlock a pad.
-- **Public routes:** login/set-up endpoints, the outlet list, health, OpenAPI/Swagger UI and the static web apps.
+- **Public routes:** login/set-up endpoints, the outlet list, health and the static web apps.
+- **API documentation is local-only.** The OpenAPI document and Swagger UI are enabled by the `local` profile and off in every other (`springdoc.*.enabled` in `application.yml`), where their URLs answer 404 like any unknown path. The application refuses to start if either is enabled outside `local` (`common/ApiDocsLocalOnly.java`).
+- **Response headers.** Every response (the web apps, static files and the API) carries a `Content-Security-Policy` limited to the application's own origin, with scripts from `'self'` only (no inline or eval'd script) and no `'unsafe-inline'` for styles either: React sets its `style` values through the CSSOM, which `style-src 'self'` allows. `data:` is allowed for images only (one inline SVG icon in the stylesheet); fonts and everything else come from the origin. `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY` accompany it. There is no `Strict-Transport-Security` header yet: it waits for HTTPS. Under `local`, Swagger UI's own paths get a slightly looser policy (its page needs one inline style element); the apps keep the strict one (`auth/SecurityConfig.java`).
 - Secrets have no defaults outside the `local` profile.
 
 ## Design decisions
@@ -93,4 +95,4 @@ Owner (one IPv4 /32) ──HTTP :80──▶ ALB (public subnets) ──HTTP :80
 
 ## Known gaps
 
-Listed with triggers in [engineering-readiness.md](engineering-readiness.md). Notably: Swagger UI and the OpenAPI document are served without authentication by the running application's route rules. The AWS deployment is HTTP-only and owner-restricted, with no automated delivery pipeline.
+Listed with triggers in [engineering-readiness.md](engineering-readiness.md). Notably: the AWS deployment is HTTP-only and owner-restricted, with no automated delivery pipeline.

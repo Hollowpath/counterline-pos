@@ -4,6 +4,7 @@ import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -16,7 +17,18 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
+import org.springframework.security.web.header.HeaderWriter;
+import org.springframework.security.web.header.writers.CompositeHeaderWriter;
+import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
+import org.springframework.security.web.header.writers.StaticHeadersWriter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.NegatedRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import com.counterline.pos.auth.TokenService.Channel;
@@ -35,6 +47,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -46,9 +59,32 @@ import java.util.Set;
 @SecurityScheme(name = "bearer", type = SecuritySchemeType.HTTP, scheme = "bearer", bearerFormat = "JWT")
 class SecurityConfig {
 
+    /**
+     * What the web apps load, and only from their own origin: scripts, styles, fonts, images, API calls.
+     * No inline or eval'd script. Styles are not given 'unsafe-inline' either: React sets its style={...}
+     * through the CSSOM, which a style-src of 'self' allows (only style attributes and style elements in
+     * markup are refused, and the built pages have none). data: is for images alone: one CSS
+     * background icon is an inline SVG.
+     */
+    static final String APP_CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+            + "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; "
+            + "frame-ancestors 'none'";
+
+    /**
+     * Swagger UI's own paths (local only, see {@link #DOCS_PATHS}). Found by trying tighter policies against
+     * it: scripts stay 'self' only; it needs one inline style element (its page carries one), which is
+     * allowed for style elements alone, not for style attributes; and data: images (its icons).
+     */
+    static final String DOCS_CSP = "default-src 'self'; script-src 'self'; style-src 'self'; "
+            + "style-src-elem 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; "
+            + "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+
+    private static final String[] DOCS_PATHS = {"/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**"};
+
     @Bean
     SecurityFilterChain apiSecurity(HttpSecurity http, StaffSessionGuard staffSessions,
-                                    @Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver) throws Exception {
+                                    @Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver,
+                                    @Value("${springdoc.swagger-ui.enabled:false}") boolean docsEnabled) throws Exception {
         // Route security failures through the MVC exception handlers so 401/403 bodies are
         // problem details like every other error.
         var errors = new ProblemDetailsSecurityErrorHandler(resolver);
@@ -56,6 +92,14 @@ class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .headers(headers -> headers
+                        .contentTypeOptions(Customizer.withDefaults())
+                        .frameOptions(HeadersConfigurer.FrameOptionsConfig::deny)
+                        .referrerPolicy(referrer -> referrer.policy(ReferrerPolicy.NO_REFERRER))
+                        // No HSTS until the site is served over HTTPS: it is HTTPS-only by nature, and once a
+                        // browser has seen it for a host it refuses plain HTTP there for its whole max-age.
+                        .httpStrictTransportSecurity(HeadersConfigurer.HstsConfig::disable)
+                        .addHeaderWriter(contentSecurityPolicy(docsEnabled)))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/login", "/api/v1/auth/terminal-setup",
                                 "/api/v1/auth/pin-lock").permitAll()
@@ -90,6 +134,19 @@ class SecurityConfig {
                         .authenticationEntryPoint(errors)
                         .accessDeniedHandler(errors));
         return http.build();
+    }
+
+    /** The strict policy everywhere; Swagger UI's paths get the relaxed one only while Swagger is enabled. */
+    private static HeaderWriter contentSecurityPolicy(boolean docsEnabled) {
+        if (!docsEnabled) {
+            return new StaticHeadersWriter("Content-Security-Policy", APP_CSP);
+        }
+        PathPatternRequestMatcher.Builder paths = PathPatternRequestMatcher.withDefaults();
+        RequestMatcher docs = new OrRequestMatcher(Arrays.stream(DOCS_PATHS).map(paths::matcher).toArray(RequestMatcher[]::new));
+        return new CompositeHeaderWriter(List.of(
+                new DelegatingRequestMatcherHeaderWriter(docs, new StaticHeadersWriter("Content-Security-Policy", DOCS_CSP)),
+                new DelegatingRequestMatcherHeaderWriter(new NegatedRequestMatcher(docs),
+                        new StaticHeadersWriter("Content-Security-Policy", APP_CSP))));
     }
 
     /** Head-office dashboard passwords (staff use PINs, see PinHasher). */

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { startTill } from './helpers'
 
 // One till per outlet: each test sets it up afresh, so the tests of this file run one after another.

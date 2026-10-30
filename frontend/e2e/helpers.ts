@@ -1,10 +1,28 @@
-import { expect, type Browser, type Page } from '@playwright/test'
+import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test'
 
 // The `local` profile's synthetic sample accounts (README, "Run locally"); nothing is added here.
 export const HEAD_OFFICE = { email: 'admin@counterline.test', password: 'counterline-demo' }
 export const OUTLET = { code: 'O1', name: 'Counterline Bukit Bintang' }
 export const MANAGER_PIN = '999999'
 export const CASHIER_PIN = '111111'
+
+/**
+ * Records every Content-Security-Policy violation in any page of `context`, from a listener
+ * registered before the page's own scripts run, so none can be missed. Returns the list, which fills as
+ * the pages run.
+ */
+export async function watchCsp(context: BrowserContext): Promise<string[]> {
+  const violations: string[] = []
+  await context.exposeFunction('reportCspViolation', (summary: string) => {
+    violations.push(summary)
+  })
+  // A string, not a function: this project's e2e code is compiled without the browser's types.
+  await context.addInitScript(`
+    document.addEventListener('securitypolicyviolation', (event) => {
+      window.reportCspViolation(event.violatedDirective + ': ' + (event.blockedURI || 'inline') + ' (' + event.sourceFile + ':' + event.lineNumber + ')')
+    })`)
+  return violations
+}
 
 export async function signInToDashboard(page: Page) {
   await page.goto('/dashboard.html')
@@ -29,6 +47,7 @@ export async function enterPin(page: Page, pin: string) {
 export async function startTill(page: Page, browser: Browser, baseURL: string | undefined) {
   // Head office works on a desktop screen whatever the till's size under test.
   const office = await browser.newContext({ baseURL, viewport: { width: 1280, height: 800 } })
+  const violations = await watchCsp(office)
   const dashboard = await office.newPage()
   await signInToDashboard(dashboard)
   await dashboard.getByRole('navigation', { name: 'Dashboard' }).getByRole('button', { name: 'iPads' }).click()
@@ -41,6 +60,7 @@ export async function startTill(page: Page, browser: Browser, baseURL: string | 
     await expect(reset).toHaveCount(0)
   }
   await office.close()
+  expect(violations, 'Content-Security-Policy violations').toEqual([])
 
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Set up this iPad' })).toBeVisible()

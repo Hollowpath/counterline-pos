@@ -27,7 +27,7 @@ A multi-outlet retail point-of-sale system: a tablet POS for the till, a custome
 **Platform**
 
 - Multiple outlets, each with its own staff, registers and time zone setting (default `Asia/Kuala_Lumpur`).
-- REST API under `/api/v1`, OpenAPI/Swagger UI, health endpoint at `/actuator/health`.
+- REST API under `/api/v1`, OpenAPI/Swagger UI (local profile only), health endpoint at `/actuator/health`.
 - Flyway-managed schema (`V1`–`V22`).
 
 ## Stack

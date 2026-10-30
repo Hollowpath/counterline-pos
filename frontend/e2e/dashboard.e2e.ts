@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { signInToDashboard } from './helpers'
 
 test('head office signs in and opens the overview and the seeded catalogue', async ({ page }) => {

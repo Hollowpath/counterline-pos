@@ -26,6 +26,14 @@ server:
   # request's remote address is the real client (used for login throttling).
   forward-headers-strategy: native
 
+# The API documentation (OpenAPI document, Swagger UI) is off everywhere but the local profile, and
+# the application will not start with it on elsewhere (common/ApiDocsLocalOnly).
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 management:
   endpoints:
     web:
@@ -58,6 +66,12 @@ spring:
       on-profile: local
   flyway:
     locations: classpath:db/migration,classpath:db/demo
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
 
 pos:
   security:
