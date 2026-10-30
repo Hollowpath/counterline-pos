@@ -3,6 +3,7 @@ import { ApiError, postJson } from '../api/http'
 import { useApi } from '../api/useApi'
 import { LoadState } from '../components/LoadState'
 import { formatDateTime } from '../lib/dates'
+import { CustomerDisplaysPanel } from './CustomerDisplaysPanel'
 import { PinLocksPanel } from './PinLocksPanel'
 import { note, noticeClass, sectionTitle, table, tableAsCards, tableFrame } from './styles'
 import { dashboardPaths, type TillDevice } from './types'
@@ -97,6 +98,7 @@ export function TillDevicesAdmin() {
           </div>
         )}
       </section>
+      <CustomerDisplaysPanel />
       <PinLocksPanel />
     </Page>
   )

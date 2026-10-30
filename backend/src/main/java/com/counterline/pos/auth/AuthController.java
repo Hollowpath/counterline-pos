@@ -58,7 +58,9 @@ class AuthController {
     @PostMapping("/special-access")
     LoginResponse specialAccess(@Valid @RequestBody SpecialAccessRequest request, HttpServletRequest httpRequest,
                                 @AuthenticationPrincipal Jwt jwt) {
-        return authService.specialAccess(request.pin(), request.operation(), httpRequest.getRemoteAddr(), Terminal.of(jwt));
+        // The approval is for the iPad the requesting session is on (the guard has checked it is still set up).
+        Long deviceId = jwt.getClaim(TokenService.DEVICE_CLAIM) instanceof Number number ? number.longValue() : null;
+        return authService.specialAccess(request.pin(), request.operation(), httpRequest.getRemoteAddr(), Terminal.of(jwt), deviceId);
     }
 
     @Operation(summary = "Is the login (or set-up) PIN pad locked?",

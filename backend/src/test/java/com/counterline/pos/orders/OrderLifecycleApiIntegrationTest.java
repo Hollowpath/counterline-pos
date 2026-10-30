@@ -1,6 +1,7 @@
 package com.counterline.pos.orders;
 
 import com.counterline.pos.auth.Terminal;
+import com.counterline.pos.TestDevices;
 import com.counterline.pos.TestRegister;
 import com.counterline.pos.TestcontainersConfiguration;
 import com.counterline.pos.auth.PinHasher;
@@ -464,7 +465,7 @@ class OrderLifecycleApiIntegrationTest {
         JwtClaimsSet.Builder claims = JwtClaimsSet.builder().issuer("counterline-pos").id(UUID.randomUUID().toString())
                 .subject(managerId.toString()).issuedAt(now).expiresAt(now.plusSeconds(300)).claim("name", manager.getFullName())
                 .claim("role", "MANAGER").claim("outlet", 1L).claim("channel", "approval")
-                .claim("sver", manager.getAuthSessionVersion());
+                .claim("sver", manager.getAuthSessionVersion()).claim("device", TestDevices.active(jdbc, cashierId, 1L));
         if (operation != null) {
             claims.claim("operation", operation);
         }

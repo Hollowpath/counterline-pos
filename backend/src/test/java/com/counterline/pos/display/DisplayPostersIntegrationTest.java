@@ -256,7 +256,7 @@ class DisplayPostersIntegrationTest {
         mockMvc.perform(get("/api/v1/display/posters").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isNotFound())
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
-                .andExpect(jsonPath("$.detail").value("No posters available"));
+                .andExpect(jsonPath("$.detail").value("Display unavailable"));
         jdbc.update("UPDATE outlet SET active = TRUE WHERE id = 1");
 
         mockMvc.perform(delete("/api/v1/displays/" + displayId).with(cashier())).andExpect(status().isNoContent());

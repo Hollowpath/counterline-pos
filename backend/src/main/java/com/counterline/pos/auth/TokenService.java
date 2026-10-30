@@ -28,6 +28,8 @@ public class TokenService {
     static final String CHANNEL_CLAIM = "channel";
     /** A staff member's authentication session version (see StaffSessionGuard). */
     static final String SESSION_VERSION_CLAIM = "sver";
+    /** The till device (iPad) a till or approval token was issued on; resetting the device ends the token (see StaffSessionGuard). */
+    static final String DEVICE_CLAIM = "device";
     /** The one action an approval token authorises (see {@link ApprovalOperation}). */
     static final String OPERATION_CLAIM = "operation";
     /** The role of a customer display's token: it may call only the display API. */
@@ -72,25 +74,25 @@ public class TokenService {
         this.clock = clock;
     }
 
-    /** A staff member's session at the outlet's till. */
-    public IssuedToken issue(Staff staff, Long outletId) {
-        return staffToken(staff, outletId, ttl, Channel.TILL, null);
+    /** A staff member's session at the outlet's till, on the till device {@code deviceId}. */
+    public IssuedToken issue(Staff staff, Long outletId, Long deviceId) {
+        return staffToken(staff, outletId, deviceId, ttl, Channel.TILL, null);
     }
 
     /** An outlet manager's session on the dashboard: it does not open the till's API. */
     public IssuedToken issueDashboard(Staff manager) {
-        return staffToken(manager, manager.getOutletId(), ttl, Channel.DASHBOARD, null);
+        return staffToken(manager, manager.getOutletId(), null, ttl, Channel.DASHBOARD, null);
     }
 
     /**
      * "Special Access Required": a manager's approval of one {@code operation} at {@code outletId}, for
      * {@code lifetime}. Only that operation accepts it, once.
      */
-    public IssuedToken issueApproval(Staff manager, Long outletId, Duration lifetime, ApprovalOperation operation) {
-        return staffToken(manager, outletId, lifetime, Channel.APPROVAL, operation);
+    public IssuedToken issueApproval(Staff manager, Long outletId, Long deviceId, Duration lifetime, ApprovalOperation operation) {
+        return staffToken(manager, outletId, deviceId, lifetime, Channel.APPROVAL, operation);
     }
 
-    private IssuedToken staffToken(Staff staff, Long outletId, Duration lifetime, Channel channel,
+    private IssuedToken staffToken(Staff staff, Long outletId, Long deviceId, Duration lifetime, Channel channel,
                                    ApprovalOperation operation) {
         Instant now = clock.instant();
         Instant expiresAt = now.plus(lifetime);
@@ -105,6 +107,9 @@ public class TokenService {
                 .claim(OUTLET_CLAIM, outletId)
                 .claim(CHANNEL_CLAIM, channel.claim())
                 .claim(SESSION_VERSION_CLAIM, staff.getAuthSessionVersion());
+        if (deviceId != null) {
+            builder.claim(DEVICE_CLAIM, deviceId);
+        }
         if (operation != null) {
             builder.claim(OPERATION_CLAIM, operation.name());
         }

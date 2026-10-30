@@ -1,5 +1,6 @@
 package com.counterline.pos.display;
 
+import com.counterline.pos.auth.DashboardUser;
 import com.counterline.pos.auth.DisplaySession;
 import com.counterline.pos.auth.LoginAttemptLimiter;
 import com.counterline.pos.auth.Terminal;
@@ -36,6 +37,7 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -57,6 +59,11 @@ public class DisplayService {
     static final Duration DISPLAY_TOKEN_TTL = Duration.ofDays(30);
     /** "Last seen" is written at most this often, not on every poll. */
     private static final Duration SEEN_EVERY = Duration.ofSeconds(15);
+    /** An access code can be entered for this long; then the display is gone. */
+    static final Duration CODE_LIFETIME = Duration.ofMinutes(10);
+    /** Codes waiting to be entered at one outlet at a time. */
+    static final int MAX_WAITING_PER_OUTLET = 3;
+    private static final long CREATION_LOCK = 0x5d15_0000_0000L;
     /** Throttle key prefix: wrong pairing codes are counted per client address. */
     private static final String CODE_THROTTLE = "display-code:";
 
@@ -87,6 +94,13 @@ public class DisplayService {
 
     /** A new display for this terminal: an access code for the display to connect with. */
     public DisplayStatus create(Terminal terminal) {
+        // One creation per outlet at a time, so the cap below cannot be passed by two terminals at once.
+        displayRepository.lockCreation(CREATION_LOCK + terminal.outletId());
+        Instant cutoff = clock.instant().minus(CODE_LIFETIME);
+        displayRepository.deleteExpiredWaiting(cutoff);
+        if (displayRepository.countWaiting(terminal.outletId(), cutoff) >= MAX_WAITING_PER_OUTLET) {
+            throw new ConflictException("Too many displays are waiting to connect. Connect or disconnect one first.");
+        }
         String code;
         do {
             code = "%06d".formatted(random.nextInt(1_000_000));
@@ -105,8 +119,9 @@ public class DisplayService {
 
     @Transactional(readOnly = true)
     public DisplayStatus status(Long displayId, Long outletId) {
+        Instant now = clock.instant();
         return toStatus(displayRepository.findById(displayId)
-                .filter(display -> display.getOutletId().equals(outletId) && !display.isRevoked())
+                .filter(display -> display.getOutletId().equals(outletId) && !display.isRevoked() && !expired(display, now))
                 .orElseThrow(() -> notFound(displayId)));
     }
 
@@ -133,6 +148,37 @@ public class DisplayService {
         log.info("Customer display {} disconnected", displayId);
     }
 
+    // ---- The dashboard ----
+
+    /** A display as the dashboard lists it: {@code waiting} until its code is entered, then connected. */
+    public record DisplayListing(Long id, Long outletId, String outletName, boolean connected, Instant createdAt,
+                                 Instant connectedAt, Instant lastSeenAt) {
+    }
+
+    /** The displays at the outlets this user can see, connected or still waiting for their code. */
+    @Transactional(readOnly = true)
+    public List<DisplayListing> listFor(DashboardUser user) {
+        return displayRepository.findLive(clock.instant().minus(CODE_LIFETIME)).stream()
+                .filter(display -> user.canSee(display.getOutletId()))
+                .map(display -> new DisplayListing(display.getId(), display.getOutletId(),
+                        outletService.reference(display.getOutletId()).getName(), display.getConnectedAt() != null,
+                        display.getCreatedAt(), display.getConnectedAt(), display.getDisplaySeenAt()))
+                .toList();
+    }
+
+    /**
+     * Disconnects a display from the dashboard (a lost one, say): its token stops working at once. Head office for any
+     * outlet, a manager for their own; anything else is "not found".
+     */
+    public void disconnectFor(Long displayId, DashboardUser user) {
+        Instant now = clock.instant();
+        CustomerDisplay display = displayRepository.lock(displayId)
+                .filter(found -> !found.isRevoked() && !expired(found, now) && user.canSee(found.getOutletId()))
+                .orElseThrow(() -> notFound(displayId));
+        display.revoke(now);
+        log.info("Customer display {} disconnected from the dashboard", displayId);
+    }
+
     // ---- The display ----
 
     /**
@@ -141,17 +187,25 @@ public class DisplayService {
      */
     public DisplayConnection connect(String accessCode, String client) {
         limiter.checkAllowed(CODE_THROTTLE + client);
-        CustomerDisplay display = displayRepository.findByAccessCodeAndConnectedAtIsNullAndRevokedAtIsNull(accessCode)
-                .orElse(null);
+        // Locked: of two displays entering the same code at once, one connects and the other is told it is wrong.
+        CustomerDisplay display = displayRepository.lockWaiting(accessCode, clock.instant().minus(CODE_LIFETIME)).orElse(null);
+        String outletName = null;
+        if (display != null) {
+            try {
+                outletName = outletService.get(display.getOutletId()).name();
+            } catch (ResourceNotFoundException e) {
+                display = null; // a closed outlet's code is as good as a wrong one
+            }
+        }
         if (display == null) {
+            // Wrong, expired, already used or for a closed outlet: the same answer to all of them.
             limiter.recordFailure(CODE_THROTTLE + client);
             throw new BusinessRuleException("Wrong access code. Check the code on the POS under Customer Display.");
         }
         display.connect(clock.instant());
         IssuedToken token = tokenService.issueDisplay(display.getId(), display.getOutletId(), DISPLAY_TOKEN_TTL);
         log.info("Customer display {} connected from {}", display.getId(), client);
-        return new DisplayConnection(token.value(), token.expiresAt(), display.getId(),
-                outletService.get(display.getOutletId()).name());
+        return new DisplayConnection(token.value(), token.expiresAt(), display.getId(), outletName);
     }
 
     /** The display's poll: empty when nothing has changed since {@code sinceVersion}. */
@@ -169,13 +223,7 @@ public class DisplayService {
      * the answer is the same for every customer and carries nothing about any sale.
      */
     public DisplayPosters posters(DisplaySession session) {
-        CustomerDisplay display = active(session);
-        try {
-            outletService.getActive(display.getOutletId());
-        } catch (ResourceNotFoundException e) {
-            // Whatever the outlet's state, the display is told nothing about it.
-            throw new ResourceNotFoundException("No posters available");
-        }
+        active(session);
         return posters.at(clock.instant());
     }
 
@@ -249,17 +297,34 @@ public class DisplayService {
                 .orElseThrow(() -> notFound(displayId));
     }
 
-    /** The display's own row; a disconnected display's token no longer works (401). */
+    /**
+     * The display's own row, for every display endpoint: a disconnected display's token no longer works (401), and
+     * neither does a display whose outlet is closed (404, the same whatever the endpoint; it works again if the
+     * outlet reopens). Nothing about the outlet is said.
+     */
     private CustomerDisplay active(DisplaySession session) {
-        return displayRepository.findById(session.displayId())
+        return openOutlet(displayRepository.findById(session.displayId())
                 .filter(display -> !display.isRevoked())
-                .orElseThrow(() -> new BadCredentialsException("This display has been disconnected"));
+                .orElseThrow(() -> new BadCredentialsException("This display has been disconnected")));
     }
 
     private CustomerDisplay lockActive(DisplaySession session) {
-        return displayRepository.lock(session.displayId())
+        return openOutlet(displayRepository.lock(session.displayId())
                 .filter(display -> !display.isRevoked())
-                .orElseThrow(() -> new BadCredentialsException("This display has been disconnected"));
+                .orElseThrow(() -> new BadCredentialsException("This display has been disconnected")));
+    }
+
+    private CustomerDisplay openOutlet(CustomerDisplay display) {
+        try {
+            outletService.getActive(display.getOutletId());
+        } catch (ResourceNotFoundException e) {
+            throw new ResourceNotFoundException("Display unavailable");
+        }
+        return display;
+    }
+
+    private static boolean expired(CustomerDisplay display, Instant now) {
+        return display.getConnectedAt() == null && display.getCreatedAt().plus(CODE_LIFETIME).compareTo(now) <= 0;
     }
 
     private static ResourceNotFoundException notFound(Long displayId) {

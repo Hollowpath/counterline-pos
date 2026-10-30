@@ -1,5 +1,6 @@
 package com.counterline.pos.orders;
 
+import com.counterline.pos.TestDevices;
 import com.counterline.pos.TestRegister;
 import com.counterline.pos.TestcontainersConfiguration;
 import com.counterline.pos.auth.ApprovalOperation;
@@ -103,7 +104,8 @@ class OptionsAndDiscountsIntegrationTest {
                 .andExpect(jsonPath("$.detail").value("Manager approval needed"));
         payNothing("[5]", "not-a-token").andExpect(status().isForbidden());
         // A cashier's own token is not an approval.
-        String cashierToken = tokenService.issue(staffRepository.findById(cashierId).orElseThrow(), 1L).value();
+        String cashierToken = tokenService.issue(staffRepository.findById(cashierId).orElseThrow(), 1L,
+                TestDevices.active(jdbc, cashierId, 1L)).value();
         payNothing("[5]", cashierToken).andExpect(status().isForbidden());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM sale_order", Integer.class)).isZero();
 
@@ -112,7 +114,8 @@ class OptionsAndDiscountsIntegrationTest {
                 .andExpect(jsonPath("$.status").value("OPEN"));
 
         // The manager's special-access token approves it; the sale stays the cashier's.
-        String approval = tokenService.issueApproval(manager, 1L, Duration.ofMinutes(5), ApprovalOperation.DISCOUNT).value();
+        String approval = tokenService.issueApproval(manager, 1L, TestDevices.active(jdbc, cashierId, 1L),
+                Duration.ofMinutes(5), ApprovalOperation.DISCOUNT).value();
         payNothing("[5]", approval)
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.total").value(0.0))

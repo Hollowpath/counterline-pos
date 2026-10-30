@@ -8,6 +8,7 @@ import com.counterline.pos.staff.Staff;
 import com.counterline.pos.staff.StaffRepository;
 import com.counterline.pos.staff.StaffRole;
 import com.counterline.pos.timecards.TimecardCorrectionService.CloseShift;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -93,6 +94,12 @@ class TimecardLifecycleIntegrationTest {
     private Long cashierId;
     private Long managerId;
     private Long secondManagerId;
+
+    /** Outlets are shared with the other test classes: leave them all open. */
+    @AfterEach
+    void reopenOutlets() {
+        jdbc.update("UPDATE outlet SET active = TRUE");
+    }
 
     @BeforeEach
     void setUp() {

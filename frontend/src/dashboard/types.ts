@@ -122,6 +122,17 @@ export interface TillDevice {
   lastLoginAt: string | null
 }
 
+/** A customer display, connected or waiting for its access code. */
+export interface CustomerDisplayRow {
+  id: number
+  outletId: number
+  outletName: string
+  connected: boolean
+  createdAt: string
+  connectedAt: string | null
+  lastSeenAt: string | null
+}
+
 /** An outlet's PIN pads, each locked on its own by too many wrong PINs in a row. */
 export type PinPad = 'TILL' | 'CLOCK' | 'SETUP'
 
@@ -215,6 +226,8 @@ export const dashboardPaths = {
   promotions: '/api/v1/dashboard/promotions',
   devices: '/api/v1/dashboard/devices',
   deviceReset: (id: number) => `/api/v1/dashboard/devices/${id}/reset`,
+  displays: '/api/v1/dashboard/displays',
+  displayDisconnect: (id: number) => `/api/v1/dashboard/displays/${id}/disconnect`,
   pinLocks: '/api/v1/dashboard/pin-locks',
   pinUnlock: (outletId: number, pad: PinPad) => `/api/v1/dashboard/pin-locks/${outletId}/${pad}/unlock`,
   adminOutlets: '/api/v1/dashboard/admin/outlets',

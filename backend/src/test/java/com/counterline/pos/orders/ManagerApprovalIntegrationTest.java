@@ -1,5 +1,6 @@
 package com.counterline.pos.orders;
 
+import com.counterline.pos.TestDevices;
 import com.counterline.pos.TestRegister;
 import com.counterline.pos.TestcontainersConfiguration;
 import com.counterline.pos.auth.ApprovalOperation;
@@ -337,7 +338,7 @@ class ManagerApprovalIntegrationTest {
     }
 
     private String approval(ApprovalOperation operation) {
-        return tokenService.issueApproval(manager, 1L, Duration.ofMinutes(5), operation).value();
+        return tokenService.issueApproval(manager, 1L, TestDevices.active(jdbc, cashierId, 1L), Duration.ofMinutes(5), operation).value();
     }
 
     /** A manager's approval token as {@code operation} says (absent when null), signed like the real ones. */
@@ -350,7 +351,8 @@ class ManagerApprovalIntegrationTest {
         JwtClaimsSet.Builder claims = JwtClaimsSet.builder().issuer("counterline-pos").id(UUID.randomUUID().toString())
                 .subject(manager.getId().toString()).issuedAt(now).expiresAt(now.plusSeconds(300))
                 .claim("name", manager.getFullName()).claim("role", role).claim("outlet", 1L)
-                .claim("channel", "approval").claim("sver", manager.getAuthSessionVersion());
+                .claim("channel", "approval").claim("sver", manager.getAuthSessionVersion())
+                .claim("device", TestDevices.active(jdbc, cashierId, 1L));
         if (operation != null) {
             claims.claim("operation", operation);
         }

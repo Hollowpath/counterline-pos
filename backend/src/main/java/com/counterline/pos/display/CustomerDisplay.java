@@ -118,6 +118,10 @@ class CustomerDisplay {
         return id;
     }
 
+    Instant getCreatedAt() {
+        return createdAt;
+    }
+
     Long getOutletId() {
         return outletId;
     }

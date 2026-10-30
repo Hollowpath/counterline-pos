@@ -74,7 +74,7 @@ public class AuthService {
             throw new InvalidPinException(limiter.withTriesLeft("Invalid PIN",
                     limiter.recordFailure(pad)));
         }
-        IssuedToken token = tokenService.issue(staff, outlet.id());
+        IssuedToken token = tokenService.issue(staff, outlet.id(), device.getId());
         log.info("Staff {} logged in at outlet {}", staff.getId(), outlet.id());
         return new LoginResponse(token.value(), token.expiresAt(), StaffResponse.from(staff), outlet);
     }
@@ -105,9 +105,10 @@ public class AuthService {
      *
      * @throws SpecialAccessDeniedException if the PIN is wrong or not a manager's
      */
-    public LoginResponse specialAccess(String pin, ApprovalOperation operation, String client, Terminal requestedBy) {
+    public LoginResponse specialAccess(String pin, ApprovalOperation operation, String client, Terminal requestedBy,
+                                       Long deviceId) {
         Staff manager = requireManager(pin, requestedBy.outletId(), PinPad.TILL, client);
-        IssuedToken token = tokenService.issueApproval(manager, requestedBy.outletId(), specialAccessTtl, operation);
+        IssuedToken token = tokenService.issueApproval(manager, requestedBy.outletId(), deviceId, specialAccessTtl, operation);
         log.info("Manager {} granted {} approval to the session of staff {}", manager.getId(), operation,
                 requestedBy.staffId());
         return new LoginResponse(token.value(), token.expiresAt(), StaffResponse.from(manager),

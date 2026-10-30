@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
  * token's session version must equal the current one. A dashboard token also needs the manager's
  * dashboard login to still exist. Deactivating someone, changing their role, outlet, PIN or login,
  * or closing their outlet raises the version, so the old token stays invalid even if the account,
- * outlet or login is later restored. Head-office and customer-display tokens are not affected.
+ * outlet or login is later restored. A till or approval token must also name a till device that is still set up at its outlet. Head-office and customer-display tokens are not affected.
  * The refusal says nothing about the account.
  */
 @Component
@@ -34,6 +34,9 @@ class StaffSessionGuard {
         boolean dashboard = Channel.of(jwt.getClaim(TokenService.CHANNEL_CLAIM)) == Channel.DASHBOARD;
         Object outlet = jwt.getClaim(TokenService.OUTLET_CLAIM);
         Object version = jwt.getClaim(TokenService.SESSION_VERSION_CLAIM);
+        // A till or approval token also names the till device it was issued on: that device must still be set up
+        // at the token's outlet (a reset ends every session of the iPad at once). Dashboard tokens have none.
+        long device = jwt.getClaim(TokenService.DEVICE_CLAIM) instanceof Number number ? number.longValue() : -1L;
         Long staffId = parseId(jwt.getSubject());
         // A token without the session version (issued before it existed) is never valid.
         boolean valid = staffId != null && outlet instanceof Number number && version instanceof Number sessionVersion
@@ -41,8 +44,10 @@ class StaffSessionGuard {
                         SELECT EXISTS (
                             SELECT 1 FROM staff s JOIN outlet o ON o.id = s.outlet_id
                             WHERE s.id = ? AND s.active AND s.role = ? AND s.outlet_id = ? AND o.active
-                              AND s.auth_session_version = ? AND (? = FALSE OR s.email IS NOT NULL))""",
-                        Boolean.class, staffId, role, number.longValue(), sessionVersion.intValue(), dashboard));
+                              AND s.auth_session_version = ? AND (? = FALSE OR s.email IS NOT NULL)
+                              AND (? = TRUE OR EXISTS (SELECT 1 FROM till_device d
+                                                       WHERE d.id = ? AND d.outlet_id = s.outlet_id AND d.reset_at IS NULL)))""",
+                        Boolean.class, staffId, role, number.longValue(), sessionVersion.intValue(), dashboard, dashboard, device));
         if (!valid) {
             throw new InvalidBearerTokenException("The session is no longer valid");
         }
