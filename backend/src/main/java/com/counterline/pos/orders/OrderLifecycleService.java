@@ -55,10 +55,15 @@ public class OrderLifecycleService {
         this.clock = clock;
     }
 
-    /** Pays a placed order in full. Retrying with the same request id returns the paid order. */
+    /**
+     * Pays a placed order in full. Retrying with the same request id returns the paid order, also when the
+     * retry is a double-tap that arrives while the first is still being processed: the order is locked, so
+     * the second request waits and then finds it paid. Locks are always taken in the order: the sale, then the
+     * member's points, then the register.
+     */
     public OrderResponse pay(Long orderId, PayOrderRequest request, Terminal terminal) {
         Long staffId = terminal.staffId();
-        SaleOrder order = findOrder(orderId, terminal.outletId());
+        SaleOrder order = lockOrder(orderId, terminal.outletId());
         if (request.clientRequestId().equals(order.getPaymentRequestId())) {
             return OrderResponse.from(order);
         }
@@ -88,9 +93,10 @@ public class OrderLifecycleService {
         return OrderResponse.from(order);
     }
 
+    /** An unpaid order can be voided with the register closed: no money moves. */
     public OrderResponse voidOrder(Long orderId, String reason, Terminal manager) {
         Long managerId = manager.staffId();
-        SaleOrder order = findOrder(orderId, manager.outletId());
+        SaleOrder order = lockOrder(orderId, manager.outletId());
         Instant now = clock.instant();
         order.voidOrder(reason.strip(), activeStaff(managerId), now);
         orderRepository.saveAndFlush(order);
@@ -99,12 +105,17 @@ public class OrderLifecycleService {
         return OrderResponse.from(order);
     }
 
+    /**
+     * Refunds a paid order in full. The register must be open: the cash goes out of a drawer, so every refund
+     * belongs to a session. (Locks: the sale, the member's points, then the register, as when paying.)
+     */
     public OrderResponse refund(Long orderId, String reason, Terminal manager) {
         Long managerId = manager.staffId();
-        SaleOrder order = findOrder(orderId, manager.outletId());
+        SaleOrder order = lockOrder(orderId, manager.outletId());
         Instant now = clock.instant();
         order.refund(reason.strip(), activeStaff(managerId), now);
         orderLoyalty.reverse(order, now);
+        registerGate.requireOpenForPayment(manager.outletId());
         orderRepository.saveAndFlush(order);
         // The whole sale is undone, so the customer gets their voucher back too.
         voucherService.releaseFor(order.getId());
@@ -112,9 +123,13 @@ public class OrderLifecycleService {
         return OrderResponse.from(order);
     }
 
-    /** Only the outlet's own orders: another outlet's are not found. */
-    private SaleOrder findOrder(Long orderId, Long outletId) {
-        return orderRepository.findByIdAndOutletId(orderId, outletId)
+    /**
+     * Only the outlet's own orders: another outlet's are not found. Locked until the transaction ends, so
+     * paying, voiding, refunding and editing one order happen one at a time and the later ones see the
+     * earlier one's result (and refuse with the usual "not awaiting payment" or "already refunded").
+     */
+    private SaleOrder lockOrder(Long orderId, Long outletId) {
+        return orderRepository.lockByIdAndOutletId(orderId, outletId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order " + orderId + " not found"));
     }
 

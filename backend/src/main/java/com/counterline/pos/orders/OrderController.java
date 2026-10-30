@@ -127,7 +127,9 @@ class OrderController {
         return lifecycle.voidOrder(orderId, request.reason(), Terminal.of(jwt));
     }
 
-    @Operation(summary = "Refund a paid order in full to its original payment methods (manager only)")
+    @Operation(summary = "Refund a paid order in full to its original payment methods (manager only)",
+            description = "The register must be open, so the refund belongs to a session (422 \"Register closed\" otherwise). "
+                    + "Refunding twice is 422, also when two requests race.")
     @PreAuthorize("hasRole('MANAGER')")
     @PostMapping("/orders/{orderId}/refund")
     OrderResponse refundOrder(@PathVariable Long orderId, @Valid @RequestBody ReasonRequest request,
