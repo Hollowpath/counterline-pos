@@ -2,6 +2,7 @@ package com.counterline.pos.outlet;
 
 import com.counterline.pos.common.BadRequestException;
 import com.counterline.pos.common.ConflictException;
+import com.counterline.pos.common.DatabaseConflicts;
 import com.counterline.pos.common.ResourceNotFoundException;
 import com.counterline.pos.register.RegisterService;
 import com.counterline.pos.staff.StaffRepository;
@@ -111,7 +112,9 @@ public class OutletAdminService {
                         + " has staff clocked in. Close their shifts (Reports, Timecards) before deactivating the outlet.");
             }
             outlet.setActive(false);
-            // Everyone's sessions there end for good: reopening the outlet does not revive them.
+            save(outlet);
+            // Everyone's sessions there end for good: reopening the outlet does not revive them. (Versioned: a
+            // staff edit read before this fails with a conflict instead of restoring the old session version.)
             staffRepository.revokeAuthSessions(id);
             log.info("Head office deactivated outlet {}", id);
         }
@@ -122,6 +125,7 @@ public class OutletAdminService {
         Outlet outlet = find(id);
         if (!outlet.isActive()) {
             outlet.setActive(true);
+            save(outlet);
             log.info("Head office reactivated outlet {}", id);
         }
         return AdminOutlet.from(outlet);
@@ -131,12 +135,24 @@ public class OutletAdminService {
         return outlets.findById(id).orElseThrow(() -> new ResourceNotFoundException("Outlet " + id + " not found"));
     }
 
-    /** A concurrent request may take the code or name between the check and the write. */
+    /**
+     * Flushes now, so a conflict surfaces here as a 409: a concurrent request may have taken the code or name
+     * (names compare ignoring case) between the check and the write, or changed this outlet after it was read.
+     */
     private Outlet save(Outlet outlet) {
         try {
             return outlets.saveAndFlush(outlet);
         } catch (DataIntegrityViolationException e) {
-            throw new ConflictException("An outlet with that code or name already exists");
+            if (DatabaseConflicts.violates(e, "outlet_code_uq")) {
+                throw new ConflictException("An outlet with that code already exists");
+            }
+            if (DatabaseConflicts.violates(e, "outlet_name_uq") || DatabaseConflicts.violates(e, "outlet_name_lower_uq")) {
+                throw new ConflictException("An outlet with that name already exists");
+            }
+            if (DatabaseConflicts.isCollision(e)) {
+                throw new ConflictException("An outlet with that code or name already exists");
+            }
+            throw e;
         }
     }
 

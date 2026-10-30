@@ -5,7 +5,9 @@ import com.counterline.pos.auth.PasswordPolicy;
 import com.counterline.pos.auth.PinHasher;
 import com.counterline.pos.common.BadRequestException;
 import com.counterline.pos.common.ConflictException;
+import com.counterline.pos.common.DatabaseConflicts;
 import com.counterline.pos.common.ResourceNotFoundException;
+import com.counterline.pos.outlet.Outlet;
 import com.counterline.pos.outlet.OutletService;
 import com.counterline.pos.timecards.OpenShifts;
 import jakarta.validation.constraints.NotBlank;
@@ -114,7 +116,8 @@ public class StaffAdminService {
     }
 
     public AdminStaff create(StaffRequest request) {
-        outletService.getActive(request.outletId());
+        // Held open until this transaction ends: the outlet cannot be deactivated between this check and the insert.
+        outletService.getActiveHeldOpen(request.outletId());
         String name = requireName(request.fullName());
         String email = login(request.role(), request.email(), request.password());
         String pinHmac = pinHasher.hash(request.pin());
@@ -136,10 +139,17 @@ public class StaffAdminService {
     /** Name, role and outlet; a cashier has no dashboard login, so demoting a manager removes theirs. */
     public AdminStaff update(Long id, StaffEdit request) {
         Staff staff = find(id);
-        if (!request.outletId().equals(staff.getOutletId())) {
-            // The new outlet's lock first, then the person's (the order Clock In and an outlet's deactivation
-            // use): the outlet cannot be deactivated between this check and the move.
-            outletService.getActiveHeldOpen(request.outletId());
+        boolean moved = !request.outletId().equals(staff.getOutletId());
+        boolean leavesAsManager = staff.isActive() && staff.getRole() == StaffRole.MANAGER
+                && (moved || request.role() != StaffRole.MANAGER);
+        // The outlets' locks first (lowest id first), then the person's, the order Clock In and an outlet's
+        // deactivation use: the new outlet cannot be deactivated between this check and the move, and two
+        // managers of one outlet cannot both be removed at once.
+        Outlet leaving = holdOutlets(leavesAsManager ? staff.getOutletId() : null, moved ? request.outletId() : null);
+        if (leavesAsManager) {
+            requireAnotherManager(staff, leaving, moved ? "moving them to another outlet" : "changing their role");
+        }
+        if (moved) {
             requireNoOpenShift(staff, "moving them to another outlet");
         }
         String name = requireName(request.fullName());
@@ -161,7 +171,6 @@ public class StaffAdminService {
         }
         String currentEmail = staff.getEmail();
         String currentHash = staff.getPasswordHash();
-        boolean moved = !request.outletId().equals(staff.getOutletId());
         boolean roleChanged = request.role() != staff.getRole();
         staff.edit(name, request.role(), request.outletId());
         if (moved || roleChanged || (email != null && !email.equals(currentEmail)) || hasPassword) {
@@ -193,12 +202,56 @@ public class StaffAdminService {
     public AdminStaff deactivate(Long id) {
         Staff staff = find(id);
         if (staff.isActive()) {
+            if (staff.getRole() == StaffRole.MANAGER) {
+                requireAnotherManager(staff, outletService.lockForChange(staff.getOutletId()), "deactivating them");
+            }
             requireNoOpenShift(staff, "deactivating them");
             staff.deactivate();
             staff.revokeAuthSessions();
+            staff = save(staff);
             log.info("Head office deactivated staff {}", id);
         }
         return AdminStaff.from(staff);
+    }
+
+    /**
+     * Locks the outlets a change touches, lowest id first so two changes cannot wait on each other:
+     * {@code exclusiveId} (the outlet a manager leaves) exclusively, {@code sharedId} (the outlet someone
+     * joins) held open. Either may be null.
+     *
+     * @return the exclusively locked outlet, or null
+     */
+    private Outlet holdOutlets(Long exclusiveId, Long sharedId) {
+        if (exclusiveId == null) {
+            if (sharedId != null) {
+                outletService.getActiveHeldOpen(sharedId);
+            }
+            return null;
+        }
+        if (sharedId != null && sharedId < exclusiveId) {
+            outletService.getActiveHeldOpen(sharedId);
+            return outletService.lockForChange(exclusiveId);
+        }
+        Outlet leaving = outletService.lockForChange(exclusiveId);
+        if (sharedId != null) {
+            outletService.getActiveHeldOpen(sharedId);
+        }
+        return leaving;
+    }
+
+    /**
+     * An open outlet always keeps a manager: the one who sets up its till and approves its voids and refunds.
+     * Called with the outlet locked, so two managers cannot be removed at the same moment. A closed outlet is
+     * not held to it, so it can always be wound down and brought back (reactivate it, then add or reactivate a manager).
+     *
+     * @throws ConflictException (409) if {@code manager} is the outlet's only active manager
+     */
+    private void requireAnotherManager(Staff manager, Outlet outlet, String action) {
+        if (outlet.isActive() && staffRepository.countByOutletIdAndRoleAndActiveTrueAndIdNot(
+                outlet.getId(), StaffRole.MANAGER, manager.getId()) == 0) {
+            throw new ConflictException(manager.getFullName() + " is the only active manager of " + outlet.getName()
+                    + ". Add or reactivate another manager before " + action + ".");
+        }
     }
 
     /**
@@ -221,11 +274,13 @@ public class StaffAdminService {
         Staff staff = find(id);
         if (!staff.isActive()) {
             try {
-                outletService.getActive(staff.getOutletId());
+                // Held open until this transaction ends, so the outlet cannot close between the check and the change.
+                outletService.getActiveHeldOpen(staff.getOutletId());
             } catch (ResourceNotFoundException e) {
                 throw new ConflictException("Reactivate the staff member's outlet first, or move them to an open outlet");
             }
             staff.reactivate();
+            staff = save(staff);
             log.info("Head office reactivated staff {}", id);
         }
         return AdminStaff.from(staff);
@@ -307,12 +362,24 @@ public class StaffAdminService {
         }
     }
 
-    /** A concurrent request may take the PIN or e-mail between the check and the write. */
+    /**
+     * Flushes now, so a conflict surfaces here as a 409: a concurrent request may have taken the PIN or e-mail
+     * between the check and the write, or changed this person after they were read (optimistic version).
+     */
     private Staff save(Staff staff) {
         try {
             return staffRepository.saveAndFlush(staff);
         } catch (DataIntegrityViolationException e) {
-            throw new ConflictException("That PIN or e-mail address is already in use");
+            if (DatabaseConflicts.violates(e, "staff_pin_hmac_uq")) {
+                throw new ConflictException(PIN_TAKEN);
+            }
+            if (DatabaseConflicts.violates(e, "staff_email_uq")) {
+                throw new ConflictException("That e-mail address is already in use");
+            }
+            if (DatabaseConflicts.isCollision(e)) {
+                throw new ConflictException("That PIN or e-mail address is already in use");
+            }
+            throw e;
         }
     }
 }

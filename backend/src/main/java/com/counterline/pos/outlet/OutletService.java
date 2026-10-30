@@ -49,6 +49,18 @@ public class OutletService {
                 .orElseThrow(() -> new ResourceNotFoundException("Outlet " + id + " not found"));
     }
 
+    /**
+     * For a change that must not run beside another change to the outlet's staff or state (deactivating the
+     * outlet, removing its last manager): the row is locked exclusively until this transaction ends, whether the
+     * outlet is open or not. Locking order everywhere: the outlets (lowest id first), then the staff member.
+     *
+     * @throws ResourceNotFoundException for an unknown outlet
+     */
+    public Outlet lockForChange(Long id) {
+        return outletRepository.lockForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Outlet " + id + " not found"));
+    }
+
     /** A reference without loading the row; the caller already knows the outlet exists (it is in the token). */
     public Outlet reference(Long id) {
         return outletRepository.getReferenceById(id);

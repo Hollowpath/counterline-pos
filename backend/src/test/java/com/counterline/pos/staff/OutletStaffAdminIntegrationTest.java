@@ -218,6 +218,7 @@ class OutletStaffAdminIntegrationTest {
         String password = "pw-" + UUID.randomUUID();
         String email = "dup-" + suffix + "@shop.test";
         long first = createStaff(outlet, "MANAGER", pin, "First", email, password);
+        createStaff(outlet, "MANAGER", pin(), "Second Manager", null, null); // so the first can be deactivated below
 
         // PIN and name.
         call(post(STAFF), admin, json("fullName", "Short Pin", "role", "STAFF", "outletId", outlet, "pin", "12345")).andExpect(status().isBadRequest());
@@ -261,6 +262,14 @@ class OutletStaffAdminIntegrationTest {
         long manager = createStaff(outlet, "MANAGER", pin(), "Edit Me", email, password);
         dashboardToken(email, password);
 
+        // An open outlet keeps its last active manager: not deactivated, demoted or moved away while they are the only one.
+        call(post(STAFF + "/" + manager + "/deactivate"), admin, null).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(containsString("only active manager")));
+        call(put(STAFF + "/" + manager), admin, json("fullName", "Edit Me", "role", "STAFF", "outletId", outlet)).andExpect(status().isConflict());
+        call(put(STAFF + "/" + manager), admin, json("fullName", "Edit Me", "role", "MANAGER", "outletId", elsewhere)).andExpect(status().isConflict());
+        createStaff(outlet, "MANAGER", pin(), "Stays Behind", null, null);
+        createStaff(elsewhere, "MANAGER", pin(), "Already There", null, null);
+
         call(put(STAFF + "/" + manager), admin, json("fullName", "Edited Name", "role", "MANAGER", "outletId", elsewhere))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fullName").value("Edited Name"))
@@ -300,6 +309,7 @@ class OutletStaffAdminIntegrationTest {
         String password = "pw-" + UUID.randomUUID();
         long manager = createStaff(outlet, "MANAGER", managerPin, "Lock Manager", email, password);
         long cashier = createStaff(outlet, "STAFF", cashierPin, "Lock Cashier", null, null);
+        createStaff(outlet, "MANAGER", pin(), "Spare Manager", null, null); // an open outlet keeps a manager
         String deviceKey = JsonPath.read(mockMvc.perform(post("/api/v1/auth/terminal-setup").contentType(MediaType.APPLICATION_JSON)
                         .content(json("pin", managerPin, "outletId", outlet)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.deviceKey");
@@ -424,6 +434,7 @@ class OutletStaffAdminIntegrationTest {
         long outlet = createOutlet("r" + suffix.substring(0, 5), "Revoke " + suffix, null);
         long elsewhere = createOutlet("q" + suffix.substring(0, 5), "Elsewhere " + suffix, null);
         String password = "pw-" + UUID.randomUUID();
+        createStaff(elsewhere, "MANAGER", pin(), "Elsewhere Manager", null, null); // an open outlet keeps a manager
         for (String state : List.of("deactivate", "demote", "move", "remove-login")) {
             String email = state + "-" + suffix + "@shop.test";
             long manager = createStaff(outlet, "MANAGER", pin(), "Revoked " + state, email, password);

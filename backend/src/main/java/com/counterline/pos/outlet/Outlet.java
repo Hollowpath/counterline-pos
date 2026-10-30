@@ -5,6 +5,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /** A shop of the chain. Each POS terminal is bound to one; sales, registers and reports are per outlet. */
 @Entity
@@ -14,6 +15,10 @@ public class Outlet {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /** Optimistic version: an edit made from a copy read before another change was committed fails (409). */
+    @Version
+    private long version;
 
     private String code;
 

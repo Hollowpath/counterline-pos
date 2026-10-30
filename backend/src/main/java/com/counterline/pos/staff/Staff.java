@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "staff")
@@ -15,6 +16,13 @@ public class Staff {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /**
+     * Optimistic version: a change made from a copy read before another change was committed fails (409)
+     * instead of writing the old values back. Every change to the row, bulk session revocation included, raises it.
+     */
+    @Version
+    private long version;
 
     private String fullName;
 

@@ -85,6 +85,8 @@ class StaffSessionRevocationIntegrationTest {
         elsewhere = createOutlet("v" + suffix.substring(0, 5));
         String setupPin = pin();
         createStaff(outlet, "MANAGER", setupPin, "Set-up Manager", null);
+        // An open outlet keeps a manager, so a manager moved there and back is never its only one.
+        createStaff(elsewhere, "MANAGER", pin(), "Elsewhere Manager", null);
         deviceKey = JsonPath.read(mockMvc.perform(post("/api/v1/auth/terminal-setup").contentType(MediaType.APPLICATION_JSON)
                         .content(json("pin", setupPin, "outletId", outlet)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.deviceKey");

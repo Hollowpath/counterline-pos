@@ -15,6 +15,16 @@ public final class DatabaseConflicts {
     private DatabaseConflicts() {
     }
 
+    /** Whether {@code error} (or what caused it) names the database constraint {@code constraint}, e.g. a unique index. */
+    public static boolean violates(Throwable error, String constraint) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause() == cause ? null : cause.getCause()) {
+            if (cause.getMessage() != null && cause.getMessage().contains("\"" + constraint + "\"")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Whether {@code error} (or what caused it) is PostgreSQL's unique or foreign-key violation. */
     public static boolean isCollision(Throwable error) {
         for (Throwable cause = error; cause != null; cause = cause.getCause() == cause ? null : cause.getCause()) {

@@ -4,6 +4,7 @@ import com.counterline.pos.auth.Terminal;
 import com.counterline.pos.common.BusinessRuleException;
 import com.counterline.pos.common.ConflictException;
 import com.counterline.pos.outlet.OutletProperties;
+import com.counterline.pos.outlet.OutletService;
 import com.counterline.pos.register.RegisterDtos.CloseRequest;
 import com.counterline.pos.register.RegisterDtos.MovementRequest;
 import com.counterline.pos.register.RegisterDtos.MovementResponse;
@@ -40,12 +41,14 @@ public class RegisterService {
     private final StaffRepository staffRepository;
     private final ReportService reports;
     private final OutletProperties outlet;
+    private final OutletService outletService;
     private final JdbcTemplate jdbc;
     private final Clock clock;
 
     RegisterService(RegisterSessionRepository sessionRepository, StaffRepository staffRepository,
-                    ReportService reports, OutletProperties outlet, JdbcTemplate jdbc, Clock clock) {
+                    ReportService reports, OutletProperties outlet, OutletService outletService, JdbcTemplate jdbc, Clock clock) {
         this.sessionRepository = sessionRepository;
+        this.outletService = outletService;
         this.staffRepository = staffRepository;
         this.reports = reports;
         this.outlet = outlet;
@@ -74,6 +77,9 @@ public class RegisterService {
     /** Opens the register with the declared float (none declared is RM0.00). Nothing carries over from an earlier session. */
     public SessionResponse open(OpenRequest request, Terminal terminal) {
         Long staffId = terminal.staffId();
+        // The outlet must be open, and stays open (it cannot be deactivated, which refuses while a register is
+        // open) until this transaction ends. Locking order everywhere: the outlet first, then the rest.
+        outletService.getActiveHeldOpen(terminal.outletId());
         BigDecimal openingFloat = request == null || request.openingFloat() == null
                 ? ZERO : request.openingFloat().setScale(2);
         if (sessionRepository.findByOutletIdAndClosedAtIsNull(terminal.outletId()).isPresent()) {
