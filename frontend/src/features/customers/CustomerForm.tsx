@@ -3,6 +3,7 @@ import { ApiError } from '../../api/http'
 import { DateField } from '../../components/DateField'
 import { Dialog } from '../../components/Dialog'
 import { PhoneInput } from '../../components/PhoneInput'
+import { FUTURE_BIRTH_DATE, isFutureDate, todayIso } from '../../lib/dates'
 import { maskEmail, maskPhone } from '../../lib/privacy'
 import { createCustomer, deleteCustomer, updateCustomer } from './customersApi'
 import type { Customer, CustomerFields, Gender } from './types'
@@ -118,8 +119,12 @@ export function CustomerForm({ customer, onSaved, onDeleted, onCancel }: Custome
     }
   }
 
+  // A birth date after today: said at the field, and never sent.
+  const birthMessage = fields.dateOfBirth && isFutureDate(fields.dateOfBirth) ? FUTURE_BIRTH_DATE : null
+
   function save(event: FormEvent) {
     event.preventDefault()
+    if (birthMessage) return
     const payload = normalise(fields)
     void run(async () => onSaved(customer ? await updateCustomer(customer.id, customer.version, payload) : await createCustomer(payload)))
   }
@@ -167,8 +172,10 @@ export function CustomerForm({ customer, onSaved, onDeleted, onCancel }: Custome
               <DateField
                 value={fields.dateOfBirth ?? ''}
                 disabled={busy}
+                max={todayIso()}
                 onChange={(dateOfBirth) => setFields((current) => ({ ...current, dateOfBirth: dateOfBirth || null }))}
               />
+              {birthMessage && <span className="text-sm font-medium text-red-600" role="alert">{birthMessage}</span>}
             </div>
             <label className={field}>
               Gender
@@ -259,7 +266,7 @@ export function CustomerForm({ customer, onSaved, onDeleted, onCancel }: Custome
           <button type="button" className="btn" onClick={onCancel} disabled={busy}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary" disabled={busy || !complete(fields)}>
+          <button type="submit" className="btn btn-primary" disabled={busy || !complete(fields) || birthMessage !== null}>
             {busy ? 'Saving…' : 'Save'}
           </button>
         </div>

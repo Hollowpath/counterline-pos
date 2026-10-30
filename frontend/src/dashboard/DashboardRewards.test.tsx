@@ -15,7 +15,8 @@ const member = {
   createdAt: '2026-10-01T10:00:00Z', updatedAt: '2026-10-01T10:00:00Z',
 }
 
-function stubApi() {
+/** `overrides`: answers to particular calls (by "METHOD /path"), in place of the in-memory ones. */
+function stubApi(overrides: Record<string, (body: Record<string, unknown> | null) => Response> = {}) {
   const calls: { key: string; body: unknown }[] = []
   let balance = 3
   const entries: unknown[] = []
@@ -25,6 +26,8 @@ function stubApi() {
     const key = `${init.method ?? 'GET'} ${url.pathname}`
     const body = init.body ? JSON.parse(String(init.body)) : null
     calls.push({ key, body })
+    const override = overrides[key]
+    if (override) return override(body)
     switch (key) {
       case 'GET /api/v1/dashboard/live':
         return json({ date: '2026-10-13', orderCount: 0, netSales: 0, outlets: [], generatedAt: '2026-10-13T02:00:00Z' })
@@ -65,6 +68,13 @@ function stubApi() {
 }
 
 const nav = () => within(screen.getByRole('navigation', { name: 'Dashboard' }))
+
+async function openMember(user: ReturnType<typeof userEvent.setup>) {
+  render(<DashboardApp />)
+  await user.click(nav().getByRole('button', { name: 'Customers' }))
+  await user.click(await screen.findByRole('button', { name: /Nur Aisyah/ }))
+  await screen.findByTestId('points-balance')
+}
 
 beforeEach(() => {
   sessionStorage.clear()
@@ -117,5 +127,130 @@ describe('dashboard: vouchers and member rewards', () => {
     expect(await screen.findByText('1 × Birthday Reward')).toBeInTheDocument()
     expect(calls.find((call) => call.key === 'POST /api/v1/dashboard/customers/5/owed-items')!.body)
       .toEqual({ promotionId: 5, quantity: 1, reason: 'Forgot the birthday can on R40' })
+  })
+
+  it('says what is wrong with the points typed, and sends nothing until they are right', async () => {
+    const calls = stubApi()
+    const user = userEvent.setup()
+    await openMember(user)
+    const adjust = screen.getByRole('form', { name: 'Adjust points' })
+    const points = within(adjust).getByLabelText('Points to add or take away')
+    const button = within(adjust).getByRole('button', { name: 'Adjust' })
+    await user.type(within(adjust).getByLabelText('Reason for the adjustment'), 'Points missed on R12')
+
+    for (const [typed, problem] of [
+      ['2.5', 'Points must be a whole number'], ['1.9', 'Points must be a whole number'], ['-2.5', 'Points must be a whole number'],
+      ['0.5', 'Points must be a whole number'], ['0', "Points can't be 0"], ['-0', "Points can't be 0"],
+      ['10001', 'Points must be from -10,000 to 10,000'], ['-10001', 'Points must be from -10,000 to 10,000'],
+    ]) {
+      await user.clear(points)
+      await user.type(points, typed)
+      expect(within(adjust).getByRole('alert'), typed).toHaveTextContent(problem)
+      expect(button, typed).toBeDisabled()
+    }
+    // Both ends of the range, and the nearest whole numbers to nothing, are fine.
+    for (const typed of ['10000', '-10000', '1', '-1']) {
+      await user.clear(points)
+      await user.type(points, typed)
+      expect(within(adjust).queryByRole('alert'), typed).not.toBeInTheDocument()
+      expect(button, typed).toBeEnabled()
+    }
+    expect(calls.some((call) => call.key === 'POST /api/v1/dashboard/customers/5/points')).toBe(false)
+  })
+
+  it('asks for a reason once the field has been left empty', async () => {
+    stubApi()
+    const user = userEvent.setup()
+    await openMember(user)
+    const adjust = screen.getByRole('form', { name: 'Adjust points' })
+    await user.type(within(adjust).getByLabelText('Points to add or take away'), '3')
+    expect(within(adjust).queryByRole('alert')).not.toBeInTheDocument()
+
+    await user.click(within(adjust).getByLabelText('Reason for the adjustment'))
+    await user.tab()
+    expect(within(adjust).getByRole('alert')).toHaveTextContent('Give a reason for the adjustment')
+    expect(within(adjust).getByRole('button', { name: 'Adjust' })).toBeDisabled()
+
+    await user.type(within(adjust).getByLabelText('Reason for the adjustment'), 'Typo')
+    expect(within(adjust).queryByRole('alert')).not.toBeInTheDocument()
+    expect(within(adjust).getByRole('button', { name: 'Adjust' })).toBeEnabled()
+  })
+
+  it('shows what the server refused an adjustment for, and clears it as soon as a field is edited', async () => {
+    stubApi({
+      'POST /api/v1/dashboard/customers/5/points': () => json({ title: 'Request cannot be completed', detail: 'Nur Aisyah has only 3 points' }, 422),
+    })
+    const user = userEvent.setup()
+    await openMember(user)
+    const adjust = screen.getByRole('form', { name: 'Adjust points' })
+    const points = within(adjust).getByLabelText('Points to add or take away')
+    const reason = within(adjust).getByLabelText('Reason for the adjustment')
+
+    await user.type(points, '-9')
+    await user.type(reason, 'Typo')
+    await user.click(within(adjust).getByRole('button', { name: 'Adjust' }))
+    expect(await within(adjust).findByRole('alert')).toHaveTextContent('Nur Aisyah has only 3 points')
+
+    // Editing either field takes the old answer away at once.
+    await user.type(points, '1')
+    expect(within(adjust).queryByRole('alert')).not.toBeInTheDocument()
+    await user.click(within(adjust).getByRole('button', { name: 'Adjust' }))
+    expect(await within(adjust).findByRole('alert')).toHaveTextContent('Nur Aisyah has only 3 points')
+    await user.type(reason, '!')
+    expect(within(adjust).queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('never shows a raw failure to the user', async () => {
+    stubApi({
+      'POST /api/v1/dashboard/customers/5/points': () => { throw new TypeError('NetworkError when attempting to fetch resource.') },
+    })
+    const user = userEvent.setup()
+    await openMember(user)
+    const adjust = screen.getByRole('form', { name: 'Adjust points' })
+    await user.type(within(adjust).getByLabelText('Points to add or take away'), '4')
+    await user.type(within(adjust).getByLabelText('Reason for the adjustment'), 'Typo')
+    await user.click(within(adjust).getByRole('button', { name: 'Adjust' }))
+
+    expect(await within(adjust).findByRole('alert')).toHaveTextContent(/^Offline$/)
+  })
+
+  it('checks how many are owed, what from and why, and clears a refusal as soon as a field is edited', async () => {
+    const calls = stubApi({
+      'POST /api/v1/dashboard/customers/5/owed-items': () => json({ title: 'Request cannot be completed', detail: 'Birthday Reward is not running' }, 422),
+    })
+    const user = userEvent.setup()
+    await openMember(user)
+    const owe = screen.getByRole('form', { name: 'Owe a free item' })
+    const how = within(owe).getByLabelText('How many')
+    const button = within(owe).getByRole('button', { name: 'Owe item' })
+    await user.selectOptions(within(owe).getByLabelText('Promotion'), '5')
+    await user.type(within(owe).getByLabelText('Reason for owing'), 'Forgot the birthday can on R40')
+
+    for (const typed of ['0', '11', '2.5', '-1']) {
+      await user.clear(how)
+      await user.type(how, typed)
+      expect(within(owe).getByRole('alert'), typed).toHaveTextContent('How many must be a whole number from 1 to 10')
+      expect(button, typed).toBeDisabled()
+    }
+    await user.clear(how)
+    await user.type(how, '10')
+    expect(within(owe).queryByRole('alert')).not.toBeInTheDocument()
+    expect(calls.some((call) => call.key === 'POST /api/v1/dashboard/customers/5/owed-items')).toBe(false)
+
+    await user.click(button)
+    expect(await within(owe).findByRole('alert')).toHaveTextContent('Birthday Reward is not running')
+    await user.clear(how)
+    await user.type(how, '2')
+    expect(within(owe).queryByRole('alert')).not.toBeInTheDocument()
+
+    await user.click(button)
+    expect(await within(owe).findByRole('alert')).toHaveTextContent('Birthday Reward is not running')
+    await user.type(within(owe).getByLabelText('Reason for owing'), '!')
+    expect(within(owe).queryByRole('alert')).not.toBeInTheDocument()
+
+    await user.click(button)
+    expect(await within(owe).findByRole('alert')).toBeInTheDocument()
+    await user.selectOptions(within(owe).getByLabelText('Promotion'), '5')
+    expect(within(owe).queryByRole('alert')).not.toBeInTheDocument()
   })
 })

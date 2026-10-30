@@ -160,9 +160,11 @@ public class SalesOverviewService {
                     long orders = rs.getLong("orders");
                     BigDecimal sales = rs.getBigDecimal("sales");
                     BigDecimal refunds = rs.getBigDecimal("refunds");
+                    // The average of the Net sales figure beside it (after refunds), over the orders paid in the period.
+                    BigDecimal net = sales.subtract(refunds);
                     BigDecimal average = orders == 0 ? BigDecimal.ZERO
-                            : sales.divide(BigDecimal.valueOf(orders), 2, RoundingMode.HALF_UP);
-                    return new Figures(money(sales.subtract(refunds)), orders, money(average), rs.getLong("items"),
+                            : net.divide(BigDecimal.valueOf(orders), 2, RoundingMode.HALF_UP);
+                    return new Figures(money(net), orders, money(average), rs.getLong("items"),
                             rs.getLong("member_orders"), rs.getLong("new_members"), rs.getLong("free_items"),
                             money(rs.getBigDecimal("free_value")), money(rs.getBigDecimal("discounts")),
                             rs.getLong("refund_count"), money(refunds));

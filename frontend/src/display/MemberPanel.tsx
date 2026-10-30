@@ -4,6 +4,7 @@ import { CountryPicker } from '../components/CountryPicker'
 import { DateField } from '../components/DateField'
 import { PhoneInput } from '../components/PhoneInput'
 import { usePhoneNumber } from '../components/phone'
+import { FUTURE_BIRTH_DATE, isFutureDate, todayIso } from '../lib/dates'
 import { displayPaths, type DisplayState, type MemberStatus, type SignUpRequest } from './types'
 
 type Mode = 'menu' | 'login' | 'signup'
@@ -189,9 +190,12 @@ function MemberSignUp({ onDone, onBack }: { onDone: (waiting: Waiting) => void; 
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => setForm({ ...form, [key]: value })
+  // A birth date after today: said at the field, and never sent.
+  const birthMessage = form.dateOfBirth && isFutureDate(form.dateOfBirth) ? FUTURE_BIRTH_DATE : null
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (birthMessage) return
     setSending(true)
     setError(null)
     const request: SignUpRequest = {
@@ -243,7 +247,8 @@ function MemberSignUp({ onDone, onBack }: { onDone: (waiting: Waiting) => void; 
         </fieldset>
         <div className="flex flex-1 flex-col gap-1.5 text-sm font-medium text-zinc-700">
           Date of birth
-          <DateField value={form.dateOfBirth} onChange={(dateOfBirth) => setForm((current) => ({ ...current, dateOfBirth }))} />
+          <DateField value={form.dateOfBirth} max={todayIso()} onChange={(dateOfBirth) => setForm((current) => ({ ...current, dateOfBirth }))} />
+          {birthMessage && <span className="text-sm font-medium text-red-700" role="alert">{birthMessage}</span>}
         </div>
       </div>
       <fieldset className="flex-1 rounded-2xl bg-zinc-50 px-3.5 pt-2 pb-2.5 text-sm ring-1 ring-zinc-200/70 ring-inset">
@@ -259,7 +264,7 @@ function MemberSignUp({ onDone, onBack }: { onDone: (waiting: Waiting) => void; 
         </label>
       </fieldset>
       {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700! ring-1 ring-red-200 ring-inset" role="alert">{error}</p>}
-      <button type="submit" className={primary} disabled={sending}>
+      <button type="submit" className={primary} disabled={sending || birthMessage !== null}>
         {sending ? 'Registering…' : 'Register'}
       </button>
       <button type="button" className={secondary} onClick={onBack}>

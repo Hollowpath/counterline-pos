@@ -22,6 +22,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.contains;
@@ -85,6 +87,23 @@ class CustomerApiIntegrationTest {
     }
 
     @Test
+    void aBirthDateUpToTodayIsAcceptedAndTomorrowsIsNot() throws Exception {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kuala_Lumpur"));
+        String body = "{\"firstName\":\"A\",\"lastName\":\"B\",\"phone\":\"%s\",\"dateOfBirth\":\"%s\"}";
+        perform(post("/api/v1/customers"), body.formatted("0123450001", today.plusDays(1)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Date of birth can't be in the future"));
+        perform(post("/api/v1/customers"), body.formatted("0123450002", today.plusYears(1)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Date of birth can't be in the future"));
+        perform(post("/api/v1/customers"), body.formatted("0123450003", today))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.dateOfBirth").value(today.toString()));
+        perform(post("/api/v1/customers"), body.formatted("0123450004", today.minusDays(1))).andExpect(status().isCreated());
+        // Editing is held to the same rule.
+        perform(put("/api/v1/customers/1"), "{\"version\":0,\"firstName\":\"A\",\"lastName\":\"B\",\"phone\":\"0123450003\",\"dateOfBirth\":\"%s\"}"
+                .formatted(today.plusDays(1)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Date of birth can't be in the future"));
+    }
+
+    @Test
     void rejectsInvalidInput() throws Exception {
         // First name, last name and phone number are required.
         perform(post("/api/v1/customers"), "{\"lastName\":\"Only\",\"phone\":\"0123456789\"}").andExpect(status().isBadRequest());
@@ -93,7 +112,8 @@ class CustomerApiIntegrationTest {
         perform(post("/api/v1/customers"), "{\"firstName\":\"A\",\"lastName\":\"B\",\"phone\":\"0123456789\",\"email\":\"not-an-email\"}")
                 .andExpect(status().isBadRequest());
         perform(post("/api/v1/customers"), "{\"firstName\":\"A\",\"lastName\":\"B\",\"phone\":\"0123456789\",\"dateOfBirth\":\"2999-01-01\"}")
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Date of birth can't be in the future"));
         perform(post("/api/v1/customers"), "{\"firstName\":\"A\",\"lastName\":\"B\",\"phone\":\"12345\"}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("Enter a valid phone number"));

@@ -256,6 +256,48 @@ class VouchersAndAdjustmentsIntegrationTest {
     }
 
     @Test
+    void aPointsAdjustmentIsAWholeJsonNumberInRangeAndIsNeverTruncated() throws Exception {
+        String rule = "Points must be a whole number from -10,000 to 10,000, and not 0";
+        String url = "/api/v1/dashboard/customers/" + memberId + "/points";
+        // Fractions, numeric strings and every other type are refused as they are, not converted: 2.5 is not 2.
+        for (String points : List.of("2.5", "1.9", "-2.5", "0.5", "\"3\"", "\"2.5\"", "0", "-0", "0.0", "2.0", "1e2", "true",
+                "null", "[]", "[3]", "{}", "10001", "-10001", "99999999999", "123456789012345678901234567890")) {
+            call(post(url), admin(), "{\"points\":" + points + ",\"reason\":\"Probe\"}")
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.detail").value(rule));
+        }
+        call(post(url), admin(), "{\"reason\":\"Probe\"}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value(rule));
+        // Nothing was recorded by any of them.
+        call(get(url), admin(), null).andExpect(jsonPath("$.balance").value(0)).andExpect(jsonPath("$.entries").isEmpty());
+
+        // Both ends of the range are valid: +10,000, then back down to 0.
+        call(post(url), admin(), "{\"points\":10000,\"reason\":\"Upper limit\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.balance").value(10000));
+        call(post(url), admin(), "{\"points\":-10000,\"reason\":\"Lower limit\"}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.balance").value(0));
+        call(post(url), admin(), "{\"points\":1,\"reason\":\"One\"}").andExpect(status().isOk()).andExpect(jsonPath("$.balance").value(1));
+        call(post(url), admin(), "{\"points\":-1,\"reason\":\"One back\"}").andExpect(status().isOk()).andExpect(jsonPath("$.balance").value(0));
+
+        // The balance still cannot go below zero.
+        call(post(url), admin(), "{\"points\":-1,\"reason\":\"Too many\"}").andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value("Nur Aisyah has only 0 points"));
+    }
+
+    @Test
+    void aPointsAdjustmentNeedsAReasonOfAReasonableLength() throws Exception {
+        String url = "/api/v1/dashboard/customers/" + memberId + "/points";
+        for (String reason : List.of("\"\"", "\"   \"", "null")) {
+            call(post(url), admin(), "{\"points\":3,\"reason\":" + reason + "}")
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Give a reason for the adjustment"));
+        }
+        call(post(url), admin(), "{\"points\":3}").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Give a reason for the adjustment"));
+        call(post(url), admin(), "{\"points\":3,\"reason\":\"" + "x".repeat(201) + "\"}").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("The reason can be at most 200 characters"));
+        call(post(url), admin(), "{\"points\":3,\"reason\":\"" + "x".repeat(200) + "\"}").andExpect(status().isOk());
+    }
+
+    @Test
     void aFreeItemTheStaffForgotIsGivenOnTheMembersNextSale() throws Exception {
         // Not their birthday month and only one item bought: the birthday can isn't allowed...
         sellBirthdayCan().andExpect(status().isUnprocessableContent());

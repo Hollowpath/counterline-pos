@@ -2,7 +2,6 @@ package com.counterline.pos.customers;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Size;
 
 import java.time.Instant;
@@ -31,7 +30,8 @@ public final class CustomerDtos {
             @NotBlank @Size(max = 60) String firstName,
             @NotBlank @Size(max = 60) String lastName,
             @Size(max = 120) String companyName,
-            @Past LocalDate dateOfBirth,
+            // Not in the future: checked in CustomerService, for a message the form can show.
+            LocalDate dateOfBirth,
             Gender gender,
             @Email @Size(max = 254) String email,
             @NotBlank @Size(max = 30) String phone,

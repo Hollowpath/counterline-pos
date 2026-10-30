@@ -31,13 +31,15 @@ const iso = ({ day, month, year }: Parts) => `${year}-${pad(month)}-${pad(day)}`
  * picker. Turning a wheel sets the date at once; Done closes it, Clear empties it. {@code value}
  * is "YYYY-MM-DD" or "" (not set).
  */
-export function DateField({ value, onChange, label = 'Date of birth', disabled = false, years = 100 }: {
+export function DateField({ value, onChange, label = 'Date of birth', disabled = false, years = 100, max }: {
   value: string
   onChange: (value: string) => void
   label?: string
   disabled?: boolean
-  /** How many years back from this one the year wheel goes. */
+  /** How many years back from the latest year the year wheel goes. */
   years?: number
+  /** The latest date that can be picked ("YYYY-MM-DD", e.g. today for a birth date): the year wheel stops at its year, and a later pick is brought back to it. */
+  max?: string
 }) {
   const [open, setOpen] = useState(false)
   const [place, setPlace] = useState({ up: false, end: false })
@@ -45,8 +47,8 @@ export function DateField({ value, onChange, label = 'Date of birth', disabled =
   const field = useRef<HTMLButtonElement>(null)
   const parts = parse(value)
   const shown = parts ?? DEFAULT_DATE
-  const thisYear = new Date().getFullYear()
-  const yearOptions = Array.from({ length: years + 1 }, (_, index) => thisYear - index)
+  const lastYear = (max ? parse(max)?.year : undefined) ?? new Date().getFullYear()
+  const yearOptions = Array.from({ length: years + 1 }, (_, index) => lastYear - index)
 
   // A tap anywhere else closes it.
   useEffect(() => {
@@ -78,7 +80,8 @@ export function DateField({ value, onChange, label = 'Date of birth', disabled =
     const next = { ...shown, ...changed }
     // 31 Apr becomes 30 Apr, 29 Feb 2001 becomes 28 Feb.
     next.day = Math.min(next.day, daysIn(next.month, next.year))
-    onChange(iso(next))
+    const date = iso(next)
+    onChange(max && date > max ? max : date)
   }
 
   const text = parts ? `${parts.day} ${MONTHS[parts.month - 1]} ${parts.year}` : ''

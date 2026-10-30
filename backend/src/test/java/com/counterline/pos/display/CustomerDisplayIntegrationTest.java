@@ -185,6 +185,10 @@ class CustomerDisplayIntegrationTest {
                 .andExpect(jsonPath("$.detail").value(not(containsString("Aisyah"))));
         display(post("/api/v1/display/members"), token, "{\"phone\":\"\",\"firstName\":\"Someone\",\"lastName\":\"Else\"}")
                 .andExpect(status().isBadRequest());
+        display(post("/api/v1/display/members"), token,
+                "{\"phone\":\"0127770000\",\"firstName\":\"Future\",\"lastName\":\"Baby\",\"dateOfBirth\":\"2999-01-01\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Date of birth can't be in the future"));
 
         display(post("/api/v1/display/members"), token, """
                 {"phone":"0127778888","firstName":"Lim","lastName":"Wei","email":"lim@example.com","gender":"MALE",

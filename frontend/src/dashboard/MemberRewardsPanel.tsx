@@ -98,18 +98,47 @@ export function MemberRewardsPanel({ customerId }: { customerId: number }) {
   )
 }
 
+/** The most points one adjustment adds or takes away (the server's limit too). */
+const MAX_POINTS = 10_000
+
+/** What is wrong with the points typed, if anything: a whole number, not 0, from -10,000 to 10,000. */
+function pointsProblem(text: string): string | null {
+  if (text.trim() === '') return null
+  const points = Number(text)
+  if (!Number.isInteger(points)) return 'Points must be a whole number'
+  if (points === 0) return "Points can't be 0"
+  if (points < -MAX_POINTS || points > MAX_POINTS) return 'Points must be from -10,000 to 10,000'
+  return null
+}
+
+/** What is wrong with how many items are owed, if anything. */
+function quantityProblem(text: string): string | null {
+  const quantity = Number(text)
+  return text.trim() !== '' && Number.isInteger(quantity) && quantity >= 1 && quantity <= 10 ? null : 'How many must be a whole number from 1 to 10'
+}
+
 function AdjustPoints({ customerId, onDone }: { customerId: number; onDone: () => void }) {
   const [points, setPoints] = useState('')
   const [reason, setReason] = useState('')
+  const [reasonTouched, setReasonTouched] = useState(false)
+  // What the server answered to the last try; any change to the form takes it away.
   const [error, setError] = useState<string | null>(null)
+  const pointsMessage = pointsProblem(points)
+  const reasonMessage = reasonTouched && reason.trim() === '' ? 'Give a reason for the adjustment' : null
+  const shown = pointsMessage ?? reasonMessage ?? error
 
   async function adjust(event: FormEvent) {
     event.preventDefault()
+    if (points.trim() === '' || pointsMessage || reason.trim() === '') {
+      setReasonTouched(true)
+      return
+    }
     setError(null)
     try {
       await postJson(dashboardPaths.points(customerId), { points: Number(points), reason: reason.trim() })
       setPoints('')
       setReason('')
+      setReasonTouched(false)
       onDone()
     } catch (caught) {
       setError(message(caught))
@@ -118,14 +147,15 @@ function AdjustPoints({ customerId, onDone }: { customerId: number; onDone: () =
 
   return (
     <form className={form} aria-label="Adjust points" onSubmit={(event) => void adjust(event)}>
-      <input className={`${field} w-28`} aria-label="Points to add or take away" type="number" step="1" placeholder="+5 or −2" value={points}
-        onChange={(event) => setPoints(event.target.value)} />
+      <input className={`${field} w-28`} aria-label="Points to add or take away" type="number" step="1" min={-MAX_POINTS} max={MAX_POINTS}
+        placeholder="+5 or −2" value={points} aria-invalid={pointsMessage !== null}
+        onChange={(event) => { setPoints(event.target.value); setError(null) }} />
       <input className={`${field} min-w-56 flex-1`} aria-label="Reason for the adjustment" placeholder="Reason (e.g. points missed on R12)" maxLength={200}
-        value={reason} onChange={(event) => setReason(event.target.value)} />
-      <button type="submit" className="btn" disabled={!points || Number(points) === 0 || reason.trim() === ''}>
+        value={reason} onBlur={() => setReasonTouched(true)} onChange={(event) => { setReason(event.target.value); setError(null) }} />
+      <button type="submit" className="btn" disabled={points.trim() === '' || pointsMessage !== null || reason.trim() === ''}>
         Adjust
       </button>
-      {error && <p className="basis-full text-sm font-medium text-red-600" role="alert">{error}</p>}
+      {shown && <p className="basis-full text-sm font-medium text-red-600" role="alert">{shown}</p>}
     </form>
   )
 }
@@ -133,16 +163,29 @@ function AdjustPoints({ customerId, onDone }: { customerId: number; onDone: () =
 function OweItem({ customerId, onDone }: { customerId: number; onDone: () => void }) {
   const promotions = useApi<OwablePromotion[]>(dashboardPaths.promotions)
   const [promotionId, setPromotionId] = useState('')
+  const [promotionTouched, setPromotionTouched] = useState(false)
   const [quantity, setQuantity] = useState('1')
   const [reason, setReason] = useState('')
+  const [reasonTouched, setReasonTouched] = useState(false)
+  // What the server answered to the last try; any change to the form takes it away.
   const [error, setError] = useState<string | null>(null)
+  const quantityMessage = quantityProblem(quantity)
+  const promotionMessage = promotionTouched && promotionId === '' ? 'Choose which free item is owed' : null
+  const reasonMessage = reasonTouched && reason.trim() === '' ? 'Give a reason for owing' : null
+  const shown = quantityMessage ?? promotionMessage ?? reasonMessage ?? error
 
   async function owe(event: FormEvent) {
     event.preventDefault()
+    if (promotionId === '' || quantityMessage || reason.trim() === '') {
+      setPromotionTouched(true)
+      setReasonTouched(true)
+      return
+    }
     setError(null)
     try {
       await postJson(dashboardPaths.owedItems(customerId), { promotionId: Number(promotionId), quantity: Number(quantity), reason: reason.trim() })
       setReason('')
+      setReasonTouched(false)
       onDone()
     } catch (caught) {
       setError(message(caught))
@@ -151,7 +194,8 @@ function OweItem({ customerId, onDone }: { customerId: number; onDone: () => voi
 
   return (
     <form className={form} aria-label="Owe a free item" onSubmit={(event) => void owe(event)}>
-      <select className={`${field} min-w-56 flex-1`} aria-label="Promotion" value={promotionId} onChange={(event) => setPromotionId(event.target.value)}>
+      <select className={`${field} min-w-56 flex-1`} aria-label="Promotion" value={promotionId}
+        onBlur={() => setPromotionTouched(true)} onChange={(event) => { setPromotionId(event.target.value); setError(null) }}>
         <option value="">Free item from…</option>
         {promotions.status === 'success' && promotions.data.map((promotion) => (
           <option key={promotion.id} value={promotion.id}>
@@ -159,13 +203,14 @@ function OweItem({ customerId, onDone }: { customerId: number; onDone: () => voi
           </option>
         ))}
       </select>
-      <input className={`${field} w-24`} aria-label="How many" type="number" min="1" max="10" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+      <input className={`${field} w-24`} aria-label="How many" type="number" min="1" max="10" step="1" value={quantity} aria-invalid={quantityMessage !== null}
+        onChange={(event) => { setQuantity(event.target.value); setError(null) }} />
       <input className={`${field} min-w-56 flex-1`} aria-label="Reason for owing" placeholder="Reason (e.g. forgot the birthday can on R40)" maxLength={200}
-        value={reason} onChange={(event) => setReason(event.target.value)} />
-      <button type="submit" className="btn" disabled={!promotionId || reason.trim() === ''}>
+        value={reason} onBlur={() => setReasonTouched(true)} onChange={(event) => { setReason(event.target.value); setError(null) }} />
+      <button type="submit" className="btn" disabled={!promotionId || quantityMessage !== null || reason.trim() === ''}>
         Owe item
       </button>
-      {error && <p className="basis-full text-sm font-medium text-red-600" role="alert">{error}</p>}
+      {shown && <p className="basis-full text-sm font-medium text-red-600" role="alert">{shown}</p>}
     </form>
   )
 }

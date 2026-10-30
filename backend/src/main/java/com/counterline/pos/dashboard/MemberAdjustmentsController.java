@@ -1,6 +1,7 @@
 package com.counterline.pos.dashboard;
 
 import com.counterline.pos.catalog.CatalogService;
+import com.counterline.pos.common.BadRequestException;
 import com.counterline.pos.customers.CustomerDtos.CustomerResponse;
 import com.counterline.pos.customers.CustomerService;
 import com.counterline.pos.loyalty.LoyaltyService;
@@ -10,6 +11,7 @@ import com.counterline.pos.loyalty.OwedItemService.OwedItem;
 import com.counterline.pos.promotions.Promotion;
 import com.counterline.pos.promotions.PromotionRepository;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -26,6 +28,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+
+import tools.jackson.databind.JsonNode;
 
 import java.time.Clock;
 import java.util.Arrays;
@@ -57,7 +61,29 @@ class MemberAdjustmentsController {
         this.clock = clock;
     }
 
-    record PointsAdjustment(@NotNull @Min(-10_000) @Max(10_000) Integer points, @NotBlank @Size(max = 200) String reason) {
+    /**
+     * {@code points} is read as the JSON it is, not coerced: only a whole JSON number from -10,000 to 10,000
+     * (not 0) is accepted. A 2.5, "3" or true is refused, never truncated or converted; see {@link #wholePoints}.
+     */
+    record PointsAdjustment(
+            @Schema(type = "integer", minimum = "-10000", maximum = "10000", description = "Whole points to add (+) or take away (−), not 0")
+            JsonNode points,
+            @Schema(maxLength = 200) String reason) {
+    }
+
+    static final String POINTS_RULE = "Points must be a whole number from -10,000 to 10,000, and not 0";
+    static final int MAX_POINTS = 10_000;
+
+    /** The adjustment's points, only if the request holds a JSON integer in range and not zero. */
+    static int wholePoints(JsonNode node) {
+        if (node == null || !node.isIntegralNumber() || !node.canConvertToInt()) {
+            throw new BadRequestException(POINTS_RULE);
+        }
+        int points = node.intValue();
+        if (points == 0 || points < -MAX_POINTS || points > MAX_POINTS) {
+            throw new BadRequestException(POINTS_RULE);
+        }
+        return points;
     }
 
     record OwedItemRequest(@NotNull Long promotionId, @Min(1) @Max(10) int quantity,
@@ -77,11 +103,18 @@ class MemberAdjustmentsController {
 
     @Operation(summary = "Add or take away points, with a reason")
     @PostMapping("/api/v1/dashboard/customers/{customerId}/points")
-    PointsHistory adjustPoints(@PathVariable Long customerId, @Valid @RequestBody PointsAdjustment request,
+    PointsHistory adjustPoints(@PathVariable Long customerId, @RequestBody PointsAdjustment request,
                                @AuthenticationPrincipal Jwt jwt) {
+        int points = wholePoints(request.points());
+        String reason = request.reason() == null ? "" : request.reason().strip();
+        if (reason.isEmpty()) {
+            throw new BadRequestException("Give a reason for the adjustment");
+        }
+        if (request.reason().length() > 200) {
+            throw new BadRequestException("The reason can be at most 200 characters");
+        }
         CustomerResponse member = customerService.get(customerId);
-        loyaltyService.adjust(customerId, member.fullName(), request.points(), request.reason().strip(),
-                jwt.getClaimAsString("name"), clock.instant());
+        loyaltyService.adjust(customerId, member.fullName(), points, reason, jwt.getClaimAsString("name"), clock.instant());
         return loyaltyService.history(customerId);
     }
 

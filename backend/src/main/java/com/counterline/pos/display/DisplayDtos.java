@@ -6,7 +6,6 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
@@ -106,7 +105,8 @@ public final class DisplayDtos {
             @NotBlank @Size(max = 60) String lastName,
             @Email @Size(max = 254) String email,
             Gender gender,
-            @Past LocalDate dateOfBirth,
+            // Not in the future: checked when the member is created (CustomerService).
+            LocalDate dateOfBirth,
             Boolean marketingEmail,
             Boolean marketingSms,
             Boolean marketingCall) {

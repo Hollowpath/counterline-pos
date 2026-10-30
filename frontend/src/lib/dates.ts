@@ -21,6 +21,14 @@ export function todayIso(now: Date = new Date()): string {
   return local.toISOString().slice(0, 10)
 }
 
+/** What a birth date in the future is told. */
+export const FUTURE_BIRTH_DATE = "Date of birth can't be in the future"
+
+/** Whether a YYYY-MM-DD date is after today (terminal-local). Today itself is not. */
+export function isFutureDate(isoDate: string, now: Date = new Date()): boolean {
+  return isoDate > todayIso(now)
+}
+
 /** Shifts a YYYY-MM-DD date by whole days (calendar arithmetic, no time zone involved). */
 export function addDays(isoDate: string, days: number): string {
   const shifted = new Date(`${isoDate}T00:00:00Z`)

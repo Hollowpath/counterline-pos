@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Function;
@@ -118,6 +119,10 @@ public class CustomerService {
         if (phone != null) {
             phone = PhoneNumbers.normalize(phone, outlet.defaultPhoneCountryCode())
                     .orElseThrow(() -> new BadRequestException("Enter a valid phone number"));
+        }
+        // Today is the outlet's; a birth date from today back is fine.
+        if (r.dateOfBirth() != null && r.dateOfBirth().isAfter(LocalDate.ofInstant(clock.instant(), outlet.timeZone()))) {
+            throw new BadRequestException("Date of birth can't be in the future");
         }
         String email = blankToNull(r.email());
         return new CustomerDetails(blankToNull(r.referenceId()), r.firstName().strip(), blankToNull(r.lastName()),
