@@ -191,6 +191,22 @@ describe('promotional items', () => {
     expect(cart().getByRole('button', { name: 'Pay' })).toBeEnabled()
   })
 
+  it('shows a member in debt from a refund what they owe and that the purchase earns it back', async () => {
+    stubApi(() => quote({ total: 32, loyalty: { before: -6, earned: 3, redeemed: 0, after: -3 } }), {
+      '/api/v1/customers/5/perks': perks({ points: -6 }),
+    })
+    const user = userEvent.setup()
+    await addItems(user, /PC Caramel/)
+    await addMember(user)
+
+    await vi.waitFor(() => expect(cart().getByTestId('points-preview')).toHaveTextContent(
+      /Current points\s*-6\s*\+\s*Earned from this cart\s*3\s*=\s*Total after this purchase\s*-3/,
+    ))
+    expect(cart().getByTestId('points-owed')).toHaveTextContent('Owes 6 points')
+    expect(cart().getByTestId('points-owed')).toHaveTextContent('This purchase earns 3 towards them')
+    expect(cart().getByRole('button', { name: 'Pay' })).toBeEnabled()
+  })
+
   it('cannot take a discount', async () => {
     stubApi(() => quote({}))
     const user = userEvent.setup()

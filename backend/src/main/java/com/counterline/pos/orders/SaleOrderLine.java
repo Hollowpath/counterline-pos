@@ -15,6 +15,7 @@ import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -58,6 +59,12 @@ public class SaleOrderLine {
     private BigDecimal discountTotal;
     private BigDecimal lineTotal;
 
+    /** What the catalogue said when it was sold: the promotions are judged by these, not by today's catalogue. */
+    private boolean countsForPromotions;
+    private boolean seasonal;
+    private LocalDate seasonalFrom;
+    private LocalDate seasonalUntil;
+
     @OneToMany(mappedBy = "line", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("id")
     private List<SaleOrderLineModifier> modifiers = new ArrayList<>();
@@ -83,6 +90,10 @@ public class SaleOrderLine {
     static SaleOrderLine forItem(SaleOrder order, int lineNumber, Item item, List<Chosen> chosen, int quantity, String note) {
         SaleOrderLine line = new SaleOrderLine(order, lineNumber, item, item.getName(), item.getCategory().getName(),
                 item.getPrice(), quantity, note);
+        line.countsForPromotions = item.getCategory().isCountsForPromotions();
+        line.seasonal = item.isSeasonal();
+        line.seasonalFrom = item.getSeasonalFrom();
+        line.seasonalUntil = item.getSeasonalUntil();
         chosen.forEach(c -> line.modifiers.add(new SaleOrderLineModifier(line, c.option(), c.quantity())));
         line.modifierUnitPrice = ModifierSelection.unitPrice(chosen);
         line.recalculate();
@@ -114,6 +125,17 @@ public class SaleOrderLine {
 
     public short getLineNumber() {
         return lineNumber;
+    }
+
+    /** Whether the item's folder counted towards promotions when it was sold. */
+    public boolean isCountsForPromotions() {
+        return countsForPromotions;
+    }
+
+    /** Whether the item was a seasonal flavour on {@code day}, by the dates it had when it was sold. */
+    public boolean isSeasonalOn(LocalDate day) {
+        return seasonal && (seasonalFrom == null || !day.isBefore(seasonalFrom))
+                && (seasonalUntil == null || !day.isAfter(seasonalUntil));
     }
 
     /** The catalogue item sold; null for a custom amount. */

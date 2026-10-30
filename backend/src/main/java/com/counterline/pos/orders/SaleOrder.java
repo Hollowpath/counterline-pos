@@ -86,6 +86,13 @@ public class SaleOrder {
 
     private Instant closedAt;
 
+    /**
+     * The instant the promotions' time rules are read at: their dates, the member's birth month, the registration
+     * reward's 24 hours. It is when the order was placed (or last edited), so paying later does not change what the
+     * order was eligible for; only the member's points and the once-only rewards are looked at again at payment.
+     */
+    private Instant eligibilityAt;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "customer_id")
     private Customer customer;
@@ -145,6 +152,7 @@ public class SaleOrder {
         this.note = note;
         this.staff = staff;
         this.createdAt = createdAt;
+        this.eligibilityAt = createdAt;
         this.status = OrderStatus.OPEN;
         this.subtotal = BigDecimal.ZERO.setScale(2);
         this.discountTotal = BigDecimal.ZERO.setScale(2);
@@ -455,6 +463,16 @@ public class SaleOrder {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public Instant getEligibilityAt() {
+        return eligibilityAt;
+    }
+
+    /** "Edit Order": the order is judged as of now, as when it was first placed. */
+    public void refreshEligibility(Instant at) {
+        requireStatus(OrderStatus.OPEN);
+        this.eligibilityAt = at;
     }
 
     public Instant getClosedAt() {

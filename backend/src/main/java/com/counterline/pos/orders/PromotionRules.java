@@ -50,7 +50,12 @@ import java.util.stream.Stream;
  *       are still earned and redeemed at 7) and the FOC Other Items (bags, tote, Registration and
  *       Google Review rewards) work as usual.</li>
  * </ul>
- * Items a member is owed (given on the dashboard because the staff forgot them) are free first,
+ * <p>Time rules (the promotions' dates, the birth month, the registration reward's 24 hours, seasonal windows) and the
+ * catalogue's flags are read as of {@link SaleOrder#getEligibilityAt()}, when the order was placed or last edited, so
+ * paying a placed order later gives the same answer. The member's points and the once-only rewards are always read
+ * as they are at payment: two orders can't both spend the same points or take the same reward.
+ *
+ * <p>Items a member is owed (given on the dashboard because the staff forgot them) are free first,
  * whatever the sale's rules allow, except on a voucher sale (they stay owed until a sale without one).
  *
  * <p>And for every member's sale: points are not carried forward once they reach the redemption cost,
@@ -339,15 +344,18 @@ class PromotionRules {
      */
     private Optional<String> allowanceProblem(SaleOrder order, Customer member, LocalDate today, Allowance allowance,
                                               List<Promotion> promotions, Map<Long, Integer> givenById) {
+        // By what the order recorded when it was placed: its promotional lines (the ones with a promotion applied) and,
+        // per line, whether the folder counted and the item was seasonal then. Today's catalogue is not asked.
+        List<SaleOrderLine> promotionalLines = order.getPromotions().stream().map(SaleOrderPromotion::getLine).toList();
         List<SaleOrderLine> bought = order.getLines().stream()
-                .filter(line -> line.getItem() != null && line.getItem().getPromotion() == null)
-                .filter(line -> line.getItem().getCategory().isCountsForPromotions())
+                .filter(line -> line.getItem() != null && !promotionalLines.contains(line))
+                .filter(SaleOrderLine::isCountsForPromotions)
                 .toList();
         int boughtCount = bought.stream().mapToInt(SaleOrderLine::getQuantity).sum();
         int allowed = boughtCount / allowance.buyQuantity();
         if (allowance.seasonalItemsOnly()) {
             int seasonal = bought.stream()
-                    .filter(line -> line.getItem().isSeasonalOn(today))
+                    .filter(line -> line.isSeasonalOn(today))
                     .mapToInt(SaleOrderLine::getQuantity)
                     .sum();
             allowed = Math.min(allowed, seasonal);

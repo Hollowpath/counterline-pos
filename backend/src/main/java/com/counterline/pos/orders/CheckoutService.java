@@ -168,7 +168,7 @@ public class CheckoutService {
             int balance = member == null ? 0 : loyaltyService.balance(member.getId());
             LoyaltyPreview loyalty = member == null ? null
                     : LoyaltyPreview.of(loyaltyService.preview(member.getId(), order.getTotal(), order.getPointsToRedeem()));
-            problems.addAll(promotionRules.problems(order, balance, now, editedOrderId == null ? 0L : editedOrderId));
+            problems.addAll(promotionRules.problems(order, balance, order.getEligibilityAt(), editedOrderId == null ? 0L : editedOrderId));
             return new QuoteResponse(order.getSubtotal(), order.getDiscountTotal(), order.getTotal(), problems, loyalty);
         });
     }
@@ -201,7 +201,7 @@ public class CheckoutService {
         // The member's account stays locked until this transaction ends, so the checks below
         // (points, once-only rewards) cannot race another terminal's sale for the same member.
         int pointsBalance = order.getCustomer() == null ? 0 : loyaltyService.lock(order.getCustomer().getId(), now);
-        promotionRules.requireSatisfied(order, pointsBalance, now, editedOrderId);
+        promotionRules.requireSatisfied(order, pointsBalance, order.getEligibilityAt(), editedOrderId);
     }
 
     /**
@@ -300,6 +300,8 @@ public class CheckoutService {
             order.removeDeductions();
             orderRepository.saveAndFlush(order);
             order.clearForEdit(blankToNull(request.note()));
+            // Edited, so judged as of now (as when it was placed).
+            order.refreshEligibility(now);
             orderRepository.saveAndFlush(order);
 
             Voucher voucher = request.hasVoucher() ? voucherService.forSale(request.voucherCode(), true) : null;

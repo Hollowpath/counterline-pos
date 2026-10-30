@@ -83,7 +83,8 @@ public class OrderLifecycleService {
         // everywhere, so a payment and a sale for one member can't deadlock with a register close.
         int pointsBalance = order.getCustomer() == null ? 0 : loyaltyService.lock(order.getCustomer().getId(), now);
         registerGate.requireOpenForPayment(terminal.outletId());
-        promotionRules.requireSatisfied(order, pointsBalance, now, order.getId());
+        // Judged as of when it was placed or last edited; the points and once-only rewards, as they are now.
+        promotionRules.requireSatisfied(order, pointsBalance, order.getEligibilityAt(), order.getId());
         paymentRecorder.addPayments(order, request.payments(), staff, now);
         order.closeWithPaymentRequest(request.clientRequestId(), now);
         orderRepository.saveAndFlush(order);

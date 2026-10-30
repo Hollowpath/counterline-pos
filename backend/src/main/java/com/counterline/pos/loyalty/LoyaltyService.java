@@ -19,6 +19,10 @@ import java.util.List;
  * Earned 7, Current 1").
  *
  * <p>Settling locks the member's account row, so two terminals cannot spend the same points.
+ *
+ * <p>The balance can be negative: a refund takes back every point its sale earned, also those spent since, and the
+ * member's next purchases pay that off before they have points to spend. Spending points (a redemption) and a manual
+ * take-away still need points to cover them, so nothing but a refund makes the balance go below zero.
  */
 @Service
 public class LoyaltyService {
@@ -75,19 +79,24 @@ public class LoyaltyService {
                              int pointsToRedeem, Instant at) {
         LoyaltyAccount account = lockAccount(customerId, at);
         Settlement settlement = new Settlement(account.getPointsBalance(), pointsEarned(amountPaid), pointsToRedeem);
-        requireEnough(settlement);
+        // Only spending needs points to be there: a member in debt from a refund can still buy, earning it back.
+        if (settlement.redeemed() > 0) {
+            requireEnough(settlement);
+        }
         record(account, customerId, orderId, Type.EARN, settlement.earned(), at);
         record(account, customerId, orderId, Type.REDEEM, -settlement.redeemed(), at);
         return settlement;
     }
 
-    /** A full refund takes back the points the sale earned and gives back those it spent. */
+    /**
+     * A full refund takes back the points the sale earned and gives back those it spent. The reversal is whole even if
+     * the earned points have been spent since: the balance then goes below zero until later purchases earn it back.
+     */
     @Transactional(propagation = Propagation.MANDATORY)
     public void reverse(Long customerId, Long orderId, int earned, int redeemed, Instant at) {
         LoyaltyAccount account = lockAccount(customerId, at);
         record(account, customerId, orderId, Type.REVERSE_REDEEM, redeemed, at);
-        // Points the sale earned may have been spent since: take back what is there, never below zero.
-        record(account, customerId, orderId, Type.REVERSE_EARN, -Math.min(earned, account.getPointsBalance()), at);
+        record(account, customerId, orderId, Type.REVERSE_EARN, -earned, at);
     }
 
     /** One line of a member's points history. {@code orderNumber} for a sale's entries, {@code reason} for an adjustment. */
@@ -99,7 +108,8 @@ public class LoyaltyService {
 
     /**
      * Staff correct a member's points (up or down) with a reason, e.g. points a sale should have
-     * earned. The balance can't go below zero.
+     * earned. A take-away can't leave the balance below zero (a member in debt from a refund can have points added,
+     * and nothing taken away).
      */
     @Transactional
     public int adjust(Long customerId, String memberName, int points, String reason, String adjustedBy, Instant at) {
@@ -107,8 +117,10 @@ public class LoyaltyService {
             throw new BusinessRuleException("Enter the points to add or take away");
         }
         LoyaltyAccount account = lockAccount(customerId, at);
-        if (account.getPointsBalance() + points < 0) {
-            throw new BusinessRuleException(memberName + " has only " + account.getPointsBalance() + " points");
+        if (points < 0 && account.getPointsBalance() + points < 0) {
+            throw new BusinessRuleException(account.getPointsBalance() < 0
+                    ? memberName + " owes " + -account.getPointsBalance() + " points; nothing can be taken away"
+                    : memberName + " has only " + account.getPointsBalance() + " points");
         }
         entryRepository.save(LoyaltyEntry.adjustment(customerId, points, reason, adjustedBy, at));
         account.add(points, at);

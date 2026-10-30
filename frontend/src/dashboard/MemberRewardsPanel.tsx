@@ -57,7 +57,13 @@ export function MemberRewardsPanel({ customerId }: { customerId: number }) {
         <LoadState status={points.status} message={points.status === 'error' ? points.message : undefined} onRetry={points.reload} />
       ) : (
         <>
-          <p className="mt-1 mb-3 inline-flex rounded-2xl bg-linear-to-br from-indigo-600 to-violet-600 px-5 py-3 text-2xl font-bold tracking-tight text-white shadow-lg shadow-indigo-600/20" data-testid="points-balance">{points.data.balance} points</p>
+          <p className={`mt-1 mb-3 inline-flex rounded-2xl bg-linear-to-br px-5 py-3 text-2xl font-bold tracking-tight text-white shadow-lg ${points.data.balance < 0 ? 'from-red-600 to-rose-600 shadow-red-600/20' : 'from-indigo-600 to-violet-600 shadow-indigo-600/20'}`} data-testid="points-balance">{points.data.balance} points</p>
+          {points.data.balance < 0 && (
+            <p className="mb-3 text-sm font-medium text-red-600" data-testid="points-owed">
+              Owes {-points.data.balance} points: a refund took back points that had already been spent. New purchases earn them back
+              first; nothing can be taken away until then.
+            </p>
+          )}
           <AdjustPoints customerId={customerId} onDone={points.reload} />
           {points.data.entries.length > 0 && (
             <ul className={detail.rows} aria-label="Points history">

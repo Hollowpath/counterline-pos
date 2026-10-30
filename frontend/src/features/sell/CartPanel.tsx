@@ -222,6 +222,11 @@ export function CartPanel({
           </span>
         </div>
       )}
+      {loyalty && loyalty.before < 0 && (
+        <p className="px-3 pb-2 text-xs font-medium text-red-600" data-testid="points-owed">
+          Owes {-loyalty.before} points: a refund took back points already spent. This purchase earns {loyalty.earned} towards them.
+        </p>
+      )}
 
       {/* Charged items first (those counting towards Buy 3 at the top), free items last. */}
       <ul className="list-none overflow-y-auto px-2 max-md:shrink-0">

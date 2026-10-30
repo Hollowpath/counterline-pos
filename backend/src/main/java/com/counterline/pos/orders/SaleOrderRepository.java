@@ -63,14 +63,15 @@ interface SaleOrderRepository extends JpaRepository<SaleOrder, Long> {
     List<Long> findOrderIdsByPaymentReference(@Param("pattern") String pattern);
 
     /**
-     * Whether the member has had this promotion on an order that still stands (placed or paid; not
-     * voided or refunded), other than {@code exceptOrderId} (the order being edited, or 0). For
-     * once-only rewards (Registration Reward).
+     * Whether the member has had this promotion on an order that was paid and not refunded, other than
+     * {@code exceptOrderId} (the order being edited or paid, or 0). For once-only rewards (Registration
+     * Reward). Placed orders do not count: two unpaid orders holding the same reward would otherwise block each
+     * other's payment; the first to be paid takes it (the member's account is locked while that is checked).
      */
     @Query("""
             select count(p) > 0 from SaleOrderPromotion p join p.order o
             where o.customer.id = :customerId and p.promotion.id = :promotionId and o.id <> :exceptOrderId
-              and o.status <> com.counterline.pos.orders.OrderStatus.VOIDED and o.refundedAt is null
+              and o.status = com.counterline.pos.orders.OrderStatus.CLOSED and o.refundedAt is null
             """)
     boolean memberHasHadPromotion(@Param("customerId") Long customerId,
                                   @Param("promotionId") Long promotionId,
@@ -81,7 +82,7 @@ interface SaleOrderRepository extends JpaRepository<SaleOrder, Long> {
             select count(p) > 0 from SaleOrderPromotion p join p.order o
             where o.customer.id = :customerId and p.promotion.id = :promotionId and o.outletId = :outletId
               and o.id <> :exceptOrderId
-              and o.status <> com.counterline.pos.orders.OrderStatus.VOIDED and o.refundedAt is null
+              and o.status = com.counterline.pos.orders.OrderStatus.CLOSED and o.refundedAt is null
             """)
     boolean memberHasHadPromotionAtOutlet(@Param("customerId") Long customerId,
                                           @Param("promotionId") Long promotionId,
