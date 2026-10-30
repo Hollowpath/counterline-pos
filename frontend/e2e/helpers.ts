@@ -76,6 +76,7 @@ export async function startTill(page: Page, browser: Browser, baseURL: string | 
   await expect(open.or(page.getByText('OPEN', { exact: true }))).toBeVisible()
   if (await open.isVisible()) {
     await open.click()
+    await page.getByRole('dialog', { name: 'Open Register' }).getByRole('button', { name: 'Open Register' }).click()
   }
   await expect(page.getByText('OPEN', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Open menu' }).click()

@@ -5,7 +5,7 @@ import { AppBar } from '../../app/AppBar'
 import { Dialog } from '../../components/Dialog'
 import { LoadState } from '../../components/LoadState'
 import { formatTime } from '../../lib/dates'
-import { formatRM, parseRM, toSen } from '../../lib/money'
+import { formatRM, formatSignedRM, parseRM, toSen } from '../../lib/money'
 import { printScreen } from '../receipts/printReceipt'
 import { SalesSummaryView } from '../reports/SalesSummaryView'
 import { registerPath as PATH, useRegister, type RegisterStatus, type Session } from './registerApi'
@@ -37,7 +37,7 @@ const bannerButton = [
 
 export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
   const status = useApi<RegisterStatus>(PATH)
-  const [dialog, setDialog] = useState<'close' | 'movement' | 'summary' | null>(null)
+  const [dialog, setDialog] = useState<'open' | 'close' | 'movement' | 'summary' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const register = useRegister()
 
@@ -81,6 +81,17 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
           {formatStamp(session.openedAt)}
           <br />
           by {session.openedBy}
+        </p>
+        <p className="mt-4 text-sm leading-relaxed font-medium text-green-50 tabular-nums">
+          Opening float: {formatRM(toSen(session.openingFloat))}
+          <br />
+          Expected cash: {formatSignedRM(toSen(session.expectedCash))}
+          {session.expectedCash < 0 && (
+            <>
+              <br />
+              Below zero
+            </>
+          )}
         </p>
         <div className="mt-8 grid grid-cols-[auto_auto] justify-center gap-3">
           <button type="button" className={bannerButton} disabled={blockers.length > 0} onClick={() => setDialog('close')}>
@@ -135,7 +146,7 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
           <button
             type="button"
             className={bannerButton}
-            onClick={() => void act(() => postJson(`${PATH}/open`, {})).catch(() => {})}
+            onClick={() => setDialog('open')}
           >
             Open Register
           </button>
@@ -180,6 +191,16 @@ export function RegisterScreen({ onOpenMenu }: { onOpenMenu: () => void }) {
         </Dialog>
       )}
 
+      {dialog === 'open' && (
+        <OpenDialog
+          error={error}
+          onConfirm={(openingFloat) => act(() => postJson(`${PATH}/open`, { openingFloat }))}
+          onCancel={() => {
+            setDialog(null)
+            setError(null)
+          }}
+        />
+      )}
       {dialog === 'close' && session && (
         <CloseDialog
           error={error}
@@ -228,6 +249,18 @@ function SessionDetails({ session }: { session: Session }) {
       <h3 className={detail.section}>Sales this session</h3>
       <SalesSummaryView summary={session.sales} />
 
+      <h3 className={detail.section}>Cash drawer</h3>
+      <ul className={detail.rows} aria-label="Cash drawer">
+        <li>
+          <span>Opening float</span>
+          <span>{formatRM(toSen(session.openingFloat))}</span>
+        </li>
+        <li>
+          <span>{session.closedAt ? 'Expected cash at closing' : 'Expected cash'}</span>
+          <span>{formatSignedRM(toSen(session.expectedCash))}</span>
+        </li>
+      </ul>
+
       <h3 className={detail.section}>Pay In / Out</h3>
       {session.movements.length === 0 ? (
         <p className="rounded-2xl bg-zinc-50 p-6 text-center text-sm text-zinc-500 ring-1 ring-zinc-200/70 ring-inset">None.</p>
@@ -251,6 +284,49 @@ function SessionDetails({ session }: { session: Session }) {
       )}
       {session.closingNote && <p className="mt-3 text-sm text-zinc-500">Note: {session.closingNote}</p>}
     </section>
+  )
+}
+
+/** The cash the drawer starts with, declared once: RM0.00 unless said otherwise. */
+function OpenDialog({ error, onConfirm, onCancel }: {
+  error: string | null
+  onConfirm: (openingFloat: number) => Promise<void>
+  onCancel: () => void
+}) {
+  const [openingFloat, setOpeningFloat] = useState('0.00')
+  const [busy, setBusy] = useState(false)
+  const floatSen = parseRM(openingFloat)
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (floatSen === null || busy) return
+    setBusy(true)
+    await onConfirm(floatSen / 100).catch(() => setBusy(false))
+  }
+
+  return (
+    <Dialog title="Open Register" onClose={busy ? undefined : onCancel}>
+      <form onSubmit={submit}>
+        <label className="grid gap-1.5 text-sm font-medium text-zinc-700">
+          Opening float (RM)
+          <input className={input} inputMode="decimal" value={openingFloat} disabled={busy} onChange={(event) => setOpeningFloat(event.target.value)} />
+        </label>
+        <p className="mt-2 text-xs text-zinc-500">The cash in the drawer as it opens. It can't be changed afterwards: correct it with a Pay In / Out.</p>
+        {error && (
+          <p className="mt-3 text-sm font-medium text-red-600" role="alert">
+            {error}
+          </p>
+        )}
+        <div className={dialogActions}>
+          <button type="button" className="btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy || floatSen === null}>
+            Open Register
+          </button>
+        </div>
+      </form>
+    </Dialog>
   )
 }
 

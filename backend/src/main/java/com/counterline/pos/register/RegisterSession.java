@@ -50,6 +50,9 @@ public class RegisterSession {
 
     private String closingNote;
 
+    /** The cash the register was opened with: declared at opening and never changed after. */
+    private BigDecimal openingFloat;
+
     @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("createdAt, id")
     private List<RegisterMovement> movements = new ArrayList<>();
@@ -57,10 +60,11 @@ public class RegisterSession {
     protected RegisterSession() {
     }
 
-    RegisterSession(Long outletId, Staff openedBy, Instant openedAt) {
+    RegisterSession(Long outletId, Staff openedBy, Instant openedAt, BigDecimal openingFloat) {
         this.outletId = outletId;
         this.openedBy = openedBy;
         this.openedAt = openedAt;
+        this.openingFloat = openingFloat;
     }
 
     public Long getOutletId() {
@@ -118,6 +122,10 @@ public class RegisterSession {
 
     public Staff getClosedBy() {
         return closedBy;
+    }
+
+    public BigDecimal getOpeningFloat() {
+        return openingFloat;
     }
 
     public String getClosingNote() {

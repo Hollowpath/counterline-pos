@@ -24,6 +24,10 @@ export interface Session {
   payIns: number
   payOuts: number
   sales: SalesSummary
+  /** The cash the register was opened with: declared at opening, never changed after. */
+  openingFloat: number
+  /** Opening float + cash collected − cash refunded + pay-ins − pay-outs; below zero when refunds took out more than the drawer held. */
+  expectedCash: number
 }
 
 export interface RegisterStatus {

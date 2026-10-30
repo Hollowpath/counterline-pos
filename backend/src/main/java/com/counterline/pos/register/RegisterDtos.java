@@ -25,10 +25,19 @@ public final class RegisterDtos {
     public record RegisterStatus(boolean open, SessionResponse session, SessionResponse lastClosed, long openOrders) {
     }
 
+    /**
+     * {@code openingFloat}: the cash the register was opened with. {@code expectedCash}: what the drawer
+     * should hold now (or at closing) = opening float + cash collected − cash refunded + pay-ins −
+     * pay-outs; below zero when refunds have taken out more than the drawer held.
+     */
     public record SessionResponse(Long id, long version, Instant openedAt, String openedBy,
                                   Instant closedAt, String closedBy, String closingNote,
                                   List<MovementResponse> movements, BigDecimal payIns, BigDecimal payOuts,
-                                  SalesSummary sales) {
+                                  SalesSummary sales, BigDecimal openingFloat, BigDecimal expectedCash) {
+    }
+
+    /** {@code openingFloat}: optional, zero when left out; declared once, when the register is opened. */
+    public record OpenRequest(@DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal openingFloat) {
     }
 
     public record MovementResponse(Long id, Direction direction, BigDecimal amount, String reason,

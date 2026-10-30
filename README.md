@@ -11,7 +11,7 @@ A multi-outlet retail point-of-sale system: a tablet POS for the till, a custome
 - Checkout with cash and cashless payments (split payments supported), payment references, idempotent payment retries.
 - Place an order and pay later; void unpaid orders and fully refund paid orders. These need a manager, either signed in or approving at the till ("Special Access").
 - Members, promotions, loyalty points and vouchers.
-- Cash register open/close, staff clock-in/out, printed-style receipts and sales reports.
+- Cash register open/close with a declared opening float (RM0.00 unless said otherwise, never carried over from an earlier session), pay in / pay out that cannot take more than the register's expected cash, staff clock-in/out, printed-style receipts and sales reports.
 
 **Customer display**
 
@@ -28,7 +28,7 @@ A multi-outlet retail point-of-sale system: a tablet POS for the till, a custome
 
 - Multiple outlets, each with its own staff, registers and time zone setting (default `Asia/Kuala_Lumpur`).
 - REST API under `/api/v1`, OpenAPI/Swagger UI (local profile only), health endpoint at `/actuator/health`.
-- Flyway-managed schema (`V1`–`V22`).
+- Flyway-managed schema (`V1`–`V24`).
 
 ## Stack
 

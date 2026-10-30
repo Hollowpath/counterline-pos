@@ -7,6 +7,7 @@ import com.counterline.pos.outlet.OutletProperties;
 import com.counterline.pos.register.RegisterDtos.CloseRequest;
 import com.counterline.pos.register.RegisterDtos.MovementRequest;
 import com.counterline.pos.register.RegisterDtos.MovementResponse;
+import com.counterline.pos.register.RegisterDtos.OpenRequest;
 import com.counterline.pos.register.RegisterDtos.RegisterStatus;
 import com.counterline.pos.register.RegisterDtos.SessionResponse;
 import com.counterline.pos.register.RegisterMovement.Direction;
@@ -22,6 +23,8 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -67,15 +70,19 @@ public class RegisterService {
         return sessionRepository.findByOutletIdAndClosedAtIsNull(outletId).isPresent();
     }
 
-    public SessionResponse open(Terminal terminal) {
+    /** Opens the register with the declared float (none declared is RM0.00). Nothing carries over from an earlier session. */
+    public SessionResponse open(OpenRequest request, Terminal terminal) {
         Long staffId = terminal.staffId();
+        BigDecimal openingFloat = request == null || request.openingFloat() == null
+                ? ZERO : request.openingFloat().setScale(2);
         if (sessionRepository.findByOutletIdAndClosedAtIsNull(terminal.outletId()).isPresent()) {
             throw new ConflictException("The register is already open");
         }
         try {
             RegisterSession session = sessionRepository.saveAndFlush(
-                    new RegisterSession(terminal.outletId(), activeStaff(staffId), clock.instant()));
-            log.info("Register opened (session {}) at outlet {} by staff {}", session.getId(), terminal.outletId(), staffId);
+                    new RegisterSession(terminal.outletId(), activeStaff(staffId), clock.instant(), openingFloat));
+            log.info("Register opened (session {}) at outlet {} by staff {} with an opening float of {}", session.getId(),
+                    terminal.outletId(), staffId, openingFloat);
             return toResponse(session);
         } catch (DataIntegrityViolationException e) {
             // Another terminal opened it at the same moment (register_session_one_open_uq).
@@ -83,8 +90,25 @@ public class RegisterService {
         }
     }
 
+    /**
+     * Pay In / Out. A pay-out may not take more than the register's expected cash. The open session is
+     * locked first (as a close does, and as every payment's share lock waits for), so the balance is read
+     * after every sale and pay-out already under way has finished, and the movement is recorded in the same
+     * transaction: two pay-outs cannot spend the same cash.
+     */
     public SessionResponse recordMovement(MovementRequest request, Terminal terminal) {
+        if (request.direction() == Direction.OUT) {
+            jdbc.queryForList("SELECT id FROM register_session WHERE outlet_id = ? AND closed_at IS NULL FOR UPDATE",
+                    Long.class, terminal.outletId());
+        }
         RegisterSession session = openSession(terminal.outletId());
+        if (request.direction() == Direction.OUT) {
+            BigDecimal expected = expectedCash(session, clock.instant());
+            if (request.amount().compareTo(expected) > 0) {
+                throw new ConflictException("Pay-out of " + money(request.amount()) + " is more than the register's expected cash of "
+                        + money(expected));
+            }
+        }
         session.recordMovement(request.direction(), request.amount(), request.reason().strip(),
                 activeStaff(terminal.staffId()), clock.instant());
         return toResponse(sessionRepository.saveAndFlush(session));
@@ -109,6 +133,35 @@ public class RegisterService {
         log.info("Register closed (session {}) by staff {}", closed.getId(), staffId);
         return toResponse(closed);
     }
+
+    /**
+     * What the drawer should hold at {@code end}: opening float + cash collected − cash refunded + pay-ins
+     * − pay-outs. Cash is the payments of a payment method of kind CASH, counted as the sales report counts
+     * them (a sale by when it was paid, a refund by when it was made), in plain SQL so this package needn't
+     * depend on orders. Card and other payments are not cash.
+     */
+    private BigDecimal expectedCash(RegisterSession session, Instant end) {
+        BigDecimal[] cash = jdbc.queryForObject("""
+                SELECT coalesce(sum(p.amount) FILTER (WHERE o.status = 'CLOSED' AND o.closed_at >= ? AND o.closed_at < ?), 0),
+                       coalesce(sum(p.amount) FILTER (WHERE o.refunded_at >= ? AND o.refunded_at < ?), 0)
+                FROM payment p
+                JOIN sale_order o ON o.id = p.order_id
+                JOIN payment_method m ON m.id = p.payment_method_id
+                WHERE o.outlet_id = ? AND m.kind = 'CASH'""",
+                (rs, row) -> new BigDecimal[] {rs.getBigDecimal(1), rs.getBigDecimal(2)},
+                Timestamp.from(session.getOpenedAt()), Timestamp.from(end), Timestamp.from(session.getOpenedAt()),
+                Timestamp.from(end), session.getOutletId());
+        return session.getOpeningFloat().add(cash[0]).subtract(cash[1])
+                .add(session.total(Direction.IN)).subtract(session.total(Direction.OUT)).setScale(2);
+    }
+
+    /** As the screens and printed reports show money: RM12.50, and (RM12.50) below zero. */
+    private static String money(BigDecimal amount) {
+        String text = "RM" + amount.abs().setScale(2);
+        return amount.signum() < 0 ? "(" + text + ")" : text;
+    }
+
+    private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2);
 
     /** The outlet's placed but unpaid orders (Past Orders → Open); plain SQL so this package needn't depend on orders. */
     private long countOpenOrders(Long outletId) {
@@ -138,6 +191,7 @@ public class RegisterService {
                 session.getClosingNote(),
                 session.getMovements().stream().map(MovementResponse::from).toList(),
                 session.total(Direction.IN), session.total(Direction.OUT),
-                reports.salesSummary(session.getOutletId(), from, to, session.getOpenedAt(), end));
+                reports.salesSummary(session.getOutletId(), from, to, session.getOpenedAt(), end),
+                session.getOpeningFloat(), expectedCash(session, end));
     }
 }

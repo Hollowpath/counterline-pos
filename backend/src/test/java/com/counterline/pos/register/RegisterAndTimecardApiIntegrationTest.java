@@ -139,7 +139,7 @@ class RegisterAndTimecardApiIntegrationTest {
 
     @Test
     void twoTerminalsOpeningAtOnceLeaveExactlyOneOpenRegister() throws Exception {
-        List<Throwable> failures = runTwiceConcurrently(() -> registerService.open(new Terminal(cashierId, 1L)));
+        List<Throwable> failures = runTwiceConcurrently(() -> registerService.open(null, new Terminal(cashierId, 1L)));
 
         assertThat(failures).hasSize(1);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM register_session WHERE closed_at IS NULL", Integer.class))
