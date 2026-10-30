@@ -27,6 +27,8 @@ import java.util.Map;
  * Head office edits the catalogue from the dashboard: item names, prices and whether they are on
  * sale, and new items. Every outlet sells the same items at the same prices; past sales keep the
  * name and price they were sold at (order lines are snapshots).
+ *
+ * <p>Every change takes the catalogue lock first ({@link CatalogLock}), so changes happen one at a time.
  */
 @Service
 @Transactional
@@ -44,9 +46,12 @@ public class CatalogAdminService {
 
     private final OutletProperties outlet;
     private final Clock clock;
+    private final CatalogLock catalogueLock;
 
     CatalogAdminService(ItemRepository itemRepository, CategoryRepository categoryRepository,
-                        QuickgridTabRepository tabRepository, JdbcTemplate jdbc, OutletProperties outlet, Clock clock) {
+                        QuickgridTabRepository tabRepository, JdbcTemplate jdbc, OutletProperties outlet, Clock clock,
+                        CatalogLock catalogueLock) {
+        this.catalogueLock = catalogueLock;
         this.jdbc = jdbc;
         this.itemRepository = itemRepository;
         this.categoryRepository = categoryRepository;
@@ -141,6 +146,7 @@ public class CatalogAdminService {
      * does not exist), in the first free cell reading row by row.
      */
     public AdminCategory createFolder(FolderRequest request) {
+        catalogueLock.acquire();
         String name = request.name().strip();
         String tabName = request.tab().strip();
         if (name.isEmpty() || tabName.isEmpty()) {
@@ -158,6 +164,7 @@ public class CatalogAdminService {
 
     /** Renames a folder, moves it to another tab or cell, takes it off the grid, or changes whether it counts for promotions. */
     public AdminCategory updateFolder(Long folderId, FolderUpdate request) {
+        catalogueLock.acquire();
         Category category = requireFolder(folderId);
         String name = request.name().strip();
         if (name.isEmpty()) {
@@ -195,6 +202,7 @@ public class CatalogAdminService {
 
     /** Deletes a folder that has no items (past sales keep the folder name they were sold under). */
     public void deleteFolder(Long folderId) {
+        catalogueLock.acquire();
         Category category = requireFolder(folderId);
         long items = itemRepository.countByCategoryId(folderId);
         if (items > 0) {
@@ -208,6 +216,7 @@ public class CatalogAdminService {
 
     /** Puts a folder's items in the order wanted. */
     public List<AdminItem> reorderItems(Long folderId, OrderRequest request) {
+        catalogueLock.acquire();
         requireFolder(folderId);
         SortOrders.apply(itemRepository.findByCategoryIdOrderBySortOrderAsc(folderId), request.ids(), Item::getId,
                 Item::setSortOrder, itemRepository::flush, "items");
@@ -222,6 +231,7 @@ public class CatalogAdminService {
     }
 
     public AdminTab renameTab(Long tabId, TabRequest request) {
+        catalogueLock.acquire();
         QuickgridTab tab = requireTab(tabId);
         String name = request.name().strip();
         if (name.isEmpty()) {
@@ -236,6 +246,7 @@ public class CatalogAdminService {
     }
 
     public List<AdminTab> reorderTabs(OrderRequest request) {
+        catalogueLock.acquire();
         SortOrders.apply(tabRepository.findAllByOrderBySortOrderAsc(), request.ids(), QuickgridTab::getId,
                 (tab, order) -> tab.setSortOrder(order.shortValue()), tabRepository::flush, "tabs");
         return tabs();
@@ -243,6 +254,7 @@ public class CatalogAdminService {
 
     /** Deletes a tab that has no folders. */
     public void deleteTab(Long tabId) {
+        catalogueLock.acquire();
         QuickgridTab tab = requireTab(tabId);
         long folders = categoryRepository.countByTabId(tabId);
         if (folders > 0) {
@@ -259,7 +271,11 @@ public class CatalogAdminService {
      * sale so every past sale, report and reward keeps referring to it.
      */
     public Removal removeItem(Long itemId) {
-        Item item = requireItem(itemId);
+        catalogueLock.acquire();
+        // The item's row next: a sale saving a line of it commits first (and the item is then only taken off sale),
+        // or waits for this removal and is told to reload.
+        Item item = itemRepository.lockById(itemId)
+                .orElseThrow(() -> new ResourceNotFoundException("Item " + itemId + " not found"));
         boolean sold = Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM sale_order_line WHERE item_id = ?)", Boolean.class, itemId));
         if (sold) {
@@ -343,6 +359,7 @@ public class CatalogAdminService {
     }
 
     public AdminItem create(ItemRequest request) {
+        catalogueLock.acquire();
         if (request.categoryId() == null) {
             throw new BadRequestException("Choose a folder for the item");
         }
@@ -360,6 +377,7 @@ public class CatalogAdminService {
     }
 
     public AdminItem update(Long itemId, ItemRequest request) {
+        catalogueLock.acquire();
         Item item = requireItem(itemId);
         String name = request.name().strip();
         // A categoryId different from the item's own moves it to the end of that folder.
@@ -372,7 +390,8 @@ public class CatalogAdminService {
         if (!destination.getId().equals(item.getCategory().getId())) {
             item.moveTo(destination, itemRepository.maxSortOrder(destination.getId()) + 1);
         }
-        item.edit(name, request.price(), request.active() == null || request.active());
+        // Absent means unchanged, like the other optional fields (a creation is on sale).
+        item.edit(name, request.price(), request.active() == null ? item.isActive() : request.active());
         setSeasonal(item, request);
         log.info("Item {} edited: {} RM{} → RM{}, active {}, seasonal {} ({} to {})", itemId, name, oldPrice,
                 request.price(), item.isActive(), item.isSeasonal(), item.getSeasonalFrom(), item.getSeasonalUntil());

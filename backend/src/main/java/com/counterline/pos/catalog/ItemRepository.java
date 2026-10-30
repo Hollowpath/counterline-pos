@@ -1,7 +1,11 @@
 package com.counterline.pos.catalog;
 
 import org.springframework.data.jpa.repository.EntityGraph;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
@@ -45,4 +49,12 @@ interface ItemRepository extends JpaRepository<Item, Long> {
     boolean existsByCategoryIdAndNameIgnoreCase(Long categoryId, String name);
 
     boolean existsByCategoryIdAndNameIgnoreCaseAndIdNot(Long categoryId, String name, Long id);
+
+    /**
+     * SELECT … FOR UPDATE of one item: a sale that is saving a line of it (which holds a share of the row) is waited
+     * for, so removing an item and selling it meet in order.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from Item i where i.id = :id")
+    java.util.Optional<Item> lockById(@Param("id") Long id);
 }

@@ -58,9 +58,11 @@ public class ModifierAdminService {
     private final ModifierGroupRepository groupRepository;
     private final ModifierOptionRepository optionRepository;
     private final JdbcTemplate jdbc;
+    private final CatalogLock catalogueLock;
 
     ModifierAdminService(ItemRepository itemRepository, ModifierGroupRepository groupRepository,
-                         ModifierOptionRepository optionRepository, JdbcTemplate jdbc) {
+                         ModifierOptionRepository optionRepository, JdbcTemplate jdbc, CatalogLock catalogueLock) {
+        this.catalogueLock = catalogueLock;
         this.itemRepository = itemRepository;
         this.groupRepository = groupRepository;
         this.optionRepository = optionRepository;
@@ -74,6 +76,7 @@ public class ModifierAdminService {
     }
 
     public AdminGroup createGroup(Long itemId, GroupRequest request) {
+        catalogueLock.acquire();
         Item item = requireItem(itemId);
         String name = request.name().strip();
         requireFreeGroupName(itemId, name, null);
@@ -84,6 +87,7 @@ public class ModifierAdminService {
     }
 
     public AdminGroup updateGroup(Long groupId, GroupRequest request) {
+        catalogueLock.acquire();
         ModifierGroup group = requireGroup(groupId);
         String name = request.name().strip();
         requireFreeGroupName(group.getItemId(), name, groupId);
@@ -93,6 +97,7 @@ public class ModifierAdminService {
     }
 
     public List<AdminGroup> reorderGroups(Long itemId, OrderRequest request) {
+        catalogueLock.acquire();
         requireItem(itemId);
         SortOrders.apply(groupRepository.findByItemIdOrderBySortOrderAsc(itemId), request.ids(), ModifierGroup::getId,
                 ModifierGroup::setSortOrder, groupRepository::flush, "option groups");
@@ -100,6 +105,7 @@ public class ModifierAdminService {
     }
 
     public Removal removeGroup(Long groupId) {
+        catalogueLock.acquire();
         ModifierGroup group = requireGroup(groupId);
         boolean sold = Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS (SELECT 1 FROM sale_order_line_modifier m
@@ -120,6 +126,7 @@ public class ModifierAdminService {
     }
 
     public AdminOption createOption(Long groupId, OptionRequest request) {
+        catalogueLock.acquire();
         ModifierGroup group = requireGroup(groupId);
         String name = request.name().strip();
         requireFreeOptionName(groupId, name, null);
@@ -134,15 +141,18 @@ public class ModifierAdminService {
     }
 
     public AdminOption updateOption(Long optionId, OptionRequest request) {
+        catalogueLock.acquire();
         ModifierOption option = requireOption(optionId);
         String name = request.name().strip();
         requireFreeOptionName(option.getGroup().getId(), name, optionId);
-        option.edit(name, request.price(), request.active() == null || request.active());
+        // Absent means unchanged, like a creation being active by default only.
+        option.edit(name, request.price(), request.active() == null ? option.isActive() : request.active());
         optionRepository.flush();
         return view(option);
     }
 
     public List<AdminOption> reorderOptions(Long groupId, OrderRequest request) {
+        catalogueLock.acquire();
         requireGroup(groupId);
         SortOrders.apply(optionRepository.findByGroup(groupId), request.ids(), ModifierOption::getId,
                 ModifierOption::setSortOrder, optionRepository::flush, "options");
@@ -150,6 +160,7 @@ public class ModifierAdminService {
     }
 
     public Removal removeOption(Long optionId) {
+        catalogueLock.acquire();
         ModifierOption option = requireOption(optionId);
         boolean sold = Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM sale_order_line_modifier WHERE option_id = ?)", Boolean.class, optionId));

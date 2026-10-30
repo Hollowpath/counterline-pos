@@ -8,6 +8,8 @@ import com.counterline.pos.catalog.CatalogService;
 import com.counterline.pos.catalog.Item;
 import com.counterline.pos.catalog.ModifierGroup;
 import com.counterline.pos.common.BusinessRuleException;
+import com.counterline.pos.common.ConflictException;
+import com.counterline.pos.common.DatabaseConflicts;
 import com.counterline.pos.common.ResourceNotFoundException;
 import com.counterline.pos.customers.Customer;
 import com.counterline.pos.customers.CustomerService;
@@ -138,7 +140,7 @@ public class CheckoutService {
             // race on one approval token finds it spent by that very sale: it gets the sale, not a refusal.)
             return orderQueries.findByClientRequestId(request.clientRequestId(), terminal.outletId())
                     .map(existing -> new CheckoutResult(existing, false))
-                    .orElseThrow(() -> e);
+                    .orElseThrow(() -> e instanceof DataIntegrityViolationException && DatabaseConflicts.isCollision(e) ? savingCollision() : e);
         }
     }
 
@@ -279,7 +281,7 @@ public class CheckoutService {
      * Paying is idempotent per {@code clientRequestId}: a retry returns the paid order.
      */
     public OrderResponse edit(Long orderId, CheckoutRequest request, Terminal terminal) {
-        OrderResponse edited = transaction.execute(status -> {
+        OrderResponse edited = executeSaving(status -> {
             SaleOrder order = orderRepository.lockByIdAndOutletId(orderId, terminal.outletId())
                     .orElseThrow(() -> new ResourceNotFoundException("Order " + orderId + " not found"));
             if (request.clientRequestId().equals(order.getPaymentRequestId())) {
@@ -318,6 +320,21 @@ public class CheckoutService {
         }
         return orderRepository.findByIdAndOutletId(editedOrderId, outletId)
                 .map(SaleOrder::getCustomer).map(Customer::getId).orElse(null);
+    }
+
+    /** A save that collides with something changed meanwhile (an item removed from sale, say) is a 409, not a 500. */
+    private <T> T executeSaving(org.springframework.transaction.support.TransactionCallback<T> body) {
+        try {
+            return transaction.execute(body);
+        } catch (DataIntegrityViolationException e) {
+            // Only a unique or foreign-key collision is a conflict; a check or not-null violation is a defect.
+            throw DatabaseConflicts.isCollision(e) ? savingCollision() : e;
+        }
+    }
+
+    private static ConflictException savingCollision() {
+        return new ConflictException("Something in the sale changed while it was being saved (an item was just removed from sale, say). "
+                + "Check the cart and try again.");
     }
 
     private void useVoucher(Voucher voucher, SaleOrder order) {
