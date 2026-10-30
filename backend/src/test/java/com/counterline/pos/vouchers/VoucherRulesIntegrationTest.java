@@ -74,11 +74,13 @@ class VoucherRulesIntegrationTest {
     PinHasher pinHasher;
 
     private Long cashierId;
+    private Long managerId;
 
     @BeforeEach
     void setUp() {
         jdbc.execute("TRUNCATE login_throttle, staff, customer, voucher_batch, voucher RESTART IDENTITY CASCADE");
         cashierId = staffRepository.save(new Staff("Rules Cashier", pinHasher.hash("123456"), StaffRole.STAFF, 1L)).getId();
+        managerId = staffRepository.save(new Staff("Rules Manager", pinHasher.hash("654321"), StaffRole.MANAGER, 1L)).getId();
         TestRegister.open(jdbc, cashierId);
     }
 
@@ -309,7 +311,89 @@ class VoucherRulesIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT count(used_order_id) FROM voucher WHERE code IN (?, ?)", Long.class, a, b)).isZero();
     }
 
+    // ---- Refunding a sale that cost nothing ----
+
+    @Test
+    void aZeroTotalSaleIsRefundedOnceByAManagerAndGivesBackItsVoucher() throws Exception {
+        String code = issue("Free " + unique(), "100", TODAY.plusDays(5), 1).getFirst();
+        String paid = checkout("PAY", 1, code, null).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("CLOSED"))
+                .andExpect(jsonPath("$.total").value(0.0))
+                .andExpect(jsonPath("$.amountPaid").value(0.0))
+                .andExpect(jsonPath("$.closedAt").isNotEmpty())
+                .andReturn().getResponse().getContentAsString();
+        Integer first = JsonPath.read(paid, "$.id");
+        assertThat(statusOf(code)).isEqualTo("USED");
+
+        // Refunds stay a manager's.
+        refund(first, cashier()).andExpect(status().isForbidden());
+        assertThat(statusOf(code)).isEqualTo("USED");
+
+        refund(first, manager()).andExpect(status().isOk())
+                .andExpect(jsonPath("$.refund.amount").value(0.0))
+                .andExpect(jsonPath("$.refund.reason").value("Wrong flavour"));
+        assertThat(statusOf(code)).isEqualTo("UNUSED");
+
+        // The voucher goes on another sale; refunding the first one again changes nothing.
+        Integer second = JsonPath.read(checkout("PAY", 1, code, null).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(), "$.id");
+        refund(first, manager()).andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.endsWith("has already been refunded")));
+        assertThat(statusOf(code)).isEqualTo("USED");
+        assertThat(jdbc.queryForObject("SELECT used_order_id FROM voucher WHERE code = ?", Long.class, code)).isEqualTo(second.longValue());
+    }
+
+    @Test
+    void aZeroTotalSaleThatRedeemedPointsGivesThemBackWhenRefunded() throws Exception {
+        Long memberId = jdbc.queryForObject("""
+                INSERT INTO customer (first_name, last_name, date_of_birth, created_at, updated_at)
+                VALUES ('Nur', 'Aisyah', ?, now() - interval '30 days', now()) RETURNING id
+                """, Long.class, java.sql.Date.valueOf(TODAY.plusMonths(6).withYear(1995).withDayOfMonth(15)));
+        call(post("/api/v1/dashboard/customers/" + memberId + "/points"), admin(),
+                "{\"points\":7,\"reason\":\"Points from last month\"}").andExpect(status().isOk());
+
+        // The member's free item costs 7 points and nothing else is bought: the sale totals nothing.
+        String paid = call(post("/api/v1/orders"), cashier(), """
+                {"clientRequestId":"%s","customerId":%d,"lines":[{"itemId":23,"quantity":1}],"payments":[]}"""
+                .formatted(UUID.randomUUID(), memberId)).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.total").value(0.0))
+                .andExpect(jsonPath("$.loyalty.redeemed").value(7))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(points(memberId)).isZero();
+
+        refund(JsonPath.read(paid, "$.id"), manager()).andExpect(status().isOk());
+        assertThat(points(memberId)).isEqualTo(7L);
+    }
+
+    @Test
+    void closedAtIsWhenTheOrderWasPaidNotWhenItWasPlaced() throws Exception {
+        String placed = call(post("/api/v1/orders"), cashier(), sale(4, null, "PLACE_ORDER", null)).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        Integer id = JsonPath.read(placed, "$.id");
+        assertThat(JsonPath.<Object>read(placed, "$.closedAt")).isNull();
+        jdbc.update("UPDATE sale_order SET created_at = now() - interval '2 days' WHERE id = ?", id);
+
+        String paid = call(post("/api/v1/orders/" + id + "/payments"), cashier(), """
+                {"clientRequestId":"%s","payments":[{"paymentMethodId":2,"reference":"ref","amount":29.00}]}"""
+                .formatted(UUID.randomUUID())).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        java.time.Instant created = java.time.Instant.parse(JsonPath.read(paid, "$.createdAt"));
+        java.time.Instant closed = java.time.Instant.parse(JsonPath.read(paid, "$.closedAt"));
+        assertThat(closed).isAfter(created.plus(java.time.Duration.ofDays(1)));
+        // Read back from the database, which keeps microseconds (rounded).
+        String stored = JsonPath.read(call(get("/api/v1/orders/" + id), cashier(), null).andReturn().getResponse().getContentAsString(), "$.closedAt");
+        assertThat(java.time.Duration.between(closed, java.time.Instant.parse(stored)).abs()).isLessThanOrEqualTo(java.time.Duration.ofNanos(1000));
+    }
+
     // ---- helpers ----
+
+    private ResultActions refund(Object orderId, RequestPostProcessor who) throws Exception {
+        return call(post("/api/v1/orders/" + orderId + "/refund"), who, "{\"reason\":\"Wrong flavour\"}");
+    }
+
+    private long points(Long memberId) {
+        return jdbc.queryForObject("SELECT coalesce(sum(points), 0) FROM loyalty_entry WHERE customer_id = ?", Long.class, memberId);
+    }
 
     private static String unique() {
         return UUID.randomUUID().toString().substring(0, 8);
@@ -368,6 +452,12 @@ class VoucherRulesIntegrationTest {
 
     private RequestPostProcessor cashier() {
         return jwt().jwt(token -> token.claim("outlet", 1L).subject(cashierId.toString()).claim("name", "Rules Cashier"));
+    }
+
+    private RequestPostProcessor manager() {
+        return jwt().jwt(token -> token.claim("outlet", 1L).subject(managerId.toString())
+                        .claim("role", "MANAGER").claim("name", "Rules Manager"))
+                .authorities(new SimpleGrantedAuthority("ROLE_MANAGER"));
     }
 
     private static RequestPostProcessor admin() {

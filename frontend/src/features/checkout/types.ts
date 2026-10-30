@@ -152,6 +152,8 @@ export interface Order {
   staffName: string
   customer: OrderCustomer | null
   createdAt: string
+  /** When it was paid (null while unpaid): the day it is reported on, and the date on its receipt. */
+  closedAt: string | null
   lines: OrderLine[]
   orderDiscounts: AppliedDiscount[]
   payments: OrderPayment[]

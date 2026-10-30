@@ -165,6 +165,7 @@ export function SalesOverview() {
               </Card>
             )}
             <Card title="Busiest hours">
+              <BeforeRefunds />
               <ColumnChart
                 label="Sales by hour"
                 labelEvery={3}
@@ -181,6 +182,7 @@ export function SalesOverview() {
               <PaymentMethods methods={overview.paymentMethods} />
             </Card>
             <Card title="Top items">
+              <BeforeRefunds />
               <BarList
                 label="Top items by units sold"
                 rows={overview.topItems.map((item) => ({
@@ -189,12 +191,14 @@ export function SalesOverview() {
               />
             </Card>
             <Card title="Sales by folder">
+              <BeforeRefunds />
               <BarList
                 label="Sales by folder"
                 rows={overview.categories.map((category) => ({ label: category.name, value: category.amount, shown: rm(category.amount) }))}
               />
             </Card>
             <Card title="Free items given">
+              <BeforeRefunds />
               <BarList
                 label="Free items by promotion"
                 empty="No free items given."
@@ -204,6 +208,7 @@ export function SalesOverview() {
               />
             </Card>
             <Card title="Discounts & vouchers">
+              <BeforeRefunds />
               <BarList
                 label="Discounts and vouchers used"
                 empty="No discounts given."
@@ -217,6 +222,11 @@ export function SalesOverview() {
       )}
     </Page>
   )
+}
+
+/** These rankings count activity as it was sold; refunds are in the net sales and payment figures only. */
+function BeforeRefunds() {
+  return <p className="mb-2 text-xs text-zinc-500">Before refunds</p>
 }
 
 /** What each payment method collected (less refunds), with its share of the whole. */

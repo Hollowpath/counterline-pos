@@ -37,6 +37,9 @@ const REPORTS: { name: ReportName; label: string }[] = [
 
 const rm = (amount: number) => formatRM(toSen(amount))
 
+/** Rankings of what was sold, given, or picked: counted as sold, so a refunded sale is still in them. */
+const BEFORE_REFUNDS: ReportName[] = ['item-sales', 'category-sales', 'discounts', 'modifiers']
+
 interface ReportsScreenProps {
   /** Whose reports these are (printed at the top): the terminal's outlet, or the one chosen on the dashboard. */
   outletName: string
@@ -135,6 +138,11 @@ function Report({ name, path }: { name: ReportName; path: string }) {
   }
   return (
     <>
+      {BEFORE_REFUNDS.includes(name) && (
+        <p className="mb-3 text-xs text-zinc-500 print:text-[10px] print:text-black" data-testid="before-refunds-note">
+          Before refunds: a refunded sale is still counted here. Refunds are in the Sales Summary and Payment Methods.
+        </p>
+      )}
       <ReportBody name={name} data={result.data} />
       <p className="mt-6 text-center text-xs text-zinc-400 print:text-[10px] print:text-black">Generated on {formatDateTime(new Date().toISOString())}</p>
     </>

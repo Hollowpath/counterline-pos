@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { saveTerminal } from '../../auth/terminalStore'
+import { formatDateTime } from '../../lib/dates'
 import type { Order, OrderStatus } from '../checkout/types'
 import { PrintReceiptButton } from './PrintReceiptButton'
 import { printScreen } from './printReceipt'
@@ -24,6 +25,7 @@ function order(status: OrderStatus, overrides: Partial<Order> = {}): Order {
     staffName: 'Aisyah Rahman',
     customer: { id: 5, name: 'Nur Aisyah', phone: '+60112345678', email: null },
     createdAt: '2026-10-15T02:30:00Z',
+    closedAt: paid ? '2026-10-15T02:31:00Z' : null,
     lines: [
       {
         lineNumber: 1, itemId: 4, itemName: 'WSP Caramel', note: null, unitPrice: 16, modifierUnitPrice: 0, quantity: 3,
@@ -67,6 +69,28 @@ describe('the customer receipt', () => {
     expect(receipt).not.toHaveTextContent('+60112345678')
     expect(receipt).toHaveTextContent(/Previous points\s*2\s*Points earned\s*4\s*Current points\s*6/)
     expect(screen.queryByTestId('receipt-status-banner')).not.toBeInTheDocument()
+  })
+
+  // Placed 23:50 on the 14th (outlet time), paid 00:10 on the 15th: reports count it on the 15th, so does the slip.
+  it('is dated by when the sale was paid, not when it was placed', () => {
+    const placed = '2026-10-14T15:50:00Z'
+    const paidAt = '2026-10-14T16:10:00Z'
+    render(<Receipt order={order('CLOSED', { createdAt: placed, closedAt: paidAt })} outlet={outlet} />)
+    const receipt = screen.getByRole('article')
+
+    expect(receipt).toHaveTextContent(formatDateTime(paidAt))
+    expect(receipt).not.toHaveTextContent(formatDateTime(placed))
+  })
+
+  it('is dated by a zero-total sale’s paid time too, and an unpaid order by when it was placed', () => {
+    const free = order('CLOSED', { total: 0, amountPaid: 0, payments: [], createdAt: '2026-10-14T15:50:00Z', closedAt: '2026-10-14T16:10:00Z' })
+    const { unmount } = render(<Receipt order={free} outlet={outlet} />)
+    expect(screen.getByRole('article')).toHaveTextContent(formatDateTime('2026-10-14T16:10:00Z'))
+    expect(screen.getByRole('article')).toHaveTextContent('Payment StatusPaid')
+    unmount()
+
+    render(<Receipt order={order('OPEN', { createdAt: '2026-10-14T15:50:00Z' })} outlet={outlet} />)
+    expect(screen.getByRole('article')).toHaveTextContent(formatDateTime('2026-10-14T15:50:00Z'))
   })
 
   it.each([

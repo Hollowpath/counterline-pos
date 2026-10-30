@@ -181,6 +181,12 @@ describe('back-office dashboard', () => {
     expect(within(sales).getByRole('list', { name: 'Discounts and vouchers used' })).toHaveTextContent('Staff 10%× 1RM1.60')
     expect(within(sales).getByText(/^Best day:/)).toHaveTextContent('Best day: 13 Oct · RM16.00 · 1 order')
     expect(within(sales).getByText(/^Busiest:/)).toHaveTextContent('Busiest: 3pm · RM61.00 · 3 orders')
+    // The rankings count what was sold, so they say so; the net and payment figures do not.
+    for (const title of ['Busiest hours', 'Top items', 'Sales by folder', 'Free items given', 'Discounts & vouchers']) {
+      expect(within(sales).getByRole('heading', { name: title }).parentElement).toHaveTextContent('Before refunds')
+    }
+    expect(within(sales).getAllByText('Before refunds')).toHaveLength(5)
+    expect(within(sales).getByRole('heading', { name: 'Payment methods' }).parentElement).not.toHaveTextContent('Before refunds')
 
     await user.click(nav().getByRole('button', { name: 'Live Sales' }))
     expect(await screen.findByRole('article', { name: 'Counterline Cheras' })).toBeInTheDocument()

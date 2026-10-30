@@ -26,6 +26,7 @@ function makeOrder(id: number, status: OrderStatus, overrides: Partial<Order> = 
     staffName: 'Aisyah Rahman',
     customer: null,
     createdAt: '2026-10-12T10:00:00Z',
+    closedAt: paid ? '2026-10-12T10:01:00Z' : null,
     lines: [{
       lineNumber: 1, itemId: 4, itemName: 'Tin Caramel', note: null, unitPrice: 29, modifierUnitPrice: 0, quantity: 1,
       modifiers: [], lineSubtotal: 29, discounts: [], discountTotal: 0, lineTotal: 29,

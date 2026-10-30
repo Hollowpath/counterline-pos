@@ -39,6 +39,8 @@ function fakeApi() {
         return json({ ...range, categories: [{ categoryName: 'B3 F1 Promo Baby Can', quantity: 5, amount: 32.5, items: [
           { itemName: 'B3 F1 BC BBQ', quantity: 5, amount: 32.5, prices: [{ label: 'Unit Value', unitPrice: 6.5, quantity: 5, amount: 32.5 }] },
         ] }] })
+      case '/api/v1/reports/discounts':
+        return json({ ...range, discounts: [{ name: 'Staff 10%', count: 1, amount: 2.9 }] })
       case '/api/v1/reports/modifiers':
         return json({ ...range, options: [
           { groupName: 'General Gift Box Paper Can', optionName: 'GB PC Tomato', quantity: 3, amount: 0 },
@@ -121,6 +123,22 @@ describe('ReportsScreen', () => {
     const points = await report('Loyalty Points')
     expect(await within(points).findByText('Issued Points')).toBeInTheDocument()
     expect(points).toHaveTextContent(/Issued Points\s*60\s*Redeemed Points\s*\(35\)\s*Member Redemption\s*5 items\s*\(35\)/)
+  })
+
+  it('says the item, category, discount and modifier reports are before refunds, and the net ones are not', async () => {
+    fakeApi()
+    const user = userEvent.setup()
+    render(<ReportsScreen outletName="Counterline Bukit Bintang" onOpenMenu={() => {}} />)
+
+    for (const name of ['Item Sales', 'Category Sales', 'Discounts', 'Modifiers']) {
+      await user.click(screen.getByRole('button', { name }))
+      expect(await screen.findByTestId('before-refunds-note')).toHaveTextContent(/Before refunds: a refunded sale is still counted here/)
+    }
+    for (const name of ['Sales Summary', 'Hourly Sales', 'Payment Methods', 'Loyalty Points']) {
+      await user.click(screen.getByRole('button', { name }))
+      await screen.findByText(/^Generated on /)
+      expect(screen.queryByTestId('before-refunds-note')).not.toBeInTheDocument()
+    }
   })
 
   it('steps through days and switches reports', async () => {

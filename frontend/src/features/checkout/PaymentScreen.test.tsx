@@ -34,7 +34,7 @@ function json(body: unknown, status = 200) {
 function order(overrides: Partial<Order> = {}): Order {
   return {
     id: 1, orderNumber: 'R355', receiptCode: '261012ABCDEFG', status: 'CLOSED', subtotal: 61, discountTotal: 0,
-    total: 61, amountPaid: 61, note: null, staffName: 'Cashier', customer: null, createdAt: '2026-10-12T10:00:00Z',
+    total: 61, amountPaid: 61, note: null, staffName: 'Cashier', customer: null, createdAt: '2026-10-12T10:00:00Z', closedAt: '2026-10-12T10:00:00Z',
     lines: [], orderDiscounts: [], payments: [], voided: null, refund: null, ...overrides,
   }
 }

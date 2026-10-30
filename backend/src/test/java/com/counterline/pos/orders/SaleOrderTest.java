@@ -182,7 +182,7 @@ class SaleOrderTest {
     }
 
     @Test
-    void onlyAPaidOrderWithMoneyTakenCanBeRefunded() {
+    void onlyAPaidOrderCanBeRefundedAndAZeroTotalOneOnlyOnce() {
         order.addLine(item("Tin Cheese", "29.00"), 1);
         order.place();
         assertThatThrownBy(() -> order.refund("x", cashier, NOW)).hasMessage("Only a paid order can be refunded");
@@ -190,7 +190,10 @@ class SaleOrderTest {
         SaleOrder free = new SaleOrder(1L, 3, "261012ABCDEFI", UUID.randomUUID(), null, cashier, NOW);
         free.addLine(item("Sample Pouch", "0.00"), 1);
         free.close(NOW);
-        assertThatThrownBy(() -> free.refund("x", cashier, NOW)).hasMessage("Order R3 had nothing to refund");
+        free.refund("x", cashier, NOW);
+        assertThat(free.isRefunded()).isTrue();
+        assertThat(free.getAmountPaid()).isEqualByComparingTo("0");
+        assertThatThrownBy(() -> free.refund("again", cashier, NOW)).hasMessage("Order R3 has already been refunded");
     }
 
     private static PaymentMethod method(String name, PaymentMethod.Kind kind) {

@@ -54,12 +54,15 @@ class ReportQueries {
                 (rs, i) -> new SalesTotals(rs.getLong("n"), rs.getBigDecimal("gross"), rs.getBigDecimal("discounts")));
     }
 
-    /** Refunds are full, so the refunded amount is everything paid on the refunded orders. */
+    /**
+     * Refunds are full, so the refunded amount is everything paid on the refunded orders. A zero-total
+     * sale (no payments) is still a refund, of nothing.
+     */
     Totals refunds(Long outletId, Instant start, Instant end) {
         return jdbc.queryForObject("""
-                SELECT count(DISTINCT o.id) AS n, coalesce(sum(p.amount), 0) AS amount
+                SELECT count(*) AS n,
+                       coalesce(sum((SELECT coalesce(sum(p.amount), 0) FROM payment p WHERE p.order_id = o.id)), 0) AS amount
                 FROM sale_order o
-                JOIN payment p ON p.order_id = o.id
                 WHERE %s
                 """.formatted(REFUNDED_IN_RANGE), range(outletId, start, end),
                 (rs, i) -> new Totals(rs.getLong("n"), rs.getBigDecimal("amount")));

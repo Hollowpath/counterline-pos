@@ -164,7 +164,7 @@ describe('SellScreen', () => {
       '/api/v1/payment-methods': () => jsonResponse([{ id: 2, name: 'Visa', kind: 'CASHLESS' }]),
       '/api/v1/orders': () => jsonResponse({
         id: 1, orderNumber: 'R1', receiptCode: '261012ABCDEFG', status: 'CLOSED', subtotal: 16, discountTotal: 0, total: 16,
-        amountPaid: 16, note: null, staffName: 'Cashier', customer: null, createdAt: '2026-10-12T10:00:00Z',
+        amountPaid: 16, note: null, staffName: 'Cashier', customer: null, createdAt: '2026-10-12T10:00:00Z', closedAt: '2026-10-12T10:00:00Z',
         lines: [], orderDiscounts: [], payments: [], voided: null, refund: null,
       }, 201),
     })

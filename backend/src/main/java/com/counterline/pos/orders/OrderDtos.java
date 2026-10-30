@@ -150,6 +150,8 @@ public final class OrderDtos {
             String staffName,
             OrderCustomer customer,
             Instant createdAt,
+            /* When it was paid; null while unpaid. The day it is reported on. */
+            Instant closedAt,
             List<LineResponse> lines,
             List<AppliedDiscount> orderDiscounts,
             List<PaymentResponse> payments,
@@ -172,6 +174,7 @@ public final class OrderDtos {
                     order.getStaff().getFullName(),
                     OrderCustomer.from(order.getCustomer()),
                     order.getCreatedAt(),
+                    order.getClosedAt(),
                     order.getLines().stream().map(line -> LineResponse.from(line, order)).toList(),
                     order.getDiscounts().stream()
                             .filter(discount -> discount.getLine() == null)

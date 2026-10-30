@@ -50,7 +50,7 @@ export function Receipt({ order, outlet }: { order: Order; outlet: Pick<Outlet, 
 
       <div className={rule} />
       <Row label={`Order ${order.orderNumber}`} value={order.receiptCode} />
-      <Row label={formatDateTime(order.createdAt)} value={order.staffName} />
+      <Row label={formatDateTime(order.closedAt ?? order.createdAt)} value={order.staffName} />
       <Row label="Retail" value="Pax: 1" />
       <div className={rule} />
 

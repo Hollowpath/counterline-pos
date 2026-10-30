@@ -365,9 +365,8 @@ public class SaleOrder {
         if (isRefunded()) {
             throw new BusinessRuleException("Order " + getDisplayNumber() + " has already been refunded");
         }
-        if (getAmountPaid().signum() == 0) {
-            throw new BusinessRuleException("Order " + getDisplayNumber() + " had nothing to refund");
-        }
+        // A zero-total sale (free items, or a voucher that covered it) has no money to return, but is
+        // still refunded once: that is what gives back its voucher and points.
         this.refundReason = reason;
         this.refundedBy = manager;
         this.refundedAt = at;
