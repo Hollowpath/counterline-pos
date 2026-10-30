@@ -1,6 +1,17 @@
+import assert from 'node:assert/strict';
+import { after, test } from 'node:test';
 import * as cdk from 'aws-cdk-lib/core';
 import { Match, Template } from 'aws-cdk-lib/assertions';
+import { CloudAssembly } from 'aws-cdk-lib/cx-api';
 import { CounterlineStack } from '../lib/infrastructure-stack';
+
+// Remove any temporary cloud assemblies the tests synthesise once they have run: what aws-cdk-lib's Jest
+// helper "jest-autoclean" did under Jest (CDK_NO_CLEAN_TESTS keeps them, as it did there).
+after(() => {
+  if (!process.env.CDK_NO_CLEAN_TESTS) {
+    CloudAssembly.cleanupTemporaryDirectories();
+  }
+});
 
 test('creates the application image repository', () => {
   const app = new cdk.App();
@@ -48,12 +59,14 @@ test('creates a two-AZ VPC without paid network egress', () => {
   template.resourceCountIs('AWS::EC2::VPCEndpoint', 0);
 
   const subnets = Object.values(template.findResources('AWS::EC2::Subnet'));
-  expect(
-    subnets.filter((subnet) => subnet.Properties.MapPublicIpOnLaunch),
-  ).toHaveLength(2);
-  expect(
-    subnets.filter((subnet) => !subnet.Properties.MapPublicIpOnLaunch),
-  ).toHaveLength(2);
+  assert.equal(
+    subnets.filter((subnet) => subnet.Properties.MapPublicIpOnLaunch).length,
+    2,
+  );
+  assert.equal(
+    subnets.filter((subnet) => !subnet.Properties.MapPublicIpOnLaunch).length,
+    2,
+  );
 });
 
 test('restricts network access to the owner and required service paths', () => {
@@ -77,20 +90,23 @@ test('restricts network access to the owner and required service paths', () => {
     return [];
   });
 
-  expect(ingress).toHaveLength(3);
-  expect(ingress.map((rule: any) => rule.FromPort)).toEqual(
-    expect.arrayContaining([80, 8080, 5432]),
-  );
-  expect(
+  assert.equal(ingress.length, 3);
+  const ports = ingress.map((rule: any) => rule.FromPort);
+  for (const port of [80, 8080, 5432]) {
+    assert.ok(ports.includes(port), `ingress allows port ${port}`);
+  }
+  assert.equal(
     ingress.some((rule: any) => rule.CidrIp === '0.0.0.0/0'),
-  ).toBe(false);
-  expect(
+    false,
+  );
+  assert.equal(
     ingress.some(
       (rule: any) =>
         rule.FromPort === 80 &&
         rule.CidrIp?.Ref === 'AllowedIpv4Cidr',
     ),
-  ).toBe(true);
+    true,
+  );
 });
 
 test('creates an encrypted isolated PostgreSQL database', () => {

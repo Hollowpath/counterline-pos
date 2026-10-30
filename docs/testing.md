@@ -81,7 +81,7 @@ A newer run on the same ref cancels an older one still in progress. GitHub Depen
 
 ## Infrastructure (`infrastructure/test`)
 
-Jest tests synthesise the CDK stack locally with `Template.fromStack` and assert on the generated CloudFormation. They need no AWS account or credentials and do not deploy anything. They cover the ECR repository (immutability, scan on push, lifecycle rule, retention), the VPC (two AZs, no NAT gateway), the security-group rules (no `0.0.0.0/0` ingress; the owner address parameter on port 80; 8080 and 5432 only between the tiers), the database (encryption, no public access, single AZ, short backup retention), the secrets and log retention, and the Fargate service, load balancer and health check.
+Tests (the Node.js test runner, `node:test`, run through `tsx`) synthesise the CDK stack locally with `Template.fromStack` and assert on the generated CloudFormation. They need no AWS account or credentials and do not deploy anything. They cover the ECR repository (immutability, scan on push, lifecycle rule, retention), the VPC (two AZs, no NAT gateway), the security-group rules (no `0.0.0.0/0` ingress; the owner address parameter on port 80; 8080 and 5432 only between the tiers), the database (encryption, no public access, single AZ, short backup retention), the secrets and log retention, and the Fargate service, load balancer and health check.
 
 ```bash
 cd infrastructure
