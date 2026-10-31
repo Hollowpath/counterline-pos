@@ -34,7 +34,7 @@ What this system is scoped to do, what evidence exists for its quality, and whic
 | Container         | Multi-stage image, non-root runtime, health check, memory-aware JVM flags                                                         | `Dockerfile`                              |
 | Config            | Environment-variable driven; no secret defaults outside `local`                                                                   | `application.yml`                         |
 | Error shape       | Problem-details responses for application and security errors                                                                     | `common/`, `auth/`                        |
-| AWS stack (temporary, on-demand) | Owner-managed, reproducible CDK stack, meant to be deployed only for testing or demonstrations and destroyed afterwards: ECR, two-AZ VPC without NAT, owner-restricted HTTP ALB, one public-IP Fargate task, encrypted isolated PostgreSQL, Secrets Manager, seven-day logs | `infrastructure/`, [architecture.md](architecture.md) |
+| AWS stack (temporary, on-demand) | Owner-managed, reproducible CDK stack, meant to be deployed only for testing or demonstrations and destroyed afterwards: ECR, two-AZ VPC without NAT, owner-restricted HTTP ALB, one public-IP Fargate task, encrypted isolated PostgreSQL, Secrets Manager, seven-day logs | `infrastructure/`, [architecture.md](architecture.md), [deployment-verification-2026-10-31.md](deployment-verification-2026-10-31.md) |
 
 ## Deferred controls and their triggers
 

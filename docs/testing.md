@@ -91,7 +91,7 @@ npm ci
 npm test
 ```
 
-Synthesis tests show what the template asks for, not what AWS does with it. They say nothing about whether anything is deployed: the repository provides no continuously hosted environment, and deployments are external, owner-managed and created on demand. After a deploy the owner checks the result by hand; these checks are not automated and their results are not recorded here: the load balancer target is healthy, `/actuator/health` answers through the load balancer from the owner's address, the application logs reach CloudWatch, sign-in works after first-run bootstrap, and the database is not reachable from outside the VPC.
+Synthesis tests show what the template asks for, not what AWS does with it. They say nothing about whether anything is deployed: the repository provides no continuously hosted environment, and deployments are external, owner-managed and created on demand. After a deploy the owner checks the result by hand; these checks are not automated and their results are not recorded here, apart from one dated run in [deployment-verification-2026-10-31.md](deployment-verification-2026-10-31.md): the load balancer target is healthy, `/actuator/health` answers through the load balancer from the owner's address, the application logs reach CloudWatch, sign-in works after first-run bootstrap, and the database is not reachable from outside the VPC.
 
 ## Limitations
 

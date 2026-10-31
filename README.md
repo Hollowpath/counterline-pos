@@ -170,6 +170,7 @@ Cost is a design constraint: the plan avoids services that bill while idle unles
 - [docs/testing.md](docs/testing.md)
 - [docs/engineering-readiness.md](docs/engineering-readiness.md)
 - [docs/aws-release-checklist.md](docs/aws-release-checklist.md): on-demand AWS deployment checklist
+- [docs/deployment-verification-2026-10-31.md](docs/deployment-verification-2026-10-31.md): dated record of one temporary deployment and its checks
 - [infrastructure/README.md](infrastructure/README.md): operator guide for the AWS CDK stack
 
 ## License

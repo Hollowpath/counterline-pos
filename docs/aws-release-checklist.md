@@ -77,6 +77,16 @@ Docker's ECR credential helper is the primary way to sign in to the registry: it
 export AWS_PROFILE=<profile> AWS_REGION=<region> AWS_SDK_LOAD_CONFIG=true
 ```
 
+If the profile was signed in with `aws login` (a browser sign-in), the helper may not be able to read that session, and the push fails with `no basic auth credentials`. Export the session to the terminal that runs `docker push`, then push again. These are temporary credentials; unset them afterwards and set `AWS_PROFILE` again for later commands:
+
+```bash
+unset AWS_PROFILE
+eval "$(aws configure export-credentials --profile <profile> --format env)"
+export AWS_REGION=<region>
+# ... docker push ...
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+```
+
 Fallback only, if the helper cannot be used: `aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin <registry-host>`. On Windows the credential store may reject that token (`The stub received bad data`).
 
 ## 5. Deploy [AWS]
