@@ -45,6 +45,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DashboardHistoryIntegrationTest {
 
     private static final String TODAY = LocalDate.now(ZoneId.of("Asia/Kuala_Lumpur")).toString();
+    /** For data placed a few hours in the past: in the first hours after midnight it falls on the previous business day. */
+    private static final String YESTERDAY = LocalDate.now(ZoneId.of("Asia/Kuala_Lumpur")).minusDays(1).toString();
 
     @Autowired
     MockMvc mockMvc;
@@ -180,7 +182,8 @@ class DashboardHistoryIntegrationTest {
                 staff, closedOutlet);
         close(closedOutlet);
 
-        report(admin(), closedOutlet, "timecards").andExpect(status().isOk())
+        // The shift started 3 hours ago, which can be yesterday's business day: read the range from yesterday.
+        report(admin(), closedOutlet, "timecards", YESTERDAY).andExpect(status().isOk())
                 .andExpect(jsonPath("$.openShifts.length()").value(1))
                 .andExpect(jsonPath("$.openShifts[0].staffName").value("History Cashier"));
 
@@ -193,7 +196,7 @@ class DashboardHistoryIntegrationTest {
                 .andExpect(jsonPath("$.staffName").value("History Cashier"))
                 .andExpect(jsonPath("$.reason").value("Outlet closed with the shift open"));
 
-        report(admin(), closedOutlet, "timecards").andExpect(jsonPath("$.openShifts.length()").value(0))
+        report(admin(), closedOutlet, "timecards", YESTERDAY).andExpect(jsonPath("$.openShifts.length()").value(0))
                 .andExpect(jsonPath("$.entries[1].type").value("OUT"))
                 .andExpect(jsonPath("$.entries[1].correctedReason").value("Outlet closed with the shift open"));
     }
@@ -243,8 +246,12 @@ class DashboardHistoryIntegrationTest {
     }
 
     private ResultActions report(RequestPostProcessor who, long outletId, String name) throws Exception {
+        return report(who, outletId, name, TODAY);
+    }
+
+    private ResultActions report(RequestPostProcessor who, long outletId, String name, String from) throws Exception {
         return mockMvc.perform(get("/api/v1/dashboard/outlets/" + outletId + "/reports/" + name)
-                .param("from", TODAY).param("to", TODAY).with(who));
+                .param("from", from).param("to", TODAY).with(who));
     }
 
     private static RequestPostProcessor admin() {
