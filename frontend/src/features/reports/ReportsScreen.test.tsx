@@ -1,14 +1,14 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { addDays, todayIso } from '../../lib/dates'
+import { addDays, localDateTimeIn, todayIso } from '../../lib/dates'
 import { ReportsScreen } from './ReportsScreen'
 
 function json(body: unknown) {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
 
-function fakeApi() {
+function fakeApi({ timecardsTooMany = false, timeZone = undefined as string | undefined } = {}) {
   const urls: URL[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input), 'http://pos.test')
@@ -42,7 +42,11 @@ function fakeApi() {
       case '/api/v1/reports/discounts':
         return json({ ...range, discounts: [{ name: 'Staff 10%', count: 1, amount: 2.9 }] })
       case '/api/v1/reports/timecards':
-        return json({ ...range,
+        if (timecardsTooMany) {
+          return new Response(JSON.stringify({ title: 'Bad request', detail: 'That range has more than 5000 clock events. Choose a shorter range.' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } })
+        }
+        return json({ ...range, timeZone,
           entries: [
             { staffName: 'Aisyah Rahman', type: 'IN', at: '2026-10-12T02:00:00Z', correctedBy: null, correctedReason: null, correctedAt: null },
             { staffName: 'Aisyah Rahman', type: 'OUT', at: '2026-10-12T10:00:00Z', correctedBy: 'Daniel Lim',
@@ -170,6 +174,16 @@ describe('ReportsScreen', () => {
     expect(screen.getAllByTestId('correction')).toHaveLength(1)
   })
 
+  it('asks for a shorter range when a timecards report is too long, rather than showing part of it', async () => {
+    fakeApi({ timecardsTooMany: true })
+    const user = userEvent.setup()
+    render(<ReportsScreen outletName="Counterline Bukit Bintang" onOpenMenu={() => {}} />)
+    await user.click(screen.getByRole('button', { name: 'Timecards' }))
+
+    expect(await screen.findByText('That range has more than 5000 clock events. Choose a shorter range.')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Open shifts' })).not.toBeInTheDocument()
+  })
+
   it('closes an open shift from the dashboard with a time and a reason, then shows the report again', async () => {
     const urls = fakeApi()
     const onCloseShift = vi.fn(async () => {})
@@ -185,8 +199,30 @@ describe('ReportsScreen', () => {
     await user.type(within(form).getByLabelText('Reason'), '  Forgot to clock out ')
     await user.click(submit)
 
-    await waitFor(() => expect(onCloseShift).toHaveBeenCalledWith(7, new Date('2026-10-12T10:00').toISOString(), 'Forgot to clock out'))
+    await waitFor(() => expect(onCloseShift).toHaveBeenCalledWith(7, '2026-10-12T10:00', 'Forgot to clock out'))
     await waitFor(() => expect(urls.filter((url) => url.pathname.endsWith('/timecards'))).toHaveLength(2))
+  })
+
+  it('shows clock times in the business time zone and takes a correction time in it, sending the wall-clock time as typed', async () => {
+    fakeApi({ timeZone: 'Asia/Kuala_Lumpur' })
+    const onCloseShift = vi.fn(async () => {})
+    const user = userEvent.setup()
+    render(<ReportsScreen outletName="Counterline Bukit Bintang" onCloseShift={onCloseShift} />)
+    await user.click(screen.getByRole('button', { name: 'Timecards' }))
+
+    // 02:00Z is 10:00 in Kuala Lumpur, wherever the browser is.
+    expect(await screen.findByText(/IN · 10:00/)).toBeInTheDocument()
+    await user.click((await screen.findAllByRole('button', { name: 'Close shift' }))[0])
+    const form = screen.getByRole('form', { name: "Close Wei Ming's shift" })
+    expect(within(form).getByText('Outlet time (Asia/Kuala_Lumpur)')).toBeInTheDocument()
+    // The suggested time is now in the business time zone, not the browser's.
+    const suggested = (within(form).getByLabelText(/Clocked out at/) as HTMLInputElement).value
+    expect(suggested.slice(0, 13)).toBe(localDateTimeIn('Asia/Kuala_Lumpur').slice(0, 13))
+
+    fireEvent.change(within(form).getByLabelText(/Clocked out at/), { target: { value: '2026-10-12T10:00' } })
+    await user.type(within(form).getByLabelText('Reason'), 'Forgot')
+    await user.click(within(form).getByRole('button', { name: 'Close shift' }))
+    await waitFor(() => expect(onCloseShift).toHaveBeenCalledWith(7, '2026-10-12T10:00', 'Forgot'))
   })
 
   it('says why a shift could not be closed and keeps the form', async () => {

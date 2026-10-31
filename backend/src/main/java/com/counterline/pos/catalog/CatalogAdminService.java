@@ -12,6 +12,7 @@ import jakarta.validation.constraints.Size;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -66,52 +67,58 @@ public class CatalogAdminService {
      * {@code seasonalNow}: and today is one of those days.
      */
     public record AdminItem(Long id, String name, BigDecimal price, boolean active, String promotion, boolean seasonal,
-                            LocalDate seasonalFrom, LocalDate seasonalUntil, boolean seasonalNow) {
+                            LocalDate seasonalFrom, LocalDate seasonalUntil, boolean seasonalNow, long version) {
 
         static AdminItem from(Item item, LocalDate today) {
             return new AdminItem(item.getId(), item.getName(), item.getPrice(), item.isActive(),
                     item.getPromotion() == null ? null : item.getPromotion().getName(), item.isSeasonal(),
-                    item.getSeasonalFrom(), item.getSeasonalUntil(), item.isSeasonalOn(today));
+                    item.getSeasonalFrom(), item.getSeasonalUntil(), item.isSeasonalOn(today), item.getVersion());
         }
     }
 
     /** A folder with every item in it, on sale or not. {@code tab} is null for a folder off the grid. */
     public record AdminCategory(Long id, String name, String tab, Integer row, Integer col, boolean countsForPromotions,
-                                List<AdminItem> items) {
+                                List<AdminItem> items, long version) {
 
         static AdminCategory from(Category category, List<AdminItem> items) {
             return new AdminCategory(category.getId(), category.getName(),
                     category.getTab() == null ? null : category.getTab().getName(),
                     category.getGridRow() == null ? null : category.getGridRow().intValue(),
                     category.getGridCol() == null ? null : category.getGridCol().intValue(),
-                    category.isCountsForPromotions(), items);
+                    category.isCountsForPromotions(), items, category.getVersion());
         }
     }
 
     /** A quick-grid tab with the number of folders on it. */
-    public record AdminTab(Long id, String name, int sortOrder, long folders) {
+    public record AdminTab(Long id, String name, int sortOrder, long folders, long version) {
     }
 
     /** {@code DELETED}, or {@code DEACTIVATED} when the item was sold and its history is kept. */
     public record Removal(String outcome) {
     }
 
-    /** The ids in the order wanted. */
-    public record OrderRequest(List<Long> ids) {
+    /** The ids in the order wanted, and {@code versions}: the version of each row (same order) as the list was loaded. */
+    public record OrderRequest(List<Long> ids, List<Long> versions) {
     }
 
-    public record TabRequest(@NotBlank @Size(max = 60) String name) {
+    /** {@code version}: the tab's version the form was loaded with (required when renaming). */
+    public record TabRequest(@NotBlank @Size(max = 60) String name, Long version) {
     }
 
     /**
      * Changes a folder. {@code tab} blank or absent takes it off the till grid. On a tab, {@code row} and
      * {@code col} (1 to 5, both or neither) choose the cell; without them it keeps its cell on the same tab,
      * or takes the first free cell of another. {@code countsForPromotions} is unchanged when absent.
+     * {@code version}: the folder's version the form was loaded with (required); a folder saved since is refused (409).
      */
     public record FolderUpdate(@NotBlank @Size(max = 80) String name, @Size(max = 60) String tab, Integer row,
-                               Integer col, Boolean countsForPromotions) {
+                               Integer col, Boolean countsForPromotions, Long version) {
     }
 
+    /**
+     * A new item, or an edit of one. {@code version}: the item's version the form was loaded with (required when editing,
+     * ignored when adding); an item saved since is refused (409) rather than overwritten.
+     */
     public record ItemRequest(
             Long categoryId,
             @NotBlank @Size(max = 120) String name,
@@ -121,7 +128,8 @@ public class CatalogAdminService {
                until seasonalUntil (required), from seasonalFrom (or now). Unchanged when absent. */
             Boolean seasonal,
             LocalDate seasonalFrom,
-            LocalDate seasonalUntil) {
+            LocalDate seasonalUntil,
+            Long version) {
     }
 
     /** A new folder: its name, and the quick-grid tab to place it on (created if there is none by that name). */
@@ -166,6 +174,7 @@ public class CatalogAdminService {
     public AdminCategory updateFolder(Long folderId, FolderUpdate request) {
         catalogueLock.acquire();
         Category category = requireFolder(folderId);
+        requireCurrent(request.version(), category.getVersion(), Category.class, folderId);
         String name = request.name().strip();
         if (name.isEmpty()) {
             throw new BadRequestException("Give the folder a name");
@@ -218,21 +227,23 @@ public class CatalogAdminService {
     public List<AdminItem> reorderItems(Long folderId, OrderRequest request) {
         catalogueLock.acquire();
         requireFolder(folderId);
-        SortOrders.apply(itemRepository.findByCategoryIdOrderBySortOrderAsc(folderId), request.ids(), Item::getId,
-                Item::setSortOrder, itemRepository::flush, "items");
+        SortOrders.apply(itemRepository.findByCategoryIdOrderBySortOrderAsc(folderId), request.ids(), request.versions(),
+                Item::getId, Item::getVersion, Item::getSortOrder, Item::setSortOrder, itemRepository::flush, "items", Item.class);
         return adminItems(folderId);
     }
 
     @Transactional(readOnly = true)
     public List<AdminTab> tabs() {
         return tabRepository.findAllByOrderBySortOrderAsc().stream()
-                .map(tab -> new AdminTab(tab.getId(), tab.getName(), tab.getSortOrder(), categoryRepository.countByTabId(tab.getId())))
+                .map(tab -> new AdminTab(tab.getId(), tab.getName(), tab.getSortOrder(), categoryRepository.countByTabId(tab.getId()),
+                        tab.getVersion()))
                 .toList();
     }
 
     public AdminTab renameTab(Long tabId, TabRequest request) {
         catalogueLock.acquire();
         QuickgridTab tab = requireTab(tabId);
+        requireCurrent(request.version(), tab.getVersion(), QuickgridTab.class, tabId);
         String name = request.name().strip();
         if (name.isEmpty()) {
             throw new BadRequestException("Give the tab a name");
@@ -242,13 +253,14 @@ public class CatalogAdminService {
         }
         tab.rename(name);
         tabRepository.flush();
-        return new AdminTab(tab.getId(), tab.getName(), tab.getSortOrder(), categoryRepository.countByTabId(tabId));
+        return new AdminTab(tab.getId(), tab.getName(), tab.getSortOrder(), categoryRepository.countByTabId(tabId), tab.getVersion());
     }
 
     public List<AdminTab> reorderTabs(OrderRequest request) {
         catalogueLock.acquire();
-        SortOrders.apply(tabRepository.findAllByOrderBySortOrderAsc(), request.ids(), QuickgridTab::getId,
-                (tab, order) -> tab.setSortOrder(order.shortValue()), tabRepository::flush, "tabs");
+        SortOrders.apply(tabRepository.findAllByOrderBySortOrderAsc(), request.ids(), request.versions(), QuickgridTab::getId,
+                QuickgridTab::getVersion, QuickgridTab::getSortOrder, (tab, order) -> tab.setSortOrder(order.shortValue()),
+                tabRepository::flush, "tabs", QuickgridTab.class);
         return tabs();
     }
 
@@ -353,6 +365,19 @@ public class CatalogAdminService {
                 .orElseThrow(() -> new ResourceNotFoundException("Tab " + tabId + " not found"));
     }
 
+    /**
+     * An edit must carry the version it was made from, and the row must still be at it: a copy older than the row
+     * (someone saved meanwhile) is refused as a concurrent change (409 "Changed elsewhere. Reload."), never written over it.
+     */
+    static void requireCurrent(Long requested, long current, Class<?> type, Long id) {
+        if (requested == null) {
+            throw new BadRequestException("version is required when editing");
+        }
+        if (requested != current) {
+            throw new ObjectOptimisticLockingFailureException(type, id);
+        }
+    }
+
     private Item requireItem(Long itemId) {
         return itemRepository.findById(itemId)
                 .orElseThrow(() -> new ResourceNotFoundException("Item " + itemId + " not found"));
@@ -379,6 +404,7 @@ public class CatalogAdminService {
     public AdminItem update(Long itemId, ItemRequest request) {
         catalogueLock.acquire();
         Item item = requireItem(itemId);
+        requireCurrent(request.version(), item.getVersion(), Item.class, itemId);
         String name = request.name().strip();
         // A categoryId different from the item's own moves it to the end of that folder.
         Category destination = request.categoryId() == null || request.categoryId().equals(item.getCategory().getId())
@@ -393,6 +419,8 @@ public class CatalogAdminService {
         // Absent means unchanged, like the other optional fields (a creation is on sale).
         item.edit(name, request.price(), request.active() == null ? item.isActive() : request.active());
         setSeasonal(item, request);
+        // Written now, so the version in the answer is the new one (the next edit must carry it).
+        itemRepository.flush();
         log.info("Item {} edited: {} RM{} → RM{}, active {}, seasonal {} ({} to {})", itemId, name, oldPrice,
                 request.price(), item.isActive(), item.isSeasonal(), item.getSeasonalFrom(), item.getSeasonalUntil());
         return AdminItem.from(item, today());

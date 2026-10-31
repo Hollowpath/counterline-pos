@@ -136,6 +136,39 @@ class OrderLifecycleApiIntegrationTest {
     }
 
     @Test
+    void aPaymentRequestIdAlreadyUsedForAnotherOrderIsTheGenericConflictAndLeavesTheOrderOpen() throws Exception {
+        long first = placeOrder(4, 1);
+        long second = placeOrder(4, 1);
+        UUID requestId = UUID.randomUUID();
+        pay(first, payBody(requestId, "29.00")).andExpect(status().isOk());
+
+        pay(second, payBody(requestId, "29.00"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.startsWith("Something in the sale changed")));
+
+        getOrder(second).andExpect(jsonPath("$.status").value("OPEN")).andExpect(jsonPath("$.payments", hasSize(0)));
+    }
+
+    @Test
+    void anUnrelatedIntegrityFailureWhilePayingStaysAnErrorAndIsNotReportedAsTheConflict() throws Exception {
+        long id = placeOrder(4, 1);
+        // A unique violation, but of some other constraint than the payment request id's.
+        jdbc.execute("CREATE OR REPLACE FUNCTION payment_other_fault() RETURNS trigger LANGUAGE plpgsql AS $$ "
+                + "BEGIN RAISE EXCEPTION USING ERRCODE = '23505', "
+                + "MESSAGE = 'duplicate key value violates unique constraint \"payment_other_uq\"'; END $$");
+        jdbc.execute("CREATE TRIGGER payment_other_fault BEFORE INSERT ON payment FOR EACH ROW EXECUTE FUNCTION payment_other_fault()");
+        try {
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> pay(id, payBody(UUID.randomUUID(), "29.00")))
+                    .hasCauseInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        } finally {
+            jdbc.execute("DROP TRIGGER IF EXISTS payment_other_fault ON payment");
+            jdbc.execute("DROP FUNCTION IF EXISTS payment_other_fault()");
+        }
+
+        getOrder(id).andExpect(jsonPath("$.status").value("OPEN")).andExpect(jsonPath("$.payments", hasSize(0)));
+    }
+
+    @Test
     void aWrongPaymentAmountLeavesTheOrderOpen() throws Exception {
         long id = placeOrder(4, 1);
 

@@ -1,6 +1,6 @@
 # Infrastructure
 
-The AWS CDK (TypeScript) stack `Counterline` for a temporary learning deployment of Counterline POS. It is reproducible and designed for temporary, owner-run deployments: deploy for testing or demonstrations, then destroy. The repository provides no continuously hosted environment: deployments are external, owner-managed and created on demand, and these docs cannot assert live external state. It is written and run by the owner and is not production-ready. What it defines and how the pieces connect is in [docs/architecture.md](../docs/architecture.md#aws-deployment-temporary).
+The AWS CDK (TypeScript) stack `Counterline` for a temporary, owner-run deployment of Counterline POS. It is reproducible: deploy for testing or demonstrations, then destroy. The repository provides no continuously hosted environment: deployments are external, owner-managed and created on demand, and these docs cannot assert live external state. It is written and run by the owner and is not production-ready. What it defines and how the pieces connect is in [docs/architecture.md](../docs/architecture.md#aws-deployment-temporary).
 
 Placeholders below: `<profile>` is your AWS CLI profile, `<owner-ip>` your public IPv4 address, `<tag>` the image tag. Never commit real values, account details or credentials.
 

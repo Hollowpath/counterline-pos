@@ -16,7 +16,7 @@ describe('maskPhone', () => {
 
 describe('maskEmail', () => {
   it('hides the name but its first letters, and keeps the domain', () => {
-    expect(maskEmail('aisyah.rahman@gmail.com')).toBe('ai•••@gmail.com')
+    expect(maskEmail('aisyah.rahman@example.com')).toBe('ai•••@example.com')
     expect(maskEmail('jo@example.my')).toBe('j•••@example.my')
     expect(maskEmail('not-an-email')).toBe('•••')
   })

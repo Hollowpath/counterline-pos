@@ -3,6 +3,7 @@ package com.counterline.pos.vouchers;
 import com.counterline.pos.TestRegister;
 import com.counterline.pos.TestcontainersConfiguration;
 import com.counterline.pos.auth.PinHasher;
+import com.counterline.pos.orders.OrderQueryService;
 import com.counterline.pos.staff.Staff;
 import com.counterline.pos.staff.StaffRepository;
 import com.counterline.pos.staff.StaffRole;
@@ -17,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -29,6 +31,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -39,6 +42,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -72,6 +77,10 @@ class VoucherRulesIntegrationTest {
 
     @Autowired
     PinHasher pinHasher;
+
+    /** Real, but one test makes its first look for an order find nothing (a duplicate running alongside the first sale). */
+    @MockitoSpyBean
+    OrderQueryService orderQueries;
 
     private Long cashierId;
     private Long managerId;
@@ -385,6 +394,33 @@ class VoucherRulesIntegrationTest {
         assertThat(java.time.Duration.between(closed, java.time.Instant.parse(stored)).abs()).isLessThanOrEqualTo(java.time.Duration.ofNanos(1000));
     }
 
+    // ---- A duplicate checkout that runs alongside the first one ----
+
+    @Test
+    void aDuplicateThatMeetsItsFirstSalesUsedVoucherIsTheFirstSaleAndAGenuineRefusalStands() throws Exception {
+        String code = issue("Twice " + unique(), "5", TODAY.plusDays(30), 1).getFirst();
+        String json = """
+                {"clientRequestId":"%s","mode":"PAY","lines":[{"itemId":4,"quantity":1}],"voucherCode":"%s",
+                 "payments":[{"paymentMethodId":2,"reference":"ref","amount":24.00}]}""".formatted(UUID.randomUUID(), code);
+        Integer orderId = JsonPath.read(call(post("/api/v1/orders"), cashier(), json).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(), "$.id");
+
+        // The duplicate's early look for the order found nothing (the first request was still running); it then
+        // met the voucher the first sale used. Told again, it is the first sale, not "Voucher used".
+        doReturn(Optional.empty()).doCallRealMethod().when(orderQueries).findByClientRequestId(any(), any());
+        call(post("/api/v1/orders"), cashier(), json)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(orderId))
+                .andExpect(jsonPath("$.total").value(24.0));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM sale_order", Integer.class)).isEqualTo(1);
+
+        // A different sale with the used voucher is refused as before: nothing was recorded under its request id.
+        call(post("/api/v1/orders"), cashier(), sale(4, code, "PAY", "24.00"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value("Voucher used"));
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM sale_order", Integer.class)).isEqualTo(1);
+    }
+
     // ---- helpers ----
 
     private ResultActions refund(Object orderId, RequestPostProcessor who) throws Exception {
@@ -461,7 +497,7 @@ class VoucherRulesIntegrationTest {
     }
 
     private static RequestPostProcessor admin() {
-        return jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office"))
+        return jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office").claim("channel", "dashboard"))
                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 }

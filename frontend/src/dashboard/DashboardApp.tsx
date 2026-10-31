@@ -72,6 +72,8 @@ export function DashboardApp() {
   const [notice, setNotice] = useState<string | undefined>(undefined)
 
   const logout = useCallback((message?: string) => {
+    // A deliberate log out also ends the token on the server (best effort); an ended session (it came with a message) has nothing left to end.
+    if (message === undefined) void postJson('/api/v1/dashboard/auth/logout', {}).catch(() => undefined)
     setAuthToken(null)
     saveSession(null)
     setSession(null)

@@ -37,6 +37,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [setUpNotice, setSetUpNotice] = useState<string | null>(null)
 
   const logout = useCallback((notice?: string) => {
+    // A deliberate log off also ends the token on the server (best effort: it expires on its own anyway). A session the
+    // server has already ended (it came with a notice) has nothing left to end.
+    if (notice === undefined) void postJson('/api/v1/auth/logout', {}).catch(() => undefined)
     setAuthToken(null)
     clearSession()
     setState({ status: 'anonymous', notice })

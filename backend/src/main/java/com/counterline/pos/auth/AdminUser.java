@@ -27,6 +27,9 @@ public class AdminUser {
 
     private Instant createdAt;
 
+    /** Raised whenever how this account authenticates changes (a new password, a deactivation); every token carries it. */
+    private int authSessionVersion;
+
     protected AdminUser() {
     }
 
@@ -56,5 +59,25 @@ public class AdminUser {
 
     public boolean isActive() {
         return active;
+    }
+
+    public int getAuthSessionVersion() {
+        return authSessionVersion;
+    }
+
+    /** A new password (already hashed): every session issued before it ends and cannot be revived. */
+    public void changePassword(String passwordHash) {
+        this.passwordHash = passwordHash;
+        this.authSessionVersion++;
+    }
+
+    /** Ends the account's sessions for good, also if it is reactivated later. */
+    public void deactivate() {
+        this.active = false;
+        this.authSessionVersion++;
+    }
+
+    public void reactivate() {
+        this.active = true;
     }
 }

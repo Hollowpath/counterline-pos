@@ -47,6 +47,9 @@ import java.util.UUID;
 public class SaleOrder {
 
     private static final int MAX_DISCOUNTS_PER_SALE = 1;
+    /** What the money columns hold: unit prices are NUMERIC(10, 2), line and order amounts NUMERIC(12, 2). */
+    private static final BigDecimal MAX_UNIT_PRICE = new BigDecimal("99999999.99");
+    private static final BigDecimal MAX_AMOUNT = new BigDecimal("9999999999.99");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -221,6 +224,11 @@ public class SaleOrder {
      */
     private SaleOrderLine add(SaleOrderLine line, List<Discount> lineDiscounts) {
         requireStatus(OrderStatus.OPEN);
+        // Refused here, as a client error, rather than left to overflow a money column when the sale is saved.
+        if (line.getModifierUnitPrice().compareTo(MAX_UNIT_PRICE) > 0 || line.getLineSubtotal().compareTo(MAX_AMOUNT) > 0
+                || subtotal.add(line.getLineSubtotal()).compareTo(MAX_AMOUNT) > 0) {
+            throw new BusinessRuleException("The sale is too large");
+        }
         if (discounts.stream().anyMatch(discount -> discount.getLine() == null)) {
             throw new IllegalStateException("Order discounts are applied after all lines");
         }

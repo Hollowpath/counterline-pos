@@ -9,6 +9,7 @@ import com.counterline.pos.common.ResourceNotFoundException;
 import com.counterline.pos.outlet.OutletAdminService.OutletEdit;
 import com.counterline.pos.outlet.OutletAdminService.OutletRequest;
 import com.counterline.pos.register.RegisterService;
+import com.counterline.pos.auth.Actor;
 import com.counterline.pos.staff.StaffAdminService;
 import com.counterline.pos.staff.StaffAdminService.AdminStaff;
 import com.counterline.pos.staff.StaffAdminService.PinReset;
@@ -62,6 +63,8 @@ class OutletStaffAdminConcurrencyIntegrationTest {
     private final Set<String> pins = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private int counter;
 
+    private static final Actor HEAD_OFFICE = new Actor(Actor.Type.ADMIN, 1L, "Head Office");
+
     @Autowired
     StaffAdminService staffAdmin;
     @Autowired
@@ -81,6 +84,7 @@ class OutletStaffAdminConcurrencyIntegrationTest {
 
     @AfterEach
     void removeWhatWasCreated() {
+        jdbc.execute("TRUNCATE staff_audit"); // append-only: rows cannot be deleted one by one, and they hold the staff below
         for (Long outlet : outletIds) {
             jdbc.update("DELETE FROM register_session WHERE outlet_id = ?", outlet);
             jdbc.update("DELETE FROM timecard_event WHERE outlet_id = ?", outlet);
@@ -99,8 +103,8 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         manager(outlet);
         AdminStaff cashier = cashier(outlet);
 
-        Throwable failure = staleStaff(cashier.id(), () -> staffAdmin.deactivate(cashier.id()),
-                () -> staffAdmin.update(cashier.id(), new StaffEdit("Renamed", StaffRole.STAFF, outlet, null, null)));
+        Throwable failure = staleStaff(cashier.id(), () -> staffAdmin.deactivate(HEAD_OFFICE, cashier.id()),
+                () -> staffAdmin.update(HEAD_OFFICE, cashier.id(), new StaffEdit("Renamed", StaffRole.STAFF, outlet, null, null, versionOf(cashier.id()))));
 
         assertThat(failure).isInstanceOf(ObjectOptimisticLockingFailureException.class);
         assertThat(jdbc.queryForObject("SELECT active FROM staff WHERE id = ?", Boolean.class, cashier.id())).isFalse();
@@ -115,8 +119,8 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         AdminStaff cashier = cashier(outlet);
         String newPin = pin();
 
-        Throwable failure = staleStaff(cashier.id(), () -> staffAdmin.resetPin(cashier.id(), new PinReset(newPin)),
-                () -> staffAdmin.update(cashier.id(), new StaffEdit("Renamed", StaffRole.STAFF, outlet, null, null)));
+        Throwable failure = staleStaff(cashier.id(), () -> staffAdmin.resetPin(HEAD_OFFICE, cashier.id(), new PinReset(newPin)),
+                () -> staffAdmin.update(HEAD_OFFICE, cashier.id(), new StaffEdit("Renamed", StaffRole.STAFF, outlet, null, null, versionOf(cashier.id()))));
 
         assertThat(failure).isInstanceOf(ObjectOptimisticLockingFailureException.class);
         assertThat(jdbc.queryForObject("SELECT pin_hmac FROM staff WHERE id = ?", String.class, cashier.id()))
@@ -133,8 +137,8 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         AdminStaff cashier = cashier(outlet);
 
         Throwable failure = staleStaff(cashier.id(),
-                () -> staffAdmin.update(cashier.id(), new StaffEdit(cashier.fullName(), StaffRole.STAFF, other, null, null)),
-                () -> staffAdmin.deactivate(cashier.id()));
+                () -> staffAdmin.update(HEAD_OFFICE, cashier.id(), new StaffEdit(cashier.fullName(), StaffRole.STAFF, other, null, null, versionOf(cashier.id()))),
+                () -> staffAdmin.deactivate(HEAD_OFFICE, cashier.id()));
 
         assertThat(failure).isInstanceOf(ObjectOptimisticLockingFailureException.class);
         assertThat(jdbc.queryForObject("SELECT outlet_id FROM staff WHERE id = ?", Long.class, cashier.id())).isEqualTo(other);
@@ -161,7 +165,7 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         long before = jdbc.queryForObject("SELECT version FROM staff WHERE id = ?", Long.class, cashier.id());
 
         Throwable failure = staleStaff(cashier.id(), () -> outletAdmin.deactivate(outlet),
-                () -> staffAdmin.update(cashier.id(), new StaffEdit("Renamed", StaffRole.STAFF, outlet, null, null)));
+                () -> staffAdmin.update(HEAD_OFFICE, cashier.id(), new StaffEdit("Renamed", StaffRole.STAFF, outlet, null, null, versionOf(cashier.id()))));
 
         assertThat(failure).isInstanceOf(ObjectOptimisticLockingFailureException.class);
         assertThat(jdbc.queryForObject("SELECT version FROM staff WHERE id = ?", Long.class, cashier.id())).isGreaterThan(before);
@@ -176,8 +180,8 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         String pin = pin();
 
         List<Throwable> failures = both(
-                () -> staffAdmin.create(new StaffRequest("First " + suffix, StaffRole.STAFF, outlet, pin, null, null)),
-                () -> staffAdmin.create(new StaffRequest("Second " + suffix, StaffRole.STAFF, outlet, pin, null, null)));
+                () -> staffAdmin.create(HEAD_OFFICE, new StaffRequest("First " + suffix, StaffRole.STAFF, outlet, pin, null, null)),
+                () -> staffAdmin.create(HEAD_OFFICE, new StaffRequest("Second " + suffix, StaffRole.STAFF, outlet, pin, null, null)));
 
         assertOneConflict(failures, "PIN");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM staff WHERE pin_hmac = ?", Integer.class, pinHasher.hash(pin))).isEqualTo(1);
@@ -189,8 +193,8 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         String email = "boss-" + suffix + "@shop.test";
 
         List<Throwable> failures = both(
-                () -> staffAdmin.create(new StaffRequest("First " + suffix, StaffRole.MANAGER, outlet, pin(), email, PASSWORD)),
-                () -> staffAdmin.create(new StaffRequest("Second " + suffix, StaffRole.MANAGER, outlet, pin(), email, PASSWORD)));
+                () -> staffAdmin.create(HEAD_OFFICE, new StaffRequest("First " + suffix, StaffRole.MANAGER, outlet, pin(), email, PASSWORD)),
+                () -> staffAdmin.create(HEAD_OFFICE, new StaffRequest("Second " + suffix, StaffRole.MANAGER, outlet, pin(), email, PASSWORD)));
 
         assertOneConflict(failures, "e-mail");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM staff WHERE email = ?", Integer.class, email)).isEqualTo(1);
@@ -242,22 +246,22 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         AdminStaff first = manager(outlet);
         AdminStaff cashier = cashier(outlet);
 
-        assertThatThrownBy(() -> staffAdmin.deactivate(first.id())).isInstanceOf(ConflictException.class)
+        assertThatThrownBy(() -> staffAdmin.deactivate(HEAD_OFFICE, first.id())).isInstanceOf(ConflictException.class)
                 .hasMessageContaining("only active manager");
-        assertThatThrownBy(() -> staffAdmin.update(first.id(), new StaffEdit(first.fullName(), StaffRole.STAFF, outlet, null, null)))
+        assertThatThrownBy(() -> staffAdmin.update(HEAD_OFFICE, first.id(), new StaffEdit(first.fullName(), StaffRole.STAFF, outlet, null, null, versionOf(first.id()))))
                 .isInstanceOf(ConflictException.class).hasMessageContaining("only active manager");
-        assertThatThrownBy(() -> staffAdmin.update(first.id(), new StaffEdit(first.fullName(), StaffRole.MANAGER, elsewhere, null, null)))
+        assertThatThrownBy(() -> staffAdmin.update(HEAD_OFFICE, first.id(), new StaffEdit(first.fullName(), StaffRole.MANAGER, elsewhere, null, null, versionOf(first.id()))))
                 .isInstanceOf(ConflictException.class).hasMessageContaining("only active manager");
         assertThat(jdbc.queryForObject("SELECT active AND role = 'MANAGER' AND outlet_id = ? FROM staff WHERE id = ?",
                 Boolean.class, outlet, first.id())).isTrue();
 
         // Cashiers are not held to it; a second manager frees the first, and then the second is the last.
-        staffAdmin.deactivate(cashier.id());
+        staffAdmin.deactivate(HEAD_OFFICE, cashier.id());
         AdminStaff second = manager(outlet);
-        staffAdmin.deactivate(first.id());
-        assertThatThrownBy(() -> staffAdmin.deactivate(second.id())).isInstanceOf(ConflictException.class);
-        staffAdmin.reactivate(first.id());
-        staffAdmin.deactivate(second.id());
+        staffAdmin.deactivate(HEAD_OFFICE, first.id());
+        assertThatThrownBy(() -> staffAdmin.deactivate(HEAD_OFFICE, second.id())).isInstanceOf(ConflictException.class);
+        staffAdmin.reactivate(HEAD_OFFICE, first.id());
+        staffAdmin.deactivate(HEAD_OFFICE, second.id());
         assertThat(activeManagers(outlet)).isEqualTo(1);
     }
 
@@ -267,13 +271,13 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         AdminStaff only = manager(outlet);
 
         outletAdmin.deactivate(outlet); // never refused for want of a manager
-        staffAdmin.deactivate(only.id()); // a closed outlet is not held to the rule
+        staffAdmin.deactivate(HEAD_OFFICE, only.id()); // a closed outlet is not held to the rule
         outletAdmin.reactivate(outlet);
         assertThat(activeManagers(outlet)).isZero();
 
         // Recovery: a new manager can be added, or the old one reactivated.
         manager(outlet);
-        staffAdmin.reactivate(only.id());
+        staffAdmin.reactivate(HEAD_OFFICE, only.id());
         assertThat(activeManagers(outlet)).isEqualTo(2);
     }
 
@@ -283,7 +287,7 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         AdminStaff first = manager(outlet);
         AdminStaff second = manager(outlet);
 
-        List<Throwable> failures = both(() -> staffAdmin.deactivate(first.id()), () -> staffAdmin.deactivate(second.id()));
+        List<Throwable> failures = both(() -> staffAdmin.deactivate(HEAD_OFFICE, first.id()), () -> staffAdmin.deactivate(HEAD_OFFICE, second.id()));
 
         assertOneConflict(failures, "only active manager");
         assertThat(activeManagers(outlet)).isEqualTo(1);
@@ -295,8 +299,8 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         AdminStaff first = manager(outlet);
         AdminStaff second = manager(outlet);
 
-        List<Throwable> failures = both(() -> staffAdmin.deactivate(first.id()),
-                () -> staffAdmin.update(second.id(), new StaffEdit(second.fullName(), StaffRole.STAFF, outlet, null, null)));
+        List<Throwable> failures = both(() -> staffAdmin.deactivate(HEAD_OFFICE, first.id()),
+                () -> staffAdmin.update(HEAD_OFFICE, second.id(), new StaffEdit(second.fullName(), StaffRole.STAFF, outlet, null, null, versionOf(second.id()))));
 
         assertThat(failures).singleElement().isInstanceOf(ConflictException.class);
         assertThat(activeManagers(outlet)).isEqualTo(1);
@@ -313,11 +317,11 @@ class OutletStaffAdminConcurrencyIntegrationTest {
 
         for (int round = 0; round < 5; round++) {
             List<Throwable> there = both(
-                    () -> staffAdmin.update(a1.id(), new StaffEdit(a1.fullName(), StaffRole.MANAGER, b, null, null)),
-                    () -> staffAdmin.update(b1.id(), new StaffEdit(b1.fullName(), StaffRole.MANAGER, a, null, null)));
+                    () -> staffAdmin.update(HEAD_OFFICE, a1.id(), new StaffEdit(a1.fullName(), StaffRole.MANAGER, b, null, null, versionOf(a1.id()))),
+                    () -> staffAdmin.update(HEAD_OFFICE, b1.id(), new StaffEdit(b1.fullName(), StaffRole.MANAGER, a, null, null, versionOf(b1.id()))));
             List<Throwable> back = both(
-                    () -> staffAdmin.update(a1.id(), new StaffEdit(a1.fullName(), StaffRole.MANAGER, a, null, null)),
-                    () -> staffAdmin.update(b1.id(), new StaffEdit(b1.fullName(), StaffRole.MANAGER, b, null, null)));
+                    () -> staffAdmin.update(HEAD_OFFICE, a1.id(), new StaffEdit(a1.fullName(), StaffRole.MANAGER, a, null, null, versionOf(a1.id()))),
+                    () -> staffAdmin.update(HEAD_OFFICE, b1.id(), new StaffEdit(b1.fullName(), StaffRole.MANAGER, b, null, null, versionOf(b1.id()))));
             assertThat(there).isEmpty();
             assertThat(back).isEmpty();
         }
@@ -330,7 +334,7 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         long outlet = outlet();
 
         Throwable failure = whileBeingDeactivated(outlet,
-                () -> staffAdmin.create(new StaffRequest("Late " + suffix, StaffRole.STAFF, outlet, pin(), null, null)));
+                () -> staffAdmin.create(HEAD_OFFICE, new StaffRequest("Late " + suffix, StaffRole.STAFF, outlet, pin(), null, null)));
 
         assertThat(failure).isInstanceOf(ResourceNotFoundException.class);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM staff WHERE outlet_id = ?", Integer.class, outlet)).isZero();
@@ -344,7 +348,7 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         AdminStaff cashier = cashier(from);
 
         Throwable failure = whileBeingDeactivated(to,
-                () -> staffAdmin.update(cashier.id(), new StaffEdit(cashier.fullName(), StaffRole.STAFF, to, null, null)));
+                () -> staffAdmin.update(HEAD_OFFICE, cashier.id(), new StaffEdit(cashier.fullName(), StaffRole.STAFF, to, null, null, versionOf(cashier.id()))));
 
         assertThat(failure).isInstanceOf(ResourceNotFoundException.class);
         assertThat(jdbc.queryForObject("SELECT outlet_id FROM staff WHERE id = ?", Long.class, cashier.id())).isEqualTo(from);
@@ -355,9 +359,9 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         long outlet = outlet();
         manager(outlet);
         AdminStaff cashier = cashier(outlet);
-        staffAdmin.deactivate(cashier.id());
+        staffAdmin.deactivate(HEAD_OFFICE, cashier.id());
 
-        Throwable failure = whileBeingDeactivated(outlet, () -> staffAdmin.reactivate(cashier.id()));
+        Throwable failure = whileBeingDeactivated(outlet, () -> staffAdmin.reactivate(HEAD_OFFICE, cashier.id()));
 
         assertThat(failure).isInstanceOf(ConflictException.class).hasMessageContaining("Reactivate the staff member's outlet first");
         assertThat(jdbc.queryForObject("SELECT active FROM staff WHERE id = ?", Boolean.class, cashier.id())).isFalse();
@@ -382,7 +386,7 @@ class OutletStaffAdminConcurrencyIntegrationTest {
         AdminStaff[] created = new AdminStaff[1];
 
         // The creation holds the outlet open (not yet committed); the deactivation queues behind it.
-        runBehindALock(() -> created[0] = staffAdmin.create(new StaffRequest("New " + suffix, StaffRole.STAFF, outlet, pin(), null, null)),
+        runBehindALock(() -> created[0] = staffAdmin.create(HEAD_OFFICE, new StaffRequest("New " + suffix, StaffRole.STAFF, outlet, pin(), null, null)),
                 () -> outletAdmin.deactivate(outlet), "%from outlet%for%update%");
 
         assertThat(jdbc.queryForObject("SELECT active FROM outlet WHERE id = ?", Boolean.class, outlet)).isFalse();
@@ -417,11 +421,11 @@ class OutletStaffAdminConcurrencyIntegrationTest {
     }
 
     private AdminStaff manager(long outlet) {
-        return staffAdmin.create(new StaffRequest("Manager " + suffix + ++counter, StaffRole.MANAGER, outlet, pin(), null, null));
+        return staffAdmin.create(HEAD_OFFICE, new StaffRequest("Manager " + suffix + ++counter, StaffRole.MANAGER, outlet, pin(), null, null));
     }
 
     private AdminStaff cashier(long outlet) {
-        return staffAdmin.create(new StaffRequest("Cashier " + suffix + ++counter, StaffRole.STAFF, outlet, pin(), null, null));
+        return staffAdmin.create(HEAD_OFFICE, new StaffRequest("Cashier " + suffix + ++counter, StaffRole.STAFF, outlet, pin(), null, null));
     }
 
     private String pin() {
@@ -561,5 +565,10 @@ class OutletStaffAdminConcurrencyIntegrationTest {
             release.countDown();
             pool.shutdownNow();
         }
+    }
+
+    /** The version a form opened now would carry: these edits are about locks and rules, not stale forms. */
+    private long versionOf(Long staffId) {
+        return jdbc.queryForObject("SELECT version FROM staff WHERE id = ?", Long.class, staffId);
     }
 }

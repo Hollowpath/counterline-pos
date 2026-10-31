@@ -164,7 +164,7 @@ class OverviewAverageOrderIntegrationTest {
     }
 
     private RequestPostProcessor admin() {
-        return jwt().jwt(token -> token.claim("role", "ADMIN").subject("admin-1")).authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        return jwt().jwt(token -> token.claim("role", "ADMIN").subject("admin-1").claim("channel", "dashboard")).authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 
     private RequestPostProcessor cashier() {

@@ -29,25 +29,29 @@ public class ModifierAdminService {
 
     private static final Logger log = LoggerFactory.getLogger(ModifierAdminService.class);
 
-    public record AdminOption(Long id, String name, BigDecimal price, boolean active) {
+    public record AdminOption(Long id, String name, BigDecimal price, boolean active, long version) {
     }
 
-    public record AdminGroup(Long id, Long itemId, String name, int chooseExactly, List<AdminOption> options) {
+    public record AdminGroup(Long id, Long itemId, String name, int chooseExactly, List<AdminOption> options, long version) {
     }
 
+    /** {@code version}: the group's version the form was loaded with (required when editing, ignored when adding). */
     public record GroupRequest(
             @NotBlank @Size(max = 80) String name,
-            @NotNull @Min(1) @Max(99) Integer chooseExactly) {
+            @NotNull @Min(1) @Max(99) Integer chooseExactly,
+            Long version) {
     }
 
+    /** {@code version}: the option's version the form was loaded with (required when editing, ignored when adding). */
     public record OptionRequest(
             @NotBlank @Size(max = 80) String name,
             @NotNull @DecimalMin("0.00") @Digits(integer = 8, fraction = 2) BigDecimal price,
-            Boolean active) {
+            Boolean active,
+            Long version) {
     }
 
-    /** The ids in the order wanted. */
-    public record OrderRequest(List<Long> ids) {
+    /** The ids in the order wanted, and {@code versions}: the version of each row (same order) as the list was loaded. */
+    public record OrderRequest(List<Long> ids, List<Long> versions) {
     }
 
     /** {@code DELETED}, or {@code DEACTIVATED} when it was sold or used before and its history is kept. */
@@ -89,6 +93,7 @@ public class ModifierAdminService {
     public AdminGroup updateGroup(Long groupId, GroupRequest request) {
         catalogueLock.acquire();
         ModifierGroup group = requireGroup(groupId);
+        CatalogAdminService.requireCurrent(request.version(), group.getVersion(), ModifierGroup.class, groupId);
         String name = request.name().strip();
         requireFreeGroupName(group.getItemId(), name, groupId);
         group.edit(name, request.chooseExactly());
@@ -99,8 +104,9 @@ public class ModifierAdminService {
     public List<AdminGroup> reorderGroups(Long itemId, OrderRequest request) {
         catalogueLock.acquire();
         requireItem(itemId);
-        SortOrders.apply(groupRepository.findByItemIdOrderBySortOrderAsc(itemId), request.ids(), ModifierGroup::getId,
-                ModifierGroup::setSortOrder, groupRepository::flush, "option groups");
+        SortOrders.apply(groupRepository.findByItemIdOrderBySortOrderAsc(itemId), request.ids(), request.versions(),
+                ModifierGroup::getId, ModifierGroup::getVersion, ModifierGroup::getSortOrder, ModifierGroup::setSortOrder,
+                groupRepository::flush, "option groups", ModifierGroup.class);
         return groups(itemId);
     }
 
@@ -143,6 +149,7 @@ public class ModifierAdminService {
     public AdminOption updateOption(Long optionId, OptionRequest request) {
         catalogueLock.acquire();
         ModifierOption option = requireOption(optionId);
+        CatalogAdminService.requireCurrent(request.version(), option.getVersion(), ModifierOption.class, optionId);
         String name = request.name().strip();
         requireFreeOptionName(option.getGroup().getId(), name, optionId);
         // Absent means unchanged, like a creation being active by default only.
@@ -154,8 +161,9 @@ public class ModifierAdminService {
     public List<AdminOption> reorderOptions(Long groupId, OrderRequest request) {
         catalogueLock.acquire();
         requireGroup(groupId);
-        SortOrders.apply(optionRepository.findByGroup(groupId), request.ids(), ModifierOption::getId,
-                ModifierOption::setSortOrder, optionRepository::flush, "options");
+        SortOrders.apply(optionRepository.findByGroup(groupId), request.ids(), request.versions(), ModifierOption::getId,
+                ModifierOption::getVersion, ModifierOption::getSortOrder, ModifierOption::setSortOrder,
+                optionRepository::flush, "options", ModifierOption.class);
         return optionRepository.findByGroup(groupId).stream().map(this::view).toList();
     }
 
@@ -178,11 +186,11 @@ public class ModifierAdminService {
 
     private AdminGroup view(ModifierGroup group) {
         return new AdminGroup(group.getId(), group.getItemId(), group.getName(), group.getChooseExactly(),
-                optionRepository.findByGroup(group.getId()).stream().map(this::view).toList());
+                optionRepository.findByGroup(group.getId()).stream().map(this::view).toList(), group.getVersion());
     }
 
     private AdminOption view(ModifierOption option) {
-        return new AdminOption(option.getId(), option.getName(), option.getPrice(), option.isActive());
+        return new AdminOption(option.getId(), option.getName(), option.getPrice(), option.isActive(), option.getVersion());
     }
 
     private void requireFreeGroupName(Long itemId, String name, Long exceptGroupId) {

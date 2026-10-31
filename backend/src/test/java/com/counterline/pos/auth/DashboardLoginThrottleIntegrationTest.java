@@ -24,9 +24,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Wrong dashboard passwords are counted per account (the e-mail typed, real or not) and, more widely,
- * per client address: failures against one e-mail never lock a different valid account that shares the
- * address, while the same account, and an address with many failures across accounts, stay limited.
+ * Wrong dashboard passwords are counted per account on the client they come from (the e-mail typed, real or not), per
+ * client address as a wider net, and per account across all clients as a much wider one: one client's failures lock the
+ * account only for that client, never for its real user elsewhere nor a different account sharing the address; an
+ * address with many failures across accounts, and an account attacked from very many clients, stay limited. A right
+ * password never clears anyone's failures.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -89,16 +91,53 @@ class DashboardLoginThrottleIntegrationTest {
     }
 
     @Test
-    void failuresForOneRealAccountLockOnlyThatAccount() throws Exception {
+    void failuresForOneRealAccountLockThatAccountOnlyOnTheClientTheyCameFrom() throws Exception {
         for (int attempt = 1; attempt < limiter.maxFailures(); attempt++) {
             login(ADDRESS, alice, "wrong-" + attempt).andExpect(status().isUnauthorized());
         }
         login(ADDRESS, alice, "wrong-last").andExpect(status().isTooManyRequests());
 
-        // Alice stays limited, even with her right password and from another address; Bob is unaffected.
+        // Alice is limited from that client, even with her right password; Bob is unaffected, and so is Alice elsewhere.
         login(ADDRESS, alice, password).andExpect(status().isTooManyRequests());
-        login("10.77.0.2", alice, password).andExpect(status().isTooManyRequests());
         login(ADDRESS, bob, password).andExpect(status().isOk());
+        login("10.77.0.2", alice, password).andExpect(status().isOk());
+
+        // Her success elsewhere cleared nothing: the client that failed is still locked out of her account.
+        login(ADDRESS, alice, password).andExpect(status().isTooManyRequests());
+        assertThat(jdbc.queryForObject("SELECT failures FROM login_throttle WHERE throttle_key = ?", Integer.class,
+                DashboardAuthService.clientAccountKey(alice, ADDRESS))).isEqualTo(limiter.maxFailures());
+    }
+
+    @Test
+    void aSuccessGivesBackItsOwnAttemptAndLeavesTheCountsOfOtherClientsAlone() throws Exception {
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            login(ADDRESS, alice, "wrong-" + attempt).andExpect(status().isUnauthorized());
+        }
+
+        login("10.77.0.2", alice, password).andExpect(status().isOk());
+        login(ADDRESS, alice, password).andExpect(status().isOk());
+
+        assertThat(jdbc.queryForObject("SELECT failures FROM login_throttle WHERE throttle_key = ?", Integer.class,
+                DashboardAuthService.clientAccountKey(alice, ADDRESS))).isEqualTo(5);
+        assertThat(jdbc.queryForObject("SELECT failures FROM login_throttle WHERE throttle_key = ?", Integer.class,
+                DashboardAuthService.accountKey(alice))).isEqualTo(5);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM login_throttle WHERE throttle_key = ?", Integer.class,
+                DashboardAuthService.clientAccountKey(alice, "10.77.0.2"))).isZero();
+        assertThat(jdbc.queryForObject("SELECT sum(pending) FROM login_throttle WHERE throttle_key LIKE 'dashboard%'", Integer.class)).isZero();
+    }
+
+    @Test
+    void anAccountAttackedFromVeryManyClientsIsLockedEverywhereButNotByAFewFailures() throws Exception {
+        int ceiling = limiter.maxFailures() * DashboardAuthService.ACCOUNT_FAILURE_FACTOR;
+        // One failure each from many addresses: no client or address reaches its own limit.
+        for (int client = 1; client < ceiling; client++) {
+            login("10.88." + (client / 200) + "." + (client % 200 + 1), alice, "wrong").andExpect(status().isUnauthorized());
+        }
+        login("10.88.9.9", alice, "wrong").andExpect(status().isTooManyRequests());
+
+        // Everyone, Alice included, is limited on that account now; another account is not.
+        login("10.77.0.5", alice, password).andExpect(status().isTooManyRequests());
+        login("10.77.0.5", bob, password).andExpect(status().isOk());
     }
 
     @Test

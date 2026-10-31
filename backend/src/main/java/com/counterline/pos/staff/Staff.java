@@ -60,6 +60,11 @@ public class Staff {
         return id;
     }
 
+    /** The version a form was loaded at: an edit carries it, and is refused (409) if the person was changed since. */
+    public long getVersion() {
+        return version;
+    }
+
     public String getFullName() {
         return fullName;
     }
@@ -115,6 +120,12 @@ public class Staff {
         this.fullName = fullName;
         this.role = role;
         this.outletId = outletId;
+    }
+
+    /** Whether {@code hmac} is this person's PIN as stored now (a reset since it was checked makes it false). */
+    public boolean hasPinHmac(String hmac) {
+        return pinHmac != null && java.security.MessageDigest.isEqual(
+                pinHmac.getBytes(java.nio.charset.StandardCharsets.UTF_8), hmac.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     public void setPinHmac(String pinHmac) {

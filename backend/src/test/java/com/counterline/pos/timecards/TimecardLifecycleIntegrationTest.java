@@ -1,6 +1,7 @@
 package com.counterline.pos.timecards;
 
 import com.counterline.pos.TestcontainersConfiguration;
+import com.counterline.pos.auth.Actor;
 import com.counterline.pos.auth.DashboardUser;
 import com.counterline.pos.auth.PinHasher;
 import com.counterline.pos.outlet.OutletAdminService;
@@ -222,8 +223,9 @@ class TimecardLifecycleIntegrationTest {
                 .andExpect(jsonPath("$.detail").value("The clock-out cannot be before the clock-in"));
         call(post(path), admin(), closeBody(Instant.now().plusSeconds(3600).toString(), "In the future")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("The clock-out cannot be in the future"));
+        // Nobody by that id is answered like anyone else without an open shift here (see the enumeration test).
         call(post("/api/v1/dashboard/outlets/1/timecards/999999/close"), admin(), closeBody("2026-10-12T10:00:00Z", "No such person"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isConflict());
         call(post(close(1, managerId)), admin(), closeBody("2026-10-12T10:00:00Z", "Not clocked in")).andExpect(status().isConflict());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM timecard_event WHERE type = 'OUT'", Long.class)).isZero();
 
@@ -316,7 +318,8 @@ class TimecardLifecycleIntegrationTest {
             Future<?> correction = pool.submit(() -> {
                 go.await();
                 return corrections.close(new DashboardUser(true, null), 1L, cashierId,
-                        new CloseShift(Instant.parse("2026-10-12T10:00:00Z"), "Closing it"), "Head Office");
+                        new CloseShift(Instant.parse("2026-10-12T10:00:00Z"), null, "Closing it"),
+                        new Actor(Actor.Type.ADMIN, 1L, "Head Office"));
             });
             go.countDown();
             List<Throwable> failures = new ArrayList<>();
@@ -344,7 +347,7 @@ class TimecardLifecycleIntegrationTest {
         try {
             // The clock-in's transaction is still open when the deactivation starts: it must wait for it.
             Future<?> deactivation = new TransactionTemplate(transactions).execute(status -> {
-                timecards.clock("888888", TimecardEvent.Type.IN, second, "10.0.0.2");
+                timecards.recordClock(secondManagerId, pinHasher.hash("888888"), TimecardEvent.Type.IN, second);
                 Future<?> started = pool.submit(() -> outletAdmin.deactivate(second));
                 assertStillWaiting(started);
                 return started;
@@ -484,6 +487,7 @@ class TimecardLifecycleIntegrationTest {
 
     private ResultActions call(MockHttpServletRequestBuilder request, RequestPostProcessor auth, String json) throws Exception {
         request.with(auth);
+        json = com.counterline.pos.staff.StaffVersions.stamped(jdbc, request, json);
         if (json != null) {
             request.contentType(MediaType.APPLICATION_JSON).content(json);
         }
@@ -495,12 +499,12 @@ class TimecardLifecycleIntegrationTest {
     }
 
     private RequestPostProcessor manager(long outlet, Long id, String name) {
-        return jwt().jwt(token -> token.claim("outlet", outlet).subject(id.toString()).claim("role", "MANAGER").claim("name", name))
+        return jwt().jwt(token -> token.claim("outlet", outlet).subject(id.toString()).claim("role", "MANAGER").claim("name", name).claim("channel", "dashboard"))
                 .authorities(new SimpleGrantedAuthority("ROLE_MANAGER"));
     }
 
     private static RequestPostProcessor admin() {
-        return jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office"))
+        return jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office").claim("channel", "dashboard"))
                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 }

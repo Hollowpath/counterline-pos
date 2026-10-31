@@ -1,24 +1,20 @@
 import { useState, type FormEvent } from 'react'
-import { formatDateTime, formatTime } from '../../lib/dates'
+import { formatDateTime, formatTime, localDateTimeIn } from '../../lib/dates'
 import { detail, input } from '../../styles/ui'
 import type { OpenShift, Timecards } from './types'
 
-/** Closes a shift for a staff member: the clock-out they should have made, and why it is being entered. */
-export type CloseShift = (staffId: number, outAt: string, reason: string) => Promise<void>
-
-/** A value for a datetime-local input: this minute, in the browser's (the outlet's) time. */
-function localNow(): string {
-  const now = new Date()
-  now.setSeconds(0, 0)
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
-}
+/**
+ * Closes a shift for a staff member: the clock-out they should have made, as the wall-clock time (YYYY-MM-DDTHH:mm) in the
+ * business time zone, never the browser's, and why it is being entered.
+ */
+export type CloseShift = (staffId: number, outAtLocal: string, reason: string) => Promise<void>
 
 /**
  * The Timecards report: whoever is clocked in now (a shift left open is flagged and, on the dashboard,
  * can be closed with a reason), then the period's clock events, a correction marked with who made it and why.
  */
 export function TimecardsView({ data, onCloseShift, onClosed }: { data: Timecards; onCloseShift?: CloseShift; onClosed: () => void }) {
-  const { entries, openShifts } = data
+  const { entries, openShifts, timeZone } = data
   return (
     <>
       {openShifts.length > 0 && (
@@ -26,7 +22,7 @@ export function TimecardsView({ data, onCloseShift, onClosed }: { data: Timecard
           <h3 className={detail.section}>Clocked in now</h3>
           <ul className={detail.rows}>
             {openShifts.map((shift) => (
-              <OpenShiftRow key={shift.staffId} shift={shift} onCloseShift={onCloseShift} onClosed={onClosed} />
+              <OpenShiftRow key={shift.staffId} shift={shift} zone={timeZone} onCloseShift={onCloseShift} onClosed={onClosed} />
             ))}
           </ul>
         </section>
@@ -39,12 +35,12 @@ export function TimecardsView({ data, onCloseShift, onClosed }: { data: Timecard
               <span className="flex justify-between gap-4">
                 <span>{entry.staffName}</span>
                 <span className={`font-semibold ${entry.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>
-                  {entry.type} · {formatTime(entry.at)}
+                  {entry.type} · {formatTime(entry.at, timeZone)}
                 </span>
               </span>
               {entry.correctedBy && (
                 <span className={detail.sub} data-testid="correction">
-                  Corrected by {entry.correctedBy}{entry.correctedAt && ` on ${formatDateTime(entry.correctedAt)}`}: {entry.correctedReason}
+                  Corrected by {entry.correctedBy}{entry.correctedAt && ` on ${formatDateTime(entry.correctedAt, timeZone)}`}: {entry.correctedReason}
                 </span>
               )}
             </li>
@@ -55,9 +51,10 @@ export function TimecardsView({ data, onCloseShift, onClosed }: { data: Timecard
   )
 }
 
-function OpenShiftRow({ shift, onCloseShift, onClosed }: { shift: OpenShift; onCloseShift?: CloseShift; onClosed: () => void }) {
+function OpenShiftRow({ shift, zone, onCloseShift, onClosed }: { shift: OpenShift; zone?: string; onCloseShift?: CloseShift; onClosed: () => void }) {
   const [closing, setClosing] = useState(false)
-  const [outAt, setOutAt] = useState(localNow)
+  // The wall-clock time now in the business time zone (this minute): what the form reads and what is sent.
+  const [outAt, setOutAt] = useState(() => localDateTimeIn(zone))
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -67,7 +64,7 @@ function OpenShiftRow({ shift, onCloseShift, onClosed }: { shift: OpenShift; onC
     setBusy(true)
     setError(null)
     try {
-      await onCloseShift!(shift.staffId, new Date(outAt).toISOString(), reason.trim())
+      await onCloseShift!(shift.staffId, outAt, reason.trim())
       onClosed()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The shift could not be closed')
@@ -80,7 +77,7 @@ function OpenShiftRow({ shift, onCloseShift, onClosed }: { shift: OpenShift; onC
       <span className="flex items-center justify-between gap-4">
         <span>
           {shift.staffName}
-          <span className={detail.sub}>Clocked in {formatDateTime(shift.since)}</span>
+          <span className={detail.sub}>Clocked in {formatDateTime(shift.since, zone)}</span>
         </span>
         <span className="flex items-center gap-3">
           {shift.stale && (
@@ -100,6 +97,7 @@ function OpenShiftRow({ shift, onCloseShift, onClosed }: { shift: OpenShift; onC
           <label className="flex flex-col gap-1 text-xs font-medium text-zinc-600">
             Clocked out at
             <input type="datetime-local" className={input} value={outAt} required onChange={(event) => setOutAt(event.target.value)} />
+            {zone && <span className="font-normal text-zinc-500">Outlet time ({zone})</span>}
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-zinc-600">
             Reason

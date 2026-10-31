@@ -3,9 +3,12 @@ package com.counterline.pos.display;
 import com.counterline.pos.auth.DashboardUser;
 import com.counterline.pos.auth.DisplaySession;
 import com.counterline.pos.auth.LoginAttemptLimiter;
+import com.counterline.pos.auth.LoginAttemptLimiter.Attempt;
+import com.counterline.pos.auth.LoginAttemptLimiter.Limit;
 import com.counterline.pos.auth.Terminal;
 import com.counterline.pos.auth.TokenService;
 import com.counterline.pos.auth.TokenService.IssuedToken;
+import com.counterline.pos.common.BadRequestException;
 import com.counterline.pos.common.BusinessRuleException;
 import com.counterline.pos.common.ConflictException;
 import com.counterline.pos.common.ResourceNotFoundException;
@@ -26,12 +29,16 @@ import com.counterline.pos.display.DisplayDtos.SignUpRequest;
 import com.counterline.pos.display.DisplayDtos.Stage;
 import com.counterline.pos.display.DisplayDtos.WaitingMember;
 import com.counterline.pos.outlet.OutletService;
+import com.counterline.pos.outlet.OutletService.OutletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.security.SecureRandom;
@@ -65,8 +72,14 @@ public class DisplayService {
     /** Codes waiting to be entered at one outlet at a time. */
     static final int MAX_WAITING_PER_OUTLET = 3;
     private static final long CREATION_LOCK = 0x5d15_0000_0000L;
-    /** Throttle key prefix: wrong pairing codes are counted per client address. */
+    /** Throttle key prefix: wrong pairing codes are counted per client address... */
     private static final String CODE_THROTTLE = "display-code:";
+    /** ...and, as a much wider net that clients rotating their addresses cannot get round, across all clients. */
+    private static final String CODE_THROTTLE_ALL = "display-code-all";
+    private static final int ALL_CLIENTS_FACTOR = 10;
+    /** Sign-ups a display may take per throttle window (5 minutes), counted whoever the customer is. */
+    private static final String SIGNUP_QUOTA = "display-signup:";
+    static final int SIGNUPS_PER_WINDOW = 5;
 
     private final SecureRandom random = new SecureRandom();
     private final CustomerDisplayRepository displayRepository;
@@ -77,10 +90,12 @@ public class DisplayService {
     private final JsonMapper json;
     private final Clock clock;
     private final DisplayPosterService posters;
+    private final TransactionTemplate transaction;
 
     DisplayService(CustomerDisplayRepository displayRepository, CustomerService customerService,
                    OutletService outletService, TokenService tokenService, LoginAttemptLimiter limiter,
-                   JsonMapper json, Clock clock, DisplayPosterService posters) {
+                   JsonMapper json, Clock clock, DisplayPosterService posters, PlatformTransactionManager transactions) {
+        this.transaction = new TransactionTemplate(transactions);
         this.displayRepository = displayRepository;
         this.customerService = customerService;
         this.outletService = outletService;
@@ -188,25 +203,34 @@ public class DisplayService {
     // ---- The display ----
 
     /**
-     * The display enters the code shown on the POS. Throttled per client address, so codes can't be
-     * guessed.
+     * The display enters the code shown on the POS. Throttled per client address and, more widely, across all clients, so
+     * codes can't be guessed. Not in a transaction (the throttle must not be, see {@link LoginAttemptLimiter}): the
+     * pairing itself is one.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public DisplayConnection connect(String accessCode, String client) {
-        limiter.checkAllowed(CODE_THROTTLE + client);
+        int max = limiter.maxFailures();
+        try (Attempt attempt = limiter.begin(new Limit(CODE_THROTTLE + client, max),
+                new Limit(CODE_THROTTLE_ALL, max * ALL_CLIENTS_FACTOR))) {
+            DisplayConnection connection = transaction.execute(status -> pair(accessCode, client));
+            if (connection == null) {
+                // Wrong, expired, already used or for a closed outlet: the same answer to all of them.
+                attempt.failed();
+                throw new BusinessRuleException("Wrong access code. Check the code on the POS under Customer Display.");
+            }
+            attempt.succeeded();
+            return connection;
+        }
+    }
+
+    /** The display for this code, connected and with its token; null if there is none to connect. */
+    private DisplayConnection pair(String accessCode, String client) {
         // Locked: of two displays entering the same code at once, one connects and the other is told it is wrong.
         CustomerDisplay display = displayRepository.lockWaiting(accessCode, clock.instant().minus(CODE_LIFETIME)).orElse(null);
-        String outletName = null;
-        if (display != null) {
-            try {
-                outletName = outletService.get(display.getOutletId()).name();
-            } catch (ResourceNotFoundException e) {
-                display = null; // a closed outlet's code is as good as a wrong one
-            }
-        }
-        if (display == null) {
-            // Wrong, expired, already used or for a closed outlet: the same answer to all of them.
-            limiter.recordFailure(CODE_THROTTLE + client);
-            throw new BusinessRuleException("Wrong access code. Check the code on the POS under Customer Display.");
+        // A closed outlet's code is as good as a wrong one.
+        String outletName = display == null ? null : outletService.findOpen(display.getOutletId()).map(OutletResponse::name).orElse(null);
+        if (outletName == null) {
+            return null;
         }
         display.connect(clock.instant());
         IssuedToken token = tokenService.issueDisplay(display.getId(), display.getOutletId(), DISPLAY_TOKEN_TTL);
@@ -237,17 +261,19 @@ public class DisplayService {
      * Member Login by phone number. Throttled per display, so the screen can't be used to find out
      * which numbers are members.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public MemberState memberLogin(DisplaySession session, String phone) {
         requireSaleOpen(session);
-        String key = memberThrottleKey(session);
-        limiter.checkAllowed(key);
-        Customer member = customerService.findByPhone(phone).orElse(null);
-        if (member == null) {
-            limiter.recordFailure(key);
-            throw new ResourceNotFoundException("No member has this phone number. Tap Register Member to join.");
+        try (Attempt attempt = limiter.begin(new Limit(memberThrottleKey(session), limiter.maxFailures()))) {
+            Customer member = customerService.findByPhone(phone).orElse(null);
+            if (member == null) {
+                attempt.failed();
+                throw new ResourceNotFoundException("No member has this phone number. Tap Register Member to join.");
+            }
+            attempt.succeeded();
+            transaction.executeWithoutResult(status -> lockActive(session).memberWaiting(member.getId(), false));
+            return new MemberState(MemberStatus.WAITING, member.getFirstName());
         }
-        lockActive(session).memberWaiting(member.getId(), false);
-        return new MemberState(MemberStatus.WAITING, member.getFirstName());
     }
 
     /** Member Login and Sign Up share one throttle per display. */
@@ -255,39 +281,88 @@ public class DisplayService {
         return "display-member:" + session.displayId();
     }
 
-    /** Member Sign Up on the display; the new member then waits for the cashier like a login. */
+    /**
+     * Member Sign Up on the display; the new member then waits for the cashier like a login. At most
+     * {@value #SIGNUPS_PER_WINDOW} sign-ups per display per throttle window (counted atomically, so parallel requests cannot
+     * get past it), so a display cannot be used to fill the member list. A sign-up the application refuses (a conflict, a bad
+     * field, a disconnected display) is not counted; one that fails in the database or its transaction stays counted, as
+     * whether the member was made is not known.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public MemberState signUp(DisplaySession session, SignUpRequest request) {
         requireSaleOpen(session);
         // The screen faces the shop: never show whose number or email it is. A number that is already a
         // member counts against the same throttle as Member Login, so sign-up can't be used to find
         // out which numbers are members either.
-        String key = memberThrottleKey(session);
-        limiter.checkAllowed(key);
-        if (customerService.findByPhone(request.phone()).isPresent()) {
-            limiter.recordFailure(key);
-            throw new ConflictException("This phone number is already a member. Tap Login instead.");
+        try (Attempt attempt = limiter.begin(new Limit(memberThrottleKey(session), limiter.maxFailures()))) {
+            String quota = SIGNUP_QUOTA + session.displayId();
+            limiter.consume(quota, SIGNUPS_PER_WINDOW);
+            CustomerResponse created;
+            try {
+                created = createMember(session, request, attempt, quota);
+            } catch (BadRequestException | BusinessRuleException | ResourceNotFoundException e) {
+                // Refused by the application before anything was committed (a bad date of birth, say): not a use.
+                throw giveBack(quota, e);
+            }
+            // Any other error leaves the use counted: a database or transaction error does not say whether the member was
+            // made, and a use too many for a few minutes costs less than one too few.
+            attempt.succeeded();
+            log.info("Customer {} signed up on display {}", created.id(), session.displayId());
+            return new MemberState(MemberStatus.WAITING, created.firstName());
         }
-        CustomerResponse created;
+    }
+
+    /** The member and the wait for the cashier, made together; a refused sign-up is counted and its quota use given back. */
+    private CustomerResponse createMember(DisplaySession session, SignUpRequest request, Attempt attempt, String quota) {
+        if (customerService.findByPhone(request.phone()).isPresent()) {
+            throw refused(attempt, quota, new ConflictException("This phone number is already a member. Tap Login instead."));
+        }
         try {
-            created = customerService.create(new CustomerRequest(null, null, request.firstName(), request.lastName(),
-                    null, request.dateOfBirth(), request.gender(), request.email(), request.phone(),
-                    request.marketingEmail(), request.marketingSms(), request.marketingCall(),
-                    null, null, null, null, null, null));
+            // The member and the wait for the cashier together: a display disconnected meanwhile leaves no member behind.
+            return transaction.execute(status -> {
+                CustomerResponse member = customerService.create(new CustomerRequest(null, null, request.firstName(),
+                        request.lastName(), null, request.dateOfBirth(), request.gender(), request.email(), request.phone(),
+                        request.marketingEmail(), request.marketingSms(), request.marketingCall(),
+                        null, null, null, null, null, null));
+                lockActive(session).memberWaiting(member.id(), true);
+                return member;
+            });
         } catch (CustomerConflictException e) {
             // However it came about (a race between two sign-ups, a deactivated member's number), a refused
             // sign-up counts against the same throttle as a failed login.
-            limiter.recordFailure(key);
-            throw new ConflictException(e.field() == CustomerConflictException.Field.EMAIL
+            throw refused(attempt, quota, new ConflictException(e.field() == CustomerConflictException.Field.EMAIL
                     ? "This email is already used by a member. Use another, or leave it blank."
                     : e.inactive() ? "This phone number can't be registered here. Please ask the cashier."
-                    : "This phone number is already a member. Tap Login instead.");
+                    : "This phone number is already a member. Tap Login instead."));
         } catch (ConflictException e) {
-            limiter.recordFailure(key);
-            throw new ConflictException("This phone number or email can't be registered here. Please ask the cashier.");
+            throw refused(attempt, quota, new ConflictException("This phone number or email can't be registered here. Please ask the cashier."));
         }
-        lockActive(session).memberWaiting(created.id(), true);
-        log.info("Customer {} signed up on display {}", created.id(), session.displayId());
-        return new MemberState(MemberStatus.WAITING, created.firstName());
+    }
+
+    /**
+     * A sign-up that certainly did not happen and is refused as a conflict: it counts as a failed guess and gives its use of
+     * the display's quota back. Returns what to throw: the refusal, unless counting the failed guess throws (the lock-out,
+     * say), which then wins. A refund that fails is attached to what is thrown (and logged), never thrown in its place.
+     */
+    private RuntimeException refused(Attempt attempt, String quota, RuntimeException refusal) {
+        RuntimeException thrown = refusal;
+        try {
+            attempt.failed();
+        } catch (RuntimeException e) {
+            thrown = e;
+        }
+        return giveBack(quota, thrown);
+    }
+
+    /** Gives a sign-up use back; if that fails, the failure is logged and attached to {@code thrown}, which is returned. */
+    private RuntimeException giveBack(String quota, RuntimeException thrown) {
+        try {
+            limiter.refund(quota);
+        } catch (RuntimeException e) {
+            log.warn("Could not give back a customer display sign-up use: {}", e.toString());
+            thrown.addSuppressed(e);
+        }
+        return thrown;
     }
 
     /** The customer changed their mind before the till added them. */

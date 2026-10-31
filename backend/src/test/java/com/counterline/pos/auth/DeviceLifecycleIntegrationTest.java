@@ -78,6 +78,8 @@ class DeviceLifecycleIntegrationTest {
 
     @Autowired
     TokenService tokenService;
+    @Autowired
+    AdminUserRepository adminRepository;
 
     @Autowired
     JwtEncoder jwtEncoder;
@@ -102,6 +104,7 @@ class DeviceLifecycleIntegrationTest {
     /** Outlets are shared with the other test classes: leave them all open. */
     @AfterEach
     void reopenOutlets() {
+        jdbc.update("DELETE FROM admin_user WHERE email LIKE 'device-admin-%'");
         jdbc.update("UPDATE outlet SET active = TRUE");
     }
 
@@ -128,7 +131,9 @@ class DeviceLifecycleIntegrationTest {
         String approval = JsonPath.read(call(post("/api/v1/auth/special-access"), tillToken,
                 "{\"pin\":\"654321\",\"operation\":\"DISCOUNT\"}").andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.token");
         String dashboardToken = tokenService.issueDashboard(staffRepository.findById(manager.getId()).orElseThrow()).value();
-        String headOffice = tokenService.issueAdmin(new AdminUser("admin@counterline.test", "Head Office", "x", Instant.now())).value();
+        // A head-office session belongs to an account that exists (it is checked on every request).
+        AdminUser account = adminRepository.save(new AdminUser("device-admin-" + UUID.randomUUID() + "@counterline.test", "Head Office", "x", Instant.now()));
+        String headOffice = tokenService.issueAdmin(account).value();
 
         call(get("/api/v1/auth/me"), tillToken, null).andExpect(status().isOk());
         assertThat(callStatus(get("/api/v1/auth/me"), approval)).isNotEqualTo(401);
@@ -199,8 +204,8 @@ class DeviceLifecycleIntegrationTest {
         long deviceId = activeDevice(1L);
         String managersOwnSession = login(key, "654321");
 
-        // The manager resets the very iPad they are working on.
-        call(post(DEVICES + "/" + deviceId + "/reset"), managersOwnSession, null).andExpect(status().isNoContent());
+        // The manager resets the very iPad they are working on (from the dashboard: a PIN at the till does not open it).
+        call(post(DEVICES + "/" + deviceId + "/reset"), dashboardOf(manager), null).andExpect(status().isNoContent());
         call(get("/api/v1/auth/me"), managersOwnSession, null).andExpect(status().isUnauthorized());
         // Once only: it is not an iPad in use any more.
         callAs(post(DEVICES + "/" + deviceId + "/reset"), admin(), null).andExpect(status().isNotFound());
@@ -210,11 +215,17 @@ class DeviceLifecycleIntegrationTest {
                 .andExpect(status().isGone());
     }
 
+    /** The manager's dashboard session (email and password), the only kind that opens the dashboard's iPads list. */
+    private String dashboardOf(Staff staff) {
+        return tokenService.issueDashboard(staffRepository.findById(staff.getId()).orElseThrow()).value();
+    }
+
     @Test
     void anIPadOfAnotherOutletCannotBeResetByAManager() throws Exception {
         setUpIPad("888888", second);
         long deviceId = activeDevice(second);
-        String firstOutletsManager = login(setUpIPad("654321", 1L), "654321");
+        setUpIPad("654321", 1L);
+        String firstOutletsManager = dashboardOf(manager);
 
         call(post(DEVICES + "/" + deviceId + "/reset"), firstOutletsManager, null).andExpect(status().isNotFound());
         call(get(DEVICES), firstOutletsManager, null).andExpect(jsonPath("$.length()").value(1))
@@ -376,7 +387,7 @@ class DeviceLifecycleIntegrationTest {
     }
 
     private static RequestPostProcessor admin() {
-        return jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office"))
+        return jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office").claim("channel", "dashboard"))
                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 }

@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 
@@ -18,6 +19,10 @@ public class ModifierOption {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /** Optimistic lock: a save made from a copy older than the row is refused (see ModifierAdminService). */
+    @Version
+    private long version;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "group_id")
@@ -31,6 +36,10 @@ public class ModifierOption {
     private short sortOrder;
 
     private boolean active;
+
+    public long getVersion() {
+        return version;
+    }
 
     protected ModifierOption() {
     }

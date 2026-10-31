@@ -10,6 +10,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -24,6 +25,10 @@ public class ModifierGroup {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Optimistic lock: a save made from a copy older than the row is refused (see ModifierAdminService). */
+    @Version
+    private long version;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "item_id")
     private Item item;
@@ -37,6 +42,10 @@ public class ModifierGroup {
     @OneToMany(mappedBy = "group")
     @OrderBy("sortOrder")
     private List<ModifierOption> options = new ArrayList<>();
+
+    public long getVersion() {
+        return version;
+    }
 
     protected ModifierGroup() {
     }

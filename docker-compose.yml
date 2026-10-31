@@ -1,4 +1,5 @@
-# Local development only. Credentials here are for localhost use, not for any deployed environment.
+# Local development only. Credentials here are for localhost use, not for any deployed environment, and every port is
+# published on 127.0.0.1 only, so nothing here is reachable from another machine.
 #
 #   docker compose up -d                       the database, for running the API and Vite yourself
 #   docker compose --profile app up --build    the whole app in its image, with a database of its own
@@ -12,7 +13,7 @@ services:
       POSTGRES_USER: pos
       POSTGRES_PASSWORD: pos
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pos-db:/var/lib/postgresql/data
     healthcheck:
@@ -53,7 +54,7 @@ services:
       SPRING_PROFILES_ACTIVE: local
     # 8090 so it can run alongside an API you started yourself on 8080.
     ports:
-      - "8090:8080"
+      - "127.0.0.1:8090:8080"
 
 volumes:
   pos-db:

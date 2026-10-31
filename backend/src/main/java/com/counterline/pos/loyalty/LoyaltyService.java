@@ -59,13 +59,36 @@ public class LoyaltyService {
     /** What a sale changes: the receipt's LOYALTY PROGRAM block. */
     public record Settlement(int before, int earned, int redeemed) {
 
+        /** Refused here, before anything is recorded, when the member's points would not fit the balance. */
+        public Settlement {
+            long afterEarning = (long) before + earned;
+            if (afterEarning > Integer.MAX_VALUE || afterEarning - redeemed < Integer.MIN_VALUE) {
+                throw new BusinessRuleException(BALANCE_LIMIT);
+            }
+        }
+
         public int after() {
-            return before + earned - redeemed;
+            return (int) ((long) before + earned - redeemed);
         }
     }
 
+    /** The balance is a 32-bit count; a sale or adjustment that would take it past that is refused. */
+    static final String BALANCE_LIMIT = "The member's points would go over the limit";
+
     public static int pointsEarned(BigDecimal amountPaid) {
-        return amountPaid.divide(RINGGIT_PER_POINT, 0, RoundingMode.DOWN).intValueExact();
+        try {
+            return amountPaid.divide(RINGGIT_PER_POINT, 0, RoundingMode.DOWN).intValueExact();
+        } catch (ArithmeticException e) {
+            throw new BusinessRuleException(BALANCE_LIMIT);
+        }
+    }
+
+    /** The balance after adding {@code points}, or a refusal if that does not fit (nothing has been recorded yet). */
+    private static void requireFits(LoyaltyAccount account, int points) {
+        long next = (long) account.getPointsBalance() + points;
+        if (next > Integer.MAX_VALUE || next < Integer.MIN_VALUE) {
+            throw new BusinessRuleException(BALANCE_LIMIT);
+        }
     }
 
     /** The balance now: points that have run out of time count as gone, whether or not they have been recorded so yet. */
@@ -161,8 +184,18 @@ public class LoyaltyService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void reverse(Long customerId, Long orderId, int earned, int redeemed, Instant at) {
         LoyaltyAccount account = lockAccount(customerId, at);
-        record(account, customerId, orderId, Type.REVERSE_REDEEM, redeemed, at);
-        record(account, customerId, orderId, Type.REVERSE_EARN, -earned, at);
+        // Judged on what the refund changes in all, so giving the spent points back before taking the earned ones away
+        // (the order of the history) cannot be refused for a moment's total that is never the balance.
+        requireFits(account, redeemed - earned);
+        if (redeemed != 0) {
+            entryRepository.save(new LoyaltyEntry(customerId, orderId, Type.REVERSE_REDEEM, redeemed, at));
+        }
+        if (earned != 0) {
+            entryRepository.save(new LoyaltyEntry(customerId, orderId, Type.REVERSE_EARN, -earned, at));
+        }
+        if (redeemed != 0 || earned != 0) {
+            account.add(redeemed - earned, at);
+        }
     }
 
     /** One line of a member's points history. {@code orderNumber} for a sale's entries, {@code reason} for an adjustment. */
@@ -184,7 +217,8 @@ public class LoyaltyService {
             throw new BusinessRuleException("Enter the points to add or take away");
         }
         LoyaltyAccount account = lockAccount(customerId, at);
-        if (points < 0 && account.getPointsBalance() + points < 0) {
+        requireFits(account, points);
+        if (points < 0 && (long) account.getPointsBalance() + points < 0) {
             throw new BusinessRuleException(account.getPointsBalance() < 0
                     ? memberName + " owes " + -account.getPointsBalance() + " points; nothing can be taken away"
                     : memberName + " has only " + account.getPointsBalance() + " points");
@@ -302,6 +336,7 @@ public class LoyaltyService {
         if (points == 0) {
             return;
         }
+        requireFits(account, points);
         entryRepository.save(new LoyaltyEntry(customerId, orderId, type, points, at));
         account.add(points, at);
     }

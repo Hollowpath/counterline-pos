@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /**
  * A product category. When placed on a quickgrid tab it is shown as a folder at a fixed grid cell;
@@ -21,6 +22,10 @@ public class Category {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Optimistic lock: a save made from a copy older than the row is refused (see CatalogAdminService). */
+    @Version
+    private long version;
+
     private String name;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -33,6 +38,10 @@ public class Category {
 
     /** Its items count towards "Buy 3" promotions (a gift box counts as one item). */
     private boolean countsForPromotions;
+
+    public long getVersion() {
+        return version;
+    }
 
     protected Category() {
     }

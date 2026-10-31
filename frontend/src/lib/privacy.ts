@@ -16,7 +16,7 @@ export function maskPhone(phone: string): string {
   return `${code}${digits.slice(0, shown)}${HIDDEN.repeat(digits.length - shown - 4)}${digits.slice(-4)}`
 }
 
-/** An email address with its name hidden but the first letters ("ai•••@gmail.com"). */
+/** An email address with its name hidden but the first letters ("ai•••@example.com"). */
 export function maskEmail(email: string): string {
   const at = email.lastIndexOf('@')
   if (at <= 0) return HIDDEN.repeat(3)

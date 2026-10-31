@@ -94,6 +94,7 @@ class StaffSessionRevocationIntegrationTest {
 
     @AfterEach
     void removeWhatWasCreated() {
+        jdbc.execute("TRUNCATE staff_audit"); // append-only: rows cannot be deleted one by one, and they hold the staff below
         for (long id : new long[] {outlet, elsewhere}) {
             jdbc.update("DELETE FROM till_device WHERE outlet_id = ?", id);
             jdbc.update("DELETE FROM staff WHERE outlet_id = ?", id);
@@ -288,6 +289,7 @@ class StaffSessionRevocationIntegrationTest {
 
     private ResultActions call(MockHttpServletRequestBuilder request, String token, String json) throws Exception {
         request.header(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+        json = com.counterline.pos.staff.StaffVersions.stamped(jdbc, request, json);
         if (json != null) {
             request.contentType(MediaType.APPLICATION_JSON).content(json);
         }

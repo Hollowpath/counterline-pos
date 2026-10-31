@@ -305,7 +305,7 @@ class ReportAccountingIntegrationTest {
     }
 
     private static RequestPostProcessor admin() {
-        return jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office"))
+        return jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office").claim("channel", "dashboard"))
                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 }

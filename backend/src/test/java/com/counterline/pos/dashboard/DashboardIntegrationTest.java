@@ -385,6 +385,7 @@ class DashboardIntegrationTest {
 
     private ResultActions call(MockHttpServletRequestBuilder request, String token, String json) throws Exception {
         request.header(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+        json = com.counterline.pos.catalog.CatalogVersions.stamped(jdbc, request, json);
         if (json != null) {
             request.contentType(MediaType.APPLICATION_JSON).content(json);
         }

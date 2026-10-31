@@ -33,7 +33,8 @@ class LoyaltyAccount {
     }
 
     void add(int points, Instant at) {
-        this.pointsBalance += points;
+        // Callers refuse a sale or adjustment that does not fit first; this is the backstop against wrapping silently.
+        this.pointsBalance = Math.addExact(this.pointsBalance, points);
         this.updatedAt = at;
     }
 

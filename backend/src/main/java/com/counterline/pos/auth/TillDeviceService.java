@@ -63,12 +63,14 @@ public class TillDeviceService {
         });
         String key = newKey();
         String label = "iPad " + (deviceRepository.countByOutletId(outletId) + 1);
+        // Read before the insert: a refused insert leaves the transaction unusable for any query after it.
+        String outletName = outletService.reference(outletId).getName();
         try {
             TillDevice device = deviceRepository.saveAndFlush(new TillDevice(outletId, label, hash(key), manager, clock.instant()));
             return new Registered(key, device);
         } catch (DataIntegrityViolationException e) {
             // Another iPad was set up for the outlet at the same moment (till_device_one_per_outlet_uq).
-            throw new ConflictException(outletService.reference(outletId).getName()
+            throw new ConflictException(outletName
                     + " already has its till iPad. Reset it on the dashboard (iPads) to set up this one.");
         }
     }

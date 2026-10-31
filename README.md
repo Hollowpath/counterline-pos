@@ -28,7 +28,7 @@ A multi-outlet retail point-of-sale system: a tablet POS for the till, a custome
 
 - Multiple outlets, each with its own staff, registers and time zone setting (default `Asia/Kuala_Lumpur`).
 - REST API under `/api/v1`, OpenAPI/Swagger UI (local profile only), health endpoint at `/actuator/health`.
-- Flyway-managed schema (`V1`–`V24`).
+- Flyway-managed schema (versioned migrations in `backend/src/main/resources/db/migration`).
 
 ## Stack
 
@@ -77,6 +77,8 @@ Local-only sample accounts (seeded by the `local` profile, outlet codes `O1` and
 | POS, outlet `O2` | Staff / Manager | PIN `222222` / `888888`                                                                  |
 | Dashboard        | Head office     | `admin@counterline.test` / `counterline-demo`                                            |
 | Dashboard        | Managers        | `daniel@counterline.test` (`O1`), `meiling@counterline.test` (`O2`) / `counterline-demo` |
+
+**Localhost only.** The sample accounts above, the `pos`/`pos` database credentials in `docker-compose.yml` and the `local` profile's PIN pepper and JWT key are public in this repository, so anyone can sign in with them or forge tokens. Use them only on your own machine with synthetic data: never run the `local` profile, or this Compose file, on a reachable host or with real data. Compose publishes its ports on `127.0.0.1` only.
 
 These exist only under the `local` profile. Outside it, `POS_SECURITY_PIN_PEPPER` and `POS_SECURITY_JWT_SECRET` must be supplied; there are no defaults.
 
@@ -149,7 +151,7 @@ If the credentials are held in AWS Secrets Manager, removing them from the curre
 - AWS Secrets Manager secrets for the database credentials and the application's keys;
 - CloudWatch application logs with seven-day retention.
 
-**What this is not.** This is a temporary learning deployment, not production-ready: HTTP only, one task, a single-AZ database with one day of backups, no alarms, no autoscaling, and resources that are deleted with the stack (except the ECR repository). There is no automated deployment pipeline: CI builds the image only for a local smoke test and never publishes it or touches AWS, and the owner pushes images and deploys the stack by hand. The operator steps are in [infrastructure/README.md](infrastructure/README.md), and an end-to-end on-demand checklist (build, push, deploy, smoke checks, rollback, teardown, final sweep) is in [docs/aws-release-checklist.md](docs/aws-release-checklist.md).
+**What this is not.** This is a temporary, owner-run deployment, not production-ready: HTTP only, one task, a single-AZ database with one day of backups, no alarms, no autoscaling, and resources that are deleted with the stack (except the ECR repository). There is no automated deployment pipeline: CI builds the image only for a local smoke test and never publishes it or touches AWS, and the owner pushes images and deploys the stack by hand. The operator steps are in [infrastructure/README.md](infrastructure/README.md), and an end-to-end on-demand checklist (build, push, deploy, smoke checks, rollback, teardown, final sweep) is in [docs/aws-release-checklist.md](docs/aws-release-checklist.md).
 
 **Deploy briefly, then destroy.** The load balancer, Fargate task, database and public IPv4 addresses are billed while they exist, even when idle, so deploy only for testing or demonstrations and tear the stack down afterwards with `cdk destroy`. Teardown deletes the synthetic database and the secrets. The ECR repository is retained by the stack and must be deleted separately for a complete teardown (see [infrastructure/README.md](infrastructure/README.md#teardown-and-cost)).
 
@@ -164,9 +166,12 @@ Cost is a design constraint: the plan avoids services that bill while idle unles
 
 ## Documentation
 
-- [AGENTS.md](AGENTS.md): working agreements and roles
 - [docs/architecture.md](docs/architecture.md)
 - [docs/testing.md](docs/testing.md)
 - [docs/engineering-readiness.md](docs/engineering-readiness.md)
 - [docs/aws-release-checklist.md](docs/aws-release-checklist.md): on-demand AWS deployment checklist
 - [infrastructure/README.md](infrastructure/README.md): operator guide for the AWS CDK stack
+
+## License
+
+[MIT](LICENSE).

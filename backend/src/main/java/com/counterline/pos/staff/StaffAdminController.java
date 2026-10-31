@@ -1,5 +1,6 @@
 package com.counterline.pos.staff;
 
+import com.counterline.pos.auth.Actor;
 import com.counterline.pos.staff.StaffAdminService.AdminStaff;
 import com.counterline.pos.staff.StaffAdminService.PinReset;
 import com.counterline.pos.staff.StaffAdminService.StaffEdit;
@@ -8,6 +9,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -43,38 +46,38 @@ class StaffAdminController {
             description = "A six-digit PIN is required and must be unique, deactivated staff included. Only managers can be given a dashboard e-mail and password.")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    AdminStaff create(@Valid @RequestBody StaffRequest request) {
-        return staff.create(request);
+    AdminStaff create(@Valid @RequestBody StaffRequest request, @AuthenticationPrincipal Jwt jwt) {
+        return staff.create(Actor.of(jwt), request);
     }
 
     @Operation(summary = "Change name, role and outlet, and a manager's dashboard login",
             description = "Blank e-mail or password fields are left unchanged. Adding a login needs both.")
     @PutMapping("/{id}")
-    AdminStaff update(@PathVariable Long id, @Valid @RequestBody StaffEdit request) {
-        return staff.update(id, request);
+    AdminStaff update(@PathVariable Long id, @Valid @RequestBody StaffEdit request, @AuthenticationPrincipal Jwt jwt) {
+        return staff.update(Actor.of(jwt), id, request);
     }
 
     @Operation(summary = "Remove a manager's dashboard login (e-mail and password); they keep their till PIN")
     @DeleteMapping("/{id}/dashboard-login")
-    AdminStaff removeDashboardLogin(@PathVariable Long id) {
-        return staff.removeDashboardLogin(id);
+    AdminStaff removeDashboardLogin(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+        return staff.removeDashboardLogin(Actor.of(jwt), id);
     }
 
     @Operation(summary = "Deactivate a staff member: they can no longer sign in. Their past sales and timecards are kept.")
     @PostMapping("/{id}/deactivate")
-    AdminStaff deactivate(@PathVariable Long id) {
-        return staff.deactivate(id);
+    AdminStaff deactivate(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+        return staff.deactivate(Actor.of(jwt), id);
     }
 
     @Operation(summary = "Reactivate a staff member (their outlet must be open)")
     @PostMapping("/{id}/reactivate")
-    AdminStaff reactivate(@PathVariable Long id) {
-        return staff.reactivate(id);
+    AdminStaff reactivate(@PathVariable Long id, @AuthenticationPrincipal Jwt jwt) {
+        return staff.reactivate(Actor.of(jwt), id);
     }
 
     @Operation(summary = "Set a new PIN; the PIN is never returned")
     @PostMapping("/{id}/pin")
-    AdminStaff resetPin(@PathVariable Long id, @Valid @RequestBody PinReset request) {
-        return staff.resetPin(id, request);
+    AdminStaff resetPin(@PathVariable Long id, @Valid @RequestBody PinReset request, @AuthenticationPrincipal Jwt jwt) {
+        return staff.resetPin(Actor.of(jwt), id, request);
     }
 }

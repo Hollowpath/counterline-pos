@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { postJson } from '../api/http'
 import { useApi } from '../api/useApi'
-import type { Outlet } from '../auth/types'
+import type { HistoricOutlet } from '../auth/types'
 import { LoadState } from '../components/LoadState'
 import { ReportsScreen } from '../features/reports/ReportsScreen'
 import { field } from './styles'
@@ -10,13 +10,14 @@ import { Page } from './ui'
 
 /** The POS's reports, for any outlet this user can see (head office: every outlet). */
 export function DashboardReports() {
-  const outlets = useApi<Outlet[]>(dashboardPaths.outlets)
+  const outlets = useApi<HistoricOutlet[]>(dashboardPaths.outletsWithClosed)
   const [chosen, setChosen] = useState<number | null>(null)
 
   if (outlets.status !== 'success') {
     return <LoadState status={outlets.status} message={outlets.status === 'error' ? outlets.message : undefined} onRetry={outlets.reload} />
   }
-  const outlet = outlets.data.find((entry) => entry.id === chosen) ?? outlets.data[0]
+  // Opens on an outlet that is open (the first by name), else on whichever outlet there is; history is one pick away.
+  const outlet = outlets.data.find((entry) => entry.id === chosen) ?? outlets.data.find((entry) => !entry.closed) ?? outlets.data[0]
   if (!outlet) return <p className="rounded-2xl border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">No outlets.</p>
 
   return (
@@ -28,7 +29,7 @@ export function DashboardReports() {
         <select aria-label="Outlet" className={`${field} max-md:w-full`} value={outlet.id} onChange={(event) => setChosen(Number(event.target.value))}>
           {outlets.data.map((entry) => (
             <option key={entry.id} value={entry.id}>
-              {entry.name}
+              {entry.closed ? `${entry.name} (closed)` : entry.name}
             </option>
           ))}
         </select>
@@ -40,8 +41,9 @@ export function DashboardReports() {
           key={outlet.id}
           outletName={outlet.name}
           pathFor={(name, from, to) => dashboardPaths.report(outlet.id, name, from, to)}
-          onCloseShift={async (staffId, outAt, reason) => {
-            await postJson(dashboardPaths.closeShift(outlet.id, staffId), { outAt, reason })
+          onCloseShift={async (staffId, outAtLocal, reason) => {
+            // The wall-clock time as typed: the server reads it in the business time zone.
+            await postJson(dashboardPaths.closeShift(outlet.id, staffId), { outAtLocal, reason })
           }}
         />
       </div>

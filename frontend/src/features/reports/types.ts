@@ -112,6 +112,8 @@ export interface Timecards {
   }[]
   /** Everyone clocked in at the outlet now, however long ago they clocked in. */
   openShifts: OpenShift[]
+  /** The business time zone the clock times are read in; a correction's time is entered in it. */
+  timeZone?: string
 }
 
 export type ReportName =

@@ -4,6 +4,7 @@ import com.counterline.pos.auth.DashboardUser;
 import com.counterline.pos.common.ResourceNotFoundException;
 import com.counterline.pos.outlet.OutletProperties;
 import com.counterline.pos.outlet.OutletService;
+import com.counterline.pos.outlet.OutletService.HistoricOutlet;
 import com.counterline.pos.outlet.OutletService.OutletResponse;
 import com.counterline.pos.reports.ReportDtos.SalesSummary;
 import com.counterline.pos.reports.ReportService;
@@ -57,9 +58,19 @@ public class DashboardService {
                             Instant generatedAt) {
     }
 
-    /** The outlets this user can see. */
+    /** The open outlets this user can see (live status is only for these). */
     public List<OutletResponse> outlets(DashboardUser user) {
         return outletService.activeOutlets().stream().filter(outlet -> user.canSee(outlet.id())).toList();
+    }
+
+    /**
+     * The outlets this user can see for history, closed ones too (marked {@code closed}): a closed outlet's sales stay in
+     * the period's totals and its reports stay readable. Without {@code includeClosed}, only the open ones.
+     */
+    public List<HistoricOutlet> outlets(DashboardUser user, boolean includeClosed) {
+        return outletService.allOutlets().stream()
+                .filter(outlet -> user.canSee(outlet.id()) && (includeClosed || !outlet.closed()))
+                .toList();
     }
 
     /** Sales per outlet for {@code date} (today when null), polled by the dashboard. */
@@ -90,7 +101,7 @@ public class DashboardService {
 
     private void requireVisible(DashboardUser user, Long outletId) {
         user.requireOutlet(outletId);
-        outletService.get(outletId); // 404 for an unknown or closed outlet
+        outletService.findAny(outletId); // 404 for an unknown outlet; a closed one keeps its history
     }
 
     private OutletLive outletLive(OutletResponse outlet, LocalDate day) {

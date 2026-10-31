@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @Transactional(readOnly = true)
@@ -27,9 +28,39 @@ public class OutletService {
         return outletRepository.findByActiveTrueOrderByName().stream().map(OutletResponse::from).toList();
     }
 
+    /** An outlet as the back office sees it in history: {@code closed} when it has been deactivated (its sales remain). */
+    public record HistoricOutlet(Long id, String code, String name, String address, boolean closed) {
+
+        static HistoricOutlet from(Outlet outlet) {
+            return new HistoricOutlet(outlet.getId(), outlet.getCode(), outlet.getName(), outlet.getAddress(), !outlet.isActive());
+        }
+    }
+
+    /** Every outlet by name, closed ones too: for reports and charts over a period, which keep their history. */
+    public List<HistoricOutlet> allOutlets() {
+        return outletRepository.findAllByOrderByCodeAsc().stream().map(HistoricOutlet::from)
+                .sorted(java.util.Comparator.comparing(HistoricOutlet::name, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(HistoricOutlet::id))
+                .toList();
+    }
+
+    /** @throws ResourceNotFoundException for an unknown outlet (a closed one is found: its history is still there) */
+    public HistoricOutlet findAny(Long id) {
+        return outletRepository.findById(id).map(HistoricOutlet::from)
+                .orElseThrow(() -> new ResourceNotFoundException("Outlet " + id + " not found"));
+    }
+
     /** @throws ResourceNotFoundException for an unknown or closed outlet */
     public OutletResponse get(Long id) {
         return OutletResponse.from(getActive(id));
+    }
+
+    /**
+     * The open outlet, or empty for an unknown or closed one. Unlike {@link #get} it throws nothing, so a caller inside
+     * a transaction can carry on (an exception through a transactional service marks the whole transaction rollback-only).
+     */
+    public Optional<OutletResponse> findOpen(Long id) {
+        return outletRepository.findByIdAndActiveTrue(id).map(OutletResponse::from);
     }
 
     /** For recording against an outlet (a sale, a register session). */

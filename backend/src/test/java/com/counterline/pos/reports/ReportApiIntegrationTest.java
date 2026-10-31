@@ -112,13 +112,13 @@ class ReportApiIntegrationTest {
     }
 
     @Test
-    void thePerPaxAverageIsCutToTheSenAsPrinted() throws Exception {
-        // 14 Oct: 29.00 + 29.00 + 16.00 = 74.00 over 3 pax = 24.666…, printed as 24.66.
+    void thePerPaxAverageIsRoundedHalfUpToTheSen() throws Exception {
+        // 14 Oct: 29.00 + 29.00 + 16.00 = 74.00 over 3 pax = 24.666…, rounded half up to 24.67 (not cut to 24.66).
         closedAt(sell(4, 1, "{\"paymentMethodId\":6,\"amount\":29.00}"), "2026-10-14T02:00:00Z");
         closedAt(sell(4, 1, "{\"paymentMethodId\":6,\"amount\":29.00}"), "2026-10-14T03:00:00Z");
         closedAt(sell(1, 1, "{\"paymentMethodId\":6,\"amount\":16.00}"), "2026-10-14T04:00:00Z");
         report("sales-summary", "2026-10-14", "2026-10-14")
-                .andExpect(jsonPath("$.diningOptions[0].perPaxAverage").value(24.66))
+                .andExpect(jsonPath("$.diningOptions[0].perPaxAverage").value(24.67))
                 .andExpect(jsonPath("$.orderStatuses[*].status").value(contains("Paid")));
     }
 

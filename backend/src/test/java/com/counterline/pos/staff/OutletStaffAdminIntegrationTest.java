@@ -88,6 +88,7 @@ class OutletStaffAdminIntegrationTest {
 
     @AfterEach
     void removeWhatWasCreated() {
+        jdbc.execute("TRUNCATE staff_audit"); // append-only: rows cannot be deleted one by one, and they hold the staff below
         for (Long outlet : outletIds) {
             jdbc.update("DELETE FROM register_session WHERE outlet_id = ?", outlet);
             jdbc.update("DELETE FROM till_device WHERE outlet_id = ?", outlet);
@@ -610,6 +611,7 @@ class OutletStaffAdminIntegrationTest {
 
     private ResultActions call(MockHttpServletRequestBuilder request, String token, String json) throws Exception {
         request.header(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+        json = com.counterline.pos.staff.StaffVersions.stamped(jdbc, request, json);
         if (json != null) {
             request.contentType(MediaType.APPLICATION_JSON).content(json);
         }

@@ -30,6 +30,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.containsString;
@@ -368,6 +369,87 @@ class CustomerDisplayIntegrationTest {
         assertThat(statuses).containsExactlyInAnyOrder(201, 409);
         assertThat(details).containsExactly("This phone number is already a member. Tap Login instead.");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM customer", Long.class)).isEqualTo(before + 1);
+    }
+
+    @Test
+    void aRefundThatFailsNeverReplacesTheRefusalAndACommittedSignUpIsNeverRefunded() throws Exception {
+        jdbc.update("DELETE FROM login_throttle WHERE throttle_key LIKE 'display-signup:%'");
+        String created = pos(post("/api/v1/displays"), null).andReturn().getResponse().getContentAsString();
+        Integer displayId = JsonPath.read(created, "$.id");
+        String token = token(JsonPath.read(created, "$.accessCode"));
+        pos(put("/api/v1/displays/" + displayId + "/cart"), NEW_SALE).andExpect(status().isNoContent());
+        // Taking a sign-up use back fails (a stand-in for the database failing at that moment).
+        jdbc.execute("CREATE OR REPLACE FUNCTION signup_refund_fault() RETURNS trigger LANGUAGE plpgsql AS $$ "
+                + "BEGIN RAISE EXCEPTION 'injected fault'; END $$");
+        jdbc.execute("CREATE TRIGGER signup_refund_fault BEFORE UPDATE ON login_throttle FOR EACH ROW "
+                + "WHEN (NEW.failures < OLD.failures AND NEW.throttle_key LIKE 'display-signup:%') "
+                + "EXECUTE FUNCTION signup_refund_fault()");
+        try {
+            // The refusal is still what the display is told (not a 500), and the use stays counted.
+            display(post("/api/v1/display/members"), token, "{\"phone\":\"0112345678\",\"firstName\":\"Someone\",\"lastName\":\"Else\"}")
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.detail").value("This phone number is already a member. Tap Login instead."));
+            // Likewise a field the application refuses: the 400 stands, not a 500 from the refund that cannot be made.
+            display(post("/api/v1/display/members"), token,
+                    "{\"phone\":\"0127770000\",\"firstName\":\"Future\",\"lastName\":\"Baby\",\"dateOfBirth\":\"2999-01-01\"}")
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.detail").value("Date of birth can't be in the future"));
+            // A sign-up that goes through is not refunded: the refund (which would fail here) is never attempted.
+            display(post("/api/v1/display/members"), token, "{\"phone\":\"0127778888\",\"firstName\":\"Lim\",\"lastName\":\"Wei\"}")
+                    .andExpect(status().isCreated());
+            assertThat(jdbc.queryForObject("SELECT failures FROM login_throttle WHERE throttle_key = ?", Integer.class,
+                    "display-signup:" + displayId)).isEqualTo(3);
+        } finally {
+            jdbc.execute("DROP TRIGGER IF EXISTS signup_refund_fault ON login_throttle");
+            jdbc.execute("DROP FUNCTION IF EXISTS signup_refund_fault()");
+        }
+    }
+
+    @Test
+    void signUpsTheApplicationRefusesAreGivenBackSoManyOfThemNeverLockTheDisplayOut() throws Exception {
+        jdbc.update("DELETE FROM login_throttle WHERE throttle_key LIKE 'display-signup:%'");
+        String created = pos(post("/api/v1/displays"), null).andReturn().getResponse().getContentAsString();
+        Integer displayId = JsonPath.read(created, "$.id");
+        String token = token(JsonPath.read(created, "$.accessCode"));
+        pos(put("/api/v1/displays/" + displayId + "/cart"), NEW_SALE).andExpect(status().isNoContent());
+
+        // More refused sign-ups than the display may take in a window: none of them was a sign-up.
+        for (int i = 0; i < 8; i++) {
+            display(post("/api/v1/display/members"), token,
+                    "{\"phone\":\"0127770000\",\"firstName\":\"Future\",\"lastName\":\"Baby\",\"dateOfBirth\":\"2999-01-01\"}")
+                    .andExpect(status().isBadRequest());
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM login_throttle WHERE throttle_key = ?", Integer.class,
+                "display-signup:" + displayId)).isZero();
+
+        display(post("/api/v1/display/members"), token, "{\"phone\":\"0127778888\",\"firstName\":\"Lim\",\"lastName\":\"Wei\"}")
+                .andExpect(status().isCreated());
+        assertThat(jdbc.queryForObject("SELECT failures FROM login_throttle WHERE throttle_key = ?", Integer.class,
+                "display-signup:" + displayId)).isEqualTo(1);
+    }
+
+    @Test
+    void aSignUpThatFailsInTheDatabaseStaysCountedBecauseItsOutcomeIsNotKnown() throws Exception {
+        jdbc.update("DELETE FROM login_throttle WHERE throttle_key LIKE 'display-signup:%'");
+        String created = pos(post("/api/v1/displays"), null).andReturn().getResponse().getContentAsString();
+        Integer displayId = JsonPath.read(created, "$.id");
+        String token = token(JsonPath.read(created, "$.accessCode"));
+        pos(put("/api/v1/displays/" + displayId + "/cart"), NEW_SALE).andExpect(status().isNoContent());
+        jdbc.execute("CREATE OR REPLACE FUNCTION signup_insert_fault() RETURNS trigger LANGUAGE plpgsql AS $$ "
+                + "BEGIN RAISE EXCEPTION 'injected fault'; END $$");
+        jdbc.execute("CREATE TRIGGER signup_insert_fault BEFORE INSERT ON customer FOR EACH ROW "
+                + "EXECUTE FUNCTION signup_insert_fault()");
+        try {
+            // The database error is what comes out (MockMvc rethrows what no handler maps), not a refusal.
+            assertThatThrownBy(() -> display(post("/api/v1/display/members"), token,
+                    "{\"phone\":\"0127778888\",\"firstName\":\"Lim\",\"lastName\":\"Wei\"}"))
+                    .hasCauseInstanceOf(org.springframework.dao.DataAccessException.class);
+            assertThat(jdbc.queryForObject("SELECT failures FROM login_throttle WHERE throttle_key = ?", Integer.class,
+                    "display-signup:" + displayId)).isEqualTo(1);
+        } finally {
+            jdbc.execute("DROP TRIGGER IF EXISTS signup_insert_fault ON customer");
+            jdbc.execute("DROP FUNCTION IF EXISTS signup_insert_fault()");
+        }
     }
 
     // ---- helpers ----

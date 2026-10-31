@@ -110,6 +110,31 @@ class CheckoutApiIntegrationTest {
     }
 
     @Test
+    void aSaleBeyondWhatTheMoneyColumnsHoldIsRefusedAsAClientErrorAndOneAtTheLimitIsRecorded() throws Exception {
+        // A custom amount takes 8 digits and a quantity up to 999; lines and orders hold 10 digits before the cents.
+        // 99,999,999.99 x 101 = 10,099,999,998.99 does not fit; x 100 = 9,999,999,999.00 does.
+        checkout(customAmountSale("[{\"customAmount\":99999999.99,\"quantity\":101}]", "9999999999.00"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value("The sale is too large"));
+        // Each line fits, the order does not: 2 x (99,999,999.99 x 60) = 11,999,999,998.80.
+        checkout(customAmountSale("[{\"customAmount\":99999999.99,\"quantity\":60},{\"customAmount\":99999999.99,\"quantity\":60}]",
+                "9999999999.00"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.detail").value("The sale is too large"));
+        assertRowCounts(0, 0, 0);
+
+        checkout(customAmountSale("[{\"customAmount\":99999999.99,\"quantity\":100}]", "9999999999.00"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.total").value(9999999999.00));
+        assertRowCounts(1, 1, 1);
+    }
+
+    private static String customAmountSale(String lines, String cash) {
+        return "{\"clientRequestId\":\"" + UUID.randomUUID() + "\",\"lines\":" + lines
+                + ",\"payments\":[{\"paymentMethodId\":6,\"amount\":" + cash + "}]}";
+    }
+
+    @Test
     void acceptsOneCashlessPaymentPlusCashAndRecordsTheChange() throws Exception {
         checkout(request(List.of(new LineRequest(4L, 2)),
                 List.of(new PaymentRequest(DUITNOW, new BigDecimal("40.00"), "0716"),

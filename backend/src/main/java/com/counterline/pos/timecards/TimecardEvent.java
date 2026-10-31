@@ -1,5 +1,6 @@
 package com.counterline.pos.timecards;
 
+import com.counterline.pos.auth.Actor;
 import com.counterline.pos.staff.Staff;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -40,7 +41,13 @@ public class TimecardEvent {
     private Long outletId;
 
     /** Set on an OUT that a head-office or manager correction made for the staff member. */
+    /** The name to show for whoever made the correction, as it was then. */
     private String correctedBy;
+
+    /** ADMIN or MANAGER with {@link #correctedById}; LEGACY (no id) for a correction made before the actor was recorded. */
+    private String correctedByType;
+
+    private Long correctedById;
 
     private String correctedReason;
 
@@ -57,13 +64,19 @@ public class TimecardEvent {
     }
 
     /** The OUT a correction adds to close an open shift; the IN is left alone. */
-    static TimecardEvent correctedOut(Long outletId, Staff staff, Instant occurredAt, String correctedBy, String reason,
+    static TimecardEvent correctedOut(Long outletId, Staff staff, Instant occurredAt, Actor actor, String reason,
                                       Instant correctedAt) {
         TimecardEvent event = new TimecardEvent(outletId, staff, Type.OUT, occurredAt);
-        event.correctedBy = correctedBy;
+        event.correctedBy = actor.name();
+        event.correctedByType = actor.type().name();
+        event.correctedById = actor.id();
         event.correctedReason = reason;
         event.correctedAt = correctedAt;
         return event;
+    }
+
+    public Long getId() {
+        return id;
     }
 
     public Long getOutletId() {

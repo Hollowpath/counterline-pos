@@ -2,6 +2,7 @@ package com.counterline.pos.display;
 
 import com.counterline.pos.TestcontainersConfiguration;
 import com.counterline.pos.auth.PinHasher;
+import com.counterline.pos.auth.TokenService;
 import com.counterline.pos.display.DisplayDtos.Poster;
 import com.counterline.pos.staff.Staff;
 import com.counterline.pos.staff.StaffRepository;
@@ -67,6 +68,9 @@ class DisplayPostersIntegrationTest {
 
     @Autowired
     PinHasher pinHasher;
+
+    @Autowired
+    TokenService tokenService;
 
     private Long cashierId;
     private Long folderId;
@@ -248,7 +252,7 @@ class DisplayPostersIntegrationTest {
     void aDisconnectedDisplayOrAClosedOutletIsRefused() throws Exception {
         String created = mockMvc.perform(post("/api/v1/displays").with(cashier())).andReturn().getResponse().getContentAsString();
         Integer displayId = JsonPath.read(created, "$.id");
-        String token = tokenFor(JsonPath.read(created, "$.accessCode"));
+        String token = tokenOf(displayId);
         mockMvc.perform(get("/api/v1/display/posters").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isOk());
 
@@ -292,14 +296,15 @@ class DisplayPostersIntegrationTest {
 
     private String connectedDisplay() throws Exception {
         String created = mockMvc.perform(post("/api/v1/displays").with(cashier())).andReturn().getResponse().getContentAsString();
-        return tokenFor(JsonPath.read(created, "$.accessCode"));
+        return tokenOf(JsonPath.read(created, "$.id"));
     }
 
-    private String tokenFor(String code) throws Exception {
-        String connected = mockMvc.perform(post("/api/v1/display/connect")
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"accessCode\":\"" + code + "\"}"))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        return JsonPath.read(connected, "$.token");
+    /**
+     * The token of a display the POS created. (Pairing through /display/connect needs the code to be committed; these tests
+     * run in a transaction that rolls back, and the pairing is covered by DisplayLifecycleIntegrationTest.)
+     */
+    private String tokenOf(Integer displayId) {
+        return tokenService.issueDisplay(displayId.longValue(), 1L, Duration.ofHours(1)).value();
     }
 
     private org.springframework.test.web.servlet.request.RequestPostProcessor cashier() {

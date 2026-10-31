@@ -15,17 +15,23 @@ const problem = (status: number, detail: string) => json({ title: 'Problem', det
 interface Call { key: string; body: any } // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /** An API with head office's outlets and staff kept as state, so each change shows on the next read. */
-function stubApi() {
+function stubApi({ changedElsewhere = false, holdReload = false } = {}) {
+  // holdReload: the staff list is read once, then every read waits until release() is called.
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => { release = resolve })
+  let staffReads = 0
+  // changedElsewhere: another admin saves Aisyah first, so the first edit of her is refused (409) and a reload shows theirs.
+  let elsewhereSaved = false
   const calls: Call[] = []
   const outlets: AdminOutlet[] = [
     { id: 1, code: 'O1', name: 'Counterline Bukit Bintang', address: '1 Test Street', active: true },
     { id: 2, code: 'O2', name: 'Counterline Cheras', address: null, active: true },
   ]
   const staff: AdminStaff[] = [
-    { id: 10, fullName: 'Aisyah Rahman', role: 'STAFF', outletId: 1, active: true, email: null },
-    { id: 11, fullName: 'Daniel Lim', role: 'MANAGER', outletId: 1, active: true, email: 'daniel@counterline.test' },
-    { id: 12, fullName: 'Former Cashier', role: 'STAFF', outletId: 2, active: false, email: null },
-    { id: 13, fullName: 'Noor Aziz', role: 'MANAGER', outletId: 2, active: true, email: null },
+    { id: 10, fullName: 'Aisyah Rahman', role: 'STAFF', outletId: 1, active: true, email: null, version: 3 },
+    { id: 11, fullName: 'Daniel Lim', role: 'MANAGER', outletId: 1, active: true, email: 'daniel@counterline.test', version: 4 },
+    { id: 12, fullName: 'Former Cashier', role: 'STAFF', outletId: 2, active: false, email: null, version: 5 },
+    { id: 13, fullName: 'Noor Aziz', role: 'MANAGER', outletId: 2, active: true, email: null, version: 6 },
   ]
   let nextId = 100
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -57,12 +63,14 @@ function stubApi() {
         return json(created, 201)
       }
       case `GET ${admin}/staff`: {
+        staffReads++
+        if (holdReload && staffReads > 1) await held
         const only = url.searchParams.get('outletId')
         return json(only === null ? staff : staff.filter((member) => member.outletId === Number(only)))
       }
       case `POST ${admin}/staff`: {
         if (body.pin === '111111') return problem(409, 'That PIN is already in use. Choose another.')
-        const created: AdminStaff = { id: nextId++, fullName: body.fullName, role: body.role, outletId: body.outletId, active: true, email: body.email ?? null }
+        const created: AdminStaff = { id: nextId++, fullName: body.fullName, role: body.role, outletId: body.outletId, active: true, email: body.email ?? null, version: 0 }
         staff.push(created)
         return json(created, 201)
       }
@@ -81,16 +89,24 @@ function stubApi() {
         if (login) {
           const target = staff.find((candidate) => candidate.id === Number(login[1]))!
           target.email = null
+          target.version++
           return json(target)
         }
         const member = /^(PUT|POST) \/api\/v1\/dashboard\/admin\/staff\/(\d+)(?:\/(deactivate|reactivate|pin))?$/.exec(key)
         if (member) {
           const target = staff.find((candidate) => candidate.id === Number(member[2]))!
-          if (member[3] === 'deactivate') target.active = false
-          else if (member[3] === 'reactivate') target.active = true
+          if (member[3] === 'deactivate') { target.active = false; target.version++ }
+          else if (member[3] === 'reactivate') { target.active = true; target.version++ }
           else if (member[3] === 'pin') {
             if (body.pin === '111111') return problem(409, 'That PIN is already in use. Choose another.')
+            target.version++
           } else {
+            if (changedElsewhere && target.id === 10 && !elsewhereSaved) {
+              elsewhereSaved = true
+              Object.assign(target, { fullName: 'Aisyah Binti Rahman', version: 9 })
+              return problem(409, 'Changed elsewhere. Reload.')
+            }
+            if (body.version !== target.version) return problem(409, 'Changed elsewhere. Reload.')
             const adding = target.email === null && (body.email || body.password)
             if (adding && !(body.email && body.password)) return problem(400, 'Give both an e-mail and a password to add a dashboard login')
             if (body.password && body.password.length < 12) return problem(400, 'The password must be at least 12 characters')
@@ -98,6 +114,7 @@ function stubApi() {
             Object.assign(target, { fullName: body.fullName, role: body.role, outletId: body.outletId })
             if (body.role === 'STAFF') target.email = null
             else if (body.email) target.email = body.email
+            target.version++
           }
           return json(target)
         }
@@ -105,7 +122,7 @@ function stubApi() {
       }
     }
   }))
-  return calls
+  return Object.assign(calls, { release: () => release() })
 }
 
 const sent = (calls: Call[], key: string) => calls.filter((call) => call.key === key)
@@ -263,7 +280,7 @@ describe('staff', () => {
     await user.selectOptions(screen.getByLabelText('Outlet of Aisyah Rahman'), 'O2 · Counterline Cheras')
     await user.click(screen.getByRole('button', { name: 'Save Aisyah Rahman' }))
     expect(await screen.findByText('Saved Aisyah Rahman')).toBeInTheDocument()
-    expect(sent(calls, `PUT ${admin}/staff/10`)[0].body).toEqual({ fullName: 'Aisyah Rahman', role: 'STAFF', outletId: 2 })
+    expect(sent(calls, `PUT ${admin}/staff/10`)[0].body).toEqual({ fullName: 'Aisyah Rahman', role: 'STAFF', outletId: 2, version: 3 })
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
 
     // Demoting a manager removes their login: declined sends nothing, accepted saves.
@@ -274,8 +291,54 @@ describe('staff', () => {
     await user.click(screen.getByRole('button', { name: 'Save Daniel Lim' }))
     await answerConfirm(user, 'Make Daniel Lim a cashier?', 'Make cashier')
     expect(await screen.findByText('Saved Daniel Lim')).toBeInTheDocument()
-    expect(sent(calls, `PUT ${admin}/staff/11`)[0].body).toEqual({ fullName: 'Daniel Lim', role: 'STAFF', outletId: 1 })
+    expect(sent(calls, `PUT ${admin}/staff/11`)[0].body).toEqual({ fullName: 'Daniel Lim', role: 'STAFF', outletId: 1, version: 4 })
     expect(screen.queryByText(/Dashboard login: daniel/)).not.toBeInTheDocument()
+  })
+
+  it('a person changed by someone else since the list loaded is refused, and the row is rebuilt from their version', async () => {
+    const calls = stubApi({ changedElsewhere: true })
+    const user = userEvent.setup()
+    await open(user, 'Staff')
+
+    await screen.findByRole('button', { name: 'Save Aisyah Rahman' })
+    await user.selectOptions(screen.getByLabelText('Outlet of Aisyah Rahman'), 'O2 · Counterline Cheras')
+    await user.click(screen.getByRole('button', { name: 'Save Aisyah Rahman' }))
+
+    // The refusal is shown, nothing is claimed as saved, and the row now shows what the other admin saved.
+    expect(await screen.findByText('Changed elsewhere. Reload.')).toBeInTheDocument()
+    expect(screen.queryByText('Saved Aisyah Rahman')).not.toBeInTheDocument()
+    expect(await screen.findByLabelText('Name of Aisyah Binti Rahman')).toHaveValue('Aisyah Binti Rahman')
+    expect(sent(calls, `PUT ${admin}/staff/10`)).toHaveLength(1)
+    expect(sent(calls, `PUT ${admin}/staff/10`)[0].body).toMatchObject({ version: 3 })
+
+    // Saving again from the rebuilt row carries the newer version and goes through.
+    await user.selectOptions(screen.getByLabelText('Outlet of Aisyah Binti Rahman'), 'O2 · Counterline Cheras')
+    await user.click(screen.getByRole('button', { name: 'Save Aisyah Binti Rahman' }))
+    expect(await screen.findByText('Saved Aisyah Binti Rahman')).toBeInTheDocument()
+    expect(sent(calls, `PUT ${admin}/staff/10`)[1].body).toMatchObject({ outletId: 2, version: 9 })
+  })
+
+  it('while the list reloads after a save there is no Save to press, and the next one carries the version the server returned', async () => {
+    const calls = stubApi({ holdReload: true })
+    const user = userEvent.setup()
+    await open(user, 'Staff')
+
+    await screen.findByRole('button', { name: 'Save Aisyah Rahman' })
+    await user.selectOptions(screen.getByLabelText('Outlet of Aisyah Rahman'), 'O2 · Counterline Cheras')
+    await user.click(screen.getByRole('button', { name: 'Save Aisyah Rahman' }))
+    await vi.waitFor(() => expect(sent(calls, `PUT ${admin}/staff/10`)).toHaveLength(1))
+
+    // The reload is held back: the list is replaced by its loading state, so the old version cannot be sent again.
+    expect(await screen.findByText('Saved Aisyah Rahman')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Save / })).not.toBeInTheDocument()
+    calls.release()
+
+    const name = await screen.findByLabelText('Name of Aisyah Rahman')
+    await user.type(name, ' B')
+    await user.click(screen.getByRole('button', { name: 'Save Aisyah Rahman' }))
+    expect(await screen.findByText('Saved Aisyah Rahman B')).toBeInTheDocument()
+    expect(sent(calls, `PUT ${admin}/staff/10`)[0].body).toMatchObject({ outletId: 2, version: 3 })
+    expect(sent(calls, `PUT ${admin}/staff/10`)[1].body).toMatchObject({ fullName: 'Aisyah Rahman B', version: 4 })
   })
 
   it('deactivates only after confirming, and reactivates', async () => {
@@ -353,7 +416,7 @@ describe('dashboard logins of existing managers', () => {
     await user.click(save)
     expect(await screen.findByText('Added a dashboard login for Noor Aziz')).toBeInTheDocument()
     expect(sent(calls, `PUT ${admin}/staff/13`)[1].body)
-      .toEqual({ fullName: 'Noor Aziz', role: 'MANAGER', outletId: 2, email: 'noor@counterline.test', password: 'a-long-test-password' })
+      .toEqual({ fullName: 'Noor Aziz', role: 'MANAGER', outletId: 2, version: 6, email: 'noor@counterline.test', password: 'a-long-test-password' })
     expect(await screen.findByText('Dashboard login: noor@counterline.test')).toBeInTheDocument()
   })
 
@@ -376,13 +439,13 @@ describe('dashboard logins of existing managers', () => {
     await user.type(email, 'daniel.lim@counterline.test')
     await user.click(save)
     expect(await screen.findByText('Updated the dashboard login of Daniel Lim')).toBeInTheDocument()
-    expect(sent(calls, `PUT ${admin}/staff/11`)[0].body).toEqual({ fullName: 'Daniel Lim', role: 'MANAGER', outletId: 1, email: 'daniel.lim@counterline.test' })
+    expect(sent(calls, `PUT ${admin}/staff/11`)[0].body).toEqual({ fullName: 'Daniel Lim', role: 'MANAGER', outletId: 1, version: 4, email: 'daniel.lim@counterline.test' })
 
     const again = await openLogin(user, 'Daniel Lim')
     await user.type(within(again).getByLabelText('Dashboard password of Daniel Lim'), 'another-long-password')
     await user.click(within(again).getByRole('button', { name: 'Save dashboard login of Daniel Lim' }))
     expect(await screen.findAllByText('Updated the dashboard login of Daniel Lim')).not.toHaveLength(0)
-    expect(sent(calls, `PUT ${admin}/staff/11`)[1].body).toEqual({ fullName: 'Daniel Lim', role: 'MANAGER', outletId: 1, password: 'another-long-password' })
+    expect(sent(calls, `PUT ${admin}/staff/11`)[1].body).toEqual({ fullName: 'Daniel Lim', role: 'MANAGER', outletId: 1, version: 5, password: 'another-long-password' })
     // The password field is emptied after the save.
     expect(within(screen.getByRole('form', { name: 'Dashboard login of Daniel Lim' })).getByLabelText('Dashboard password of Daniel Lim')).toHaveValue('')
     expect(screen.queryByText('another-long-password')).not.toBeInTheDocument()

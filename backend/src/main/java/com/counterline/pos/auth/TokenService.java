@@ -26,7 +26,7 @@ public class TokenService {
     static final String OUTLET_CLAIM = "outlet";
     static final String DISPLAY_CLAIM = "display";
     static final String CHANNEL_CLAIM = "channel";
-    /** A staff member's authentication session version (see StaffSessionGuard). */
+    /** An account's authentication session version, a staff member's or a head-office account's (see StaffSessionGuard). */
     static final String SESSION_VERSION_CLAIM = "sver";
     /** The till device (iPad) a till or approval token was issued on; resetting the device ends the token (see StaffSessionGuard). */
     static final String DEVICE_CLAIM = "device";
@@ -127,12 +127,14 @@ public class TokenService {
         Instant expiresAt = now.plus(ttl);
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer(ISSUER)
+                .id(UUID.randomUUID().toString())
                 .subject("admin-" + admin.getId())
                 .issuedAt(now)
                 .expiresAt(expiresAt)
                 .claim("name", admin.getFullName())
                 .claim(ROLE_CLAIM, ADMIN_ROLE)
                 .claim(CHANNEL_CLAIM, Channel.DASHBOARD.claim())
+                .claim(SESSION_VERSION_CLAIM, admin.getAuthSessionVersion())
                 .build();
         return sign(claims, expiresAt);
     }

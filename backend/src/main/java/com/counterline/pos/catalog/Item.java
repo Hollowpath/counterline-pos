@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -20,6 +21,10 @@ public class Item {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /** Optimistic lock: a save made from a copy older than the row is refused (see CatalogAdminService). */
+    @Version
+    private long version;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "category_id")
@@ -50,6 +55,10 @@ public class Item {
     private LocalDate seasonalFrom;
 
     private LocalDate seasonalUntil;
+
+    public long getVersion() {
+        return version;
+    }
 
     protected Item() {
     }

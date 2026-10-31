@@ -249,14 +249,16 @@ class ReportQueries {
                         rs.getLong("quantity"), rs.getBigDecimal("amount")));
     }
 
-    List<TimecardEntry> timecards(Long outletId, Instant start, Instant end) {
+    /** At most {@code limit} events, oldest first: the caller asks for one more than it will show, to tell it was cut. */
+    List<TimecardEntry> timecards(Long outletId, Instant start, Instant end, int limit) {
         return jdbc.query("""
                 SELECT s.full_name, t.type, t.occurred_at, t.corrected_by, t.corrected_reason, t.corrected_at
                 FROM timecard_event t
                 JOIN staff s ON s.id = t.staff_id
                 WHERE t.outlet_id = :outlet AND t.occurred_at >= :start AND t.occurred_at < :end
                 ORDER BY t.occurred_at, t.id
-                """, range(outletId, start, end),
+                LIMIT :limit
+                """, range(outletId, start, end).addValue("limit", limit),
                 (rs, i) -> new TimecardEntry(rs.getString("full_name"), rs.getString("type"),
                         rs.getObject("occurred_at", OffsetDateTime.class).toInstant(), rs.getString("corrected_by"),
                         rs.getString("corrected_reason"),
@@ -264,15 +266,14 @@ class ReportQueries {
                                 : rs.getObject("corrected_at", OffsetDateTime.class).toInstant()));
     }
 
-    /** Shifts open now at the outlet: an IN that is its staff member's latest event. */
+    /** Shifts open now at the outlet: an IN that is its staff member's latest event (by event id, see {@code OpenShifts}). */
     List<OpenShift> openShifts(Long outletId, java.util.function.Predicate<Instant> stale) {
         return jdbc.query("""
                 SELECT s.id, s.full_name, e.occurred_at
                 FROM timecard_event e
                 JOIN staff s ON s.id = e.staff_id
                 WHERE e.outlet_id = :outlet AND e.type = 'IN'
-                  AND NOT EXISTS (SELECT 1 FROM timecard_event n WHERE n.staff_id = e.staff_id
-                                  AND (n.occurred_at > e.occurred_at OR (n.occurred_at = e.occurred_at AND n.id > e.id)))
+                  AND NOT EXISTS (SELECT 1 FROM timecard_event n WHERE n.staff_id = e.staff_id AND n.id > e.id)
                 ORDER BY e.occurred_at, e.id
                 """, new MapSqlParameterSource("outlet", outletId),
                 (rs, i) -> {

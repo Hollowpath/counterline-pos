@@ -141,6 +141,13 @@ public class CheckoutService {
             return orderQueries.findByClientRequestId(request.clientRequestId(), terminal.outletId())
                     .map(existing -> new CheckoutResult(existing, false))
                     .orElseThrow(() -> e instanceof DataIntegrityViolationException && DatabaseConflicts.isCollision(e) ? savingCollision() : e);
+        } catch (BusinessRuleException e) {
+            // A duplicate that ran alongside the first request waited for its locks and then met the first sale's result
+            // (the voucher used, the points spent, a once-only reward taken). If that sale was recorded under this request
+            // id, this is the retry it should be told about; if not, the refusal is genuine.
+            return orderQueries.findByClientRequestId(request.clientRequestId(), terminal.outletId())
+                    .map(existing -> new CheckoutResult(existing, false))
+                    .orElseThrow(() -> e);
         }
     }
 
@@ -340,7 +347,8 @@ public class CheckoutService {
         }
     }
 
-    private static ConflictException savingCollision() {
+    /** The one answer for a save that collides with something changed meanwhile (also used when paying a placed order). */
+    static ConflictException savingCollision() {
         return new ConflictException("Something in the sale changed while it was being saved (an item was just removed from sale, say). "
                 + "Check the cart and try again.");
     }

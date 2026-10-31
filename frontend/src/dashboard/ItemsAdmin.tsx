@@ -1,19 +1,15 @@
-import { useState, type FormEvent } from 'react'
-import { ApiError, deleteJson, postJson, putJson } from '../api/http'
+import { useRef, useState, type FormEvent, type RefObject } from 'react'
+import { deleteJson, postJson, putJson } from '../api/http'
 import { useApi } from '../api/useApi'
 import { useConfirm } from '../components/confirmContext'
 import { LoadState } from '../components/LoadState'
 import { formatDate } from '../lib/dates'
 import { checkbox, field, note, noticeClass, sectionTitle, table, tableAsCards, tableFrame } from './styles'
-import { moved } from './catalogHelpers'
+import { isChangedElsewhere, message, moved, needsReload, orderBody } from './catalogHelpers'
 import { FolderToolbar, TabsPanel } from './CatalogStructure'
 import { ModifiersEditor } from './ModifiersEditor'
 import { dashboardPaths, type AdminCategory, type AdminItem, type Notice, type Removal } from './types'
 import { Page, Status } from './ui'
-
-function message(error: unknown) {
-  return error instanceof ApiError ? error.message : 'Offline'
-}
 
 const priceField = `${field} w-28`
 
@@ -27,6 +23,8 @@ export function ItemsAdmin() {
   const [showOffGrid, setShowOffGrid] = useState(false)
   // What the last structural change did, kept across the reload that follows it.
   const [notice, setNotice] = useState<Notice | null>(null)
+  // The version of each item row this screen has saved since the list loaded (the list itself is not reloaded by a save).
+  const savedVersions = useRef(new Map<number, number>())
 
   if (catalogue.status !== 'success') {
     return <LoadState status={catalogue.status} message={catalogue.status === 'error' ? catalogue.message : undefined} onRetry={catalogue.reload} />
@@ -80,7 +78,7 @@ export function ItemsAdmin() {
             {category.name}
             <span className="text-xs font-normal normal-case tracking-normal">{category.tab ?? 'Not on the grid'}</span>
           </h2>
-          <FolderToolbar category={category} tabs={tabNames} onChanged={catalogue.reload} onNotice={setNotice} />
+          <FolderToolbar key={`${category.version}-${category.tab ?? ''}`} category={category} tabs={tabNames} onChanged={catalogue.reload} onNotice={setNotice} />
           <div className={tableFrame}>
             <table className={`${table} ${tableAsCards}`}>
               <thead>
@@ -94,8 +92,9 @@ export function ItemsAdmin() {
               </thead>
               <tbody>
                 {category.items.map((item) => (
-                  <ItemRow key={item.id} item={item} folderId={category.id} folders={folders}
-                    folderItemIds={catalogue.data.find((all) => all.id === category.id)?.items.map((it) => it.id) ?? []}
+                  <ItemRow key={`${item.id}-${item.version}`} item={item} folderId={category.id} folders={folders}
+                    folderRows={catalogue.data.find((all) => all.id === category.id)?.items.map((it) => ({ id: it.id, version: it.version })) ?? []}
+                    savedVersions={savedVersions}
                     canReorder={term === ''} onChanged={catalogue.reload} onNotice={setNotice} />
                 ))}
                 <NewItemRow categoryId={category.id} onAdded={catalogue.reload} />
@@ -162,16 +161,18 @@ function NewFolderForm({ tabs, empty, onAdded }: { tabs: string[]; empty: boolea
   )
 }
 
-function ItemRow({ item, folderId, folders, folderItemIds, canReorder, onChanged, onNotice }: {
+function ItemRow({ item, folderId, folders, folderRows, savedVersions, canReorder, onChanged, onNotice }: {
   item: AdminItem
   folderId: number
   folders: { id: number; name: string }[]
-  folderItemIds: number[]
+  folderRows: { id: number; version: number }[]
+  savedVersions: RefObject<Map<number, number>>
   canReorder: boolean
   onChanged: () => void
   onNotice: (notice: Notice | null) => void
 }) {
   const confirm = useConfirm()
+  const folderItemIds = folderRows.map((row) => row.id)
   const [showOptions, setShowOptions] = useState(false)
   const [saved, setSaved] = useState(item)
   const [name, setName] = useState(item.name)
@@ -193,11 +194,20 @@ function ItemRow({ item, folderId, folders, folderItemIds, canReorder, onChanged
         name: name.trim(), price: Number(price), active, seasonal,
         seasonalFrom: seasonal && seasonalFrom !== '' ? seasonalFrom : null,
         seasonalUntil: seasonal ? seasonalUntil : null,
+        version: saved.version,
       })
       setSaved(next)
+      savedVersions.current.set(item.id, next.version)
       setStatus({ tone: 'ok', text: 'Saved' })
     } catch (error) {
-      setStatus({ tone: 'error', text: message(error) })
+      if (needsReload(error)) {
+        // Saved by someone else since the list loaded, or colliding with another change: show the current catalogue
+        // (a changed row is rebuilt from it) and say so.
+        onNotice({ tone: 'error', text: isChangedElsewhere(error) ? `${message(error)} ${saved.name} was changed by someone else.` : message(error) })
+        onChanged()
+      } else {
+        setStatus({ tone: 'error', text: message(error) })
+      }
     }
   }
 
@@ -209,11 +219,15 @@ function ItemRow({ item, folderId, folders, folderItemIds, canReorder, onChanged
       onChanged()
     } catch (error) {
       onNotice({ tone: 'error', text: message(error) })
+      // The list is out of date (saved by someone else, or a row added or removed): start the next attempt from a reload.
+      if (needsReload(error)) onChanged()
     }
   }
   const order = (by: -1 | 1) => {
     const next = moved(folderItemIds, item.id, by)
-    if (next) void structural(() => putJson(dashboardPaths.folderItemsOrder(folderId), { ids: next }), () => `Moved ${saved.name}`)
+    // A row saved on this screen since the list loaded is at its newer version.
+    const rows = folderRows.map((row) => ({ id: row.id, version: Math.max(row.version, savedVersions.current.get(row.id) ?? 0) }))
+    if (next) void structural(() => putJson(dashboardPaths.folderItemsOrder(folderId), orderBody(rows, next)), () => `Moved ${saved.name}`)
   }
 
   return (
@@ -279,7 +293,7 @@ function ItemRow({ item, folderId, folders, folderItemIds, canReorder, onChanged
               const target = folders.find((folder) => folder.id === Number(event.target.value))
               if (target) {
                 void structural(() => putJson(dashboardPaths.item(item.id), {
-                  categoryId: target.id, name: saved.name, price: saved.price, active: saved.active,
+                  categoryId: target.id, name: saved.name, price: saved.price, active: saved.active, version: saved.version,
                 }), () => `Moved ${saved.name} to ${target.name}`)
               }
             }}>

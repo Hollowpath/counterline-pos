@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -27,10 +29,12 @@ class AuthController {
 
     private final AuthService authService;
     private final PinLockService pinLocks;
+    private final TokenRevocations tokenRevocations;
 
-    AuthController(AuthService authService, PinLockService pinLocks) {
+    AuthController(AuthService authService, PinLockService pinLocks, TokenRevocations tokenRevocations) {
         this.authService = authService;
         this.pinLocks = pinLocks;
+        this.tokenRevocations = tokenRevocations;
     }
 
     @Operation(summary = "Log in with a 6-digit staff PIN on an iPad set up as a till",
@@ -77,6 +81,16 @@ class AuthController {
     @GetMapping("/pin-lock/{pad}")
     PinLockStatus terminalPinLock(@PathVariable PinPad pad, @AuthenticationPrincipal Jwt jwt) {
         return new PinLockStatus(pinLocks.lockedForSeconds(Terminal.of(jwt), pad));
+    }
+
+    @Operation(summary = "Log out: this session's token stops working at once",
+            description = "Only the token presented is ended; the staff member's other sessions go on. Logging out twice is harmless "
+                    + "(the second call is refused as the session has ended).",
+            security = @SecurityRequirement(name = "bearer"))
+    @PostMapping("/logout")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void logout(@AuthenticationPrincipal Jwt jwt) {
+        tokenRevocations.revoke(jwt);
     }
 
     @Operation(summary = "The logged-in staff member", security = @SecurityRequirement(name = "bearer"))

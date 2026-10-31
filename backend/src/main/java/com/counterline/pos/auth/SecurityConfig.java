@@ -116,11 +116,12 @@ class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/orders/*/void", "/api/v1/orders/*/refund")
                                 .access(allow(Set.of(Channel.TILL, Channel.APPROVAL)))
                         // The dashboard: the catalogue, outlets and staff are head office's; sales for head office and managers.
+                        // Only a dashboard login (email and password) opens it: a manager's PIN at the till does not.
                         .requestMatchers("/api/v1/dashboard/catalog/**", "/api/v1/dashboard/discounts/**",
                                 "/api/v1/dashboard/vouchers/**", "/api/v1/dashboard/admin/**")
-                                .access(allow(Set.of(Channel.TILL, Channel.DASHBOARD), TokenService.ADMIN_ROLE))
+                                .access(allow(Set.of(Channel.DASHBOARD), TokenService.ADMIN_ROLE))
                         .requestMatchers("/api/v1/dashboard/**")
-                                .access(allow(Set.of(Channel.TILL, Channel.DASHBOARD), TokenService.ADMIN_ROLE, "MANAGER"))
+                                .access(allow(Set.of(Channel.DASHBOARD), TokenService.ADMIN_ROLE, "MANAGER"))
                         // Customers are managed on the dashboard as well as found at the till.
                         .requestMatchers("/api/v1/customers", "/api/v1/customers/**")
                                 .access(allow(Set.of(Channel.TILL, Channel.DASHBOARD)))

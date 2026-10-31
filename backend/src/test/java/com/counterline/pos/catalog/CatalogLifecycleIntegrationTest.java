@@ -436,6 +436,7 @@ class CatalogLifecycleIntegrationTest {
 
     private ResultActions call(MockHttpServletRequestBuilder request, String json) throws Exception {
         request.with(admin());
+        json = CatalogVersions.stamped(jdbc, request, json);
         if (json != null) {
             request.contentType(MediaType.APPLICATION_JSON).content(json);
         }
@@ -443,7 +444,7 @@ class CatalogLifecycleIntegrationTest {
     }
 
     private static RequestPostProcessor admin() {
-        return jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office"))
+        return jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office").claim("channel", "dashboard"))
                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 

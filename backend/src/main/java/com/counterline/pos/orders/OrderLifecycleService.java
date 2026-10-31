@@ -2,6 +2,7 @@ package com.counterline.pos.orders;
 
 import com.counterline.pos.auth.Terminal;
 import com.counterline.pos.common.BusinessRuleException;
+import com.counterline.pos.common.DatabaseConflicts;
 import com.counterline.pos.common.ResourceNotFoundException;
 import com.counterline.pos.loyalty.LoyaltyService;
 import com.counterline.pos.orders.OrderDtos.OrderResponse;
@@ -12,6 +13,7 @@ import com.counterline.pos.staff.StaffRepository;
 import com.counterline.pos.vouchers.VoucherService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +31,9 @@ import java.time.Instant;
 public class OrderLifecycleService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderLifecycleService.class);
+
+    /** One payment request id pays one order (V4). */
+    private static final String PAYMENT_REQUEST_UNIQUE = "sale_order_payment_request_uq";
 
     private final SaleOrderRepository orderRepository;
     private final StaffRepository staffRepository;
@@ -88,9 +93,15 @@ public class OrderLifecycleService {
         promotionRules.requireSatisfied(order, pointsBalance, order.getEligibilityAt(), order.getId());
         paymentRecorder.addPayments(order, request.payments(), staff, paidAt);
         order.closeWithPaymentRequest(request.clientRequestId(), paidAt);
-        orderRepository.saveAndFlush(order);
-        orderLoyalty.settle(order, paidAt);
-        orderRepository.flush();
+        try {
+            orderRepository.saveAndFlush(order);
+            orderLoyalty.settle(order, paidAt);
+            orderRepository.flush();
+        } catch (DataIntegrityViolationException e) {
+            // A request id that already paid another order is a conflict. Any other integrity failure (a loyalty or
+            // owed-item write, a check or not-null violation) is a defect and stays visible as one.
+            throw DatabaseConflicts.violates(e, PAYMENT_REQUEST_UNIQUE) ? CheckoutService.savingCollision() : e;
+        }
         log.info("Order {} paid: RM{} by staff {}", order.getDisplayNumber(), order.getTotal(), staffId);
         return OrderResponse.from(order);
     }

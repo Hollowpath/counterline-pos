@@ -15,6 +15,11 @@ export interface Outlet {
   address: string | null
 }
 
+/** An outlet in the back office's history: `closed` once it has been closed (its sales and reports remain). */
+export interface HistoricOutlet extends Outlet {
+  closed: boolean
+}
+
 export interface LoginResponse {
   token: string
   expiresAt: string

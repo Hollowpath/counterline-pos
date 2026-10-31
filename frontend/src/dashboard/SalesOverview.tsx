@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ApiError, getJson } from '../api/http'
 import { useApi } from '../api/useApi'
-import type { Outlet } from '../auth/types'
+import type { HistoricOutlet } from '../auth/types'
 import { addDays, todayIso } from '../lib/dates'
 import { formatRM, toSen } from '../lib/money'
 import { BarList, ColumnChart, TrendChart } from './charts'
@@ -13,6 +13,9 @@ import { Card, Page, Segmented, Tile, Warning } from './ui'
 const REFRESH_MS = 30_000
 
 const rm = (amount: number) => formatRM(toSen(amount))
+
+/** An outlet's name, with "(closed)" for one that has been closed since (its past sales stay in the figures). */
+const outletName = (outlet: HistoricOutlet | undefined) => (outlet === undefined ? undefined : outlet.closed ? `${outlet.name} (closed)` : outlet.name)
 
 type Period = 'today' | 'yesterday' | '7d' | '30d' | 'month'
 
@@ -67,7 +70,7 @@ function hourLabel(hour: number): string {
  * figures compare with the period before.
  */
 export function SalesOverview() {
-  const outlets = useApi<Outlet[]>(dashboardPaths.outlets)
+  const outlets = useApi<HistoricOutlet[]>(dashboardPaths.outletsWithClosed)
   const [period, setPeriod] = useState<Period>('7d')
   const [outletId, setOutletId] = useState<number | null>(null)
   const [overview, setOverview] = useState<Overview | null>(null)
@@ -109,7 +112,7 @@ export function SalesOverview() {
         <>
           {from === to ? shortDate(from) : `${shortDate(from)} – ${shortDate(to)}`}
           {' · '}
-          {outletId === null ? (outletList.length === 1 ? outletList[0].name : 'All outlets') : outletList.find((o) => o.id === outletId)?.name}
+          {outletId === null ? (outletList.length === 1 ? outletList[0].name : 'All outlets') : outletName(outletList.find((o) => o.id === outletId))}
         </>
       }
       actions={
@@ -125,7 +128,7 @@ export function SalesOverview() {
               onChange={(event) => setOutletId(event.target.value === '' ? null : Number(event.target.value))}>
               <option value="">All outlets</option>
               {outletList.map((outlet) => (
-                <option key={outlet.id} value={outlet.id}>{outlet.name}</option>
+                <option key={outlet.id} value={outlet.id}>{outletName(outlet)}</option>
               ))}
             </select>
           )}
@@ -159,7 +162,7 @@ export function SalesOverview() {
                 <BarList
                   label="Net sales by outlet"
                   rows={overview.outlets.map((outlet) => ({
-                    label: outlet.name, value: outlet.netSales, shown: rm(outlet.netSales), sub: orders(outlet.orders),
+                    label: outlet.closed ? `${outlet.name} (closed)` : outlet.name, value: outlet.netSales, shown: rm(outlet.netSales), sub: orders(outlet.orders),
                   }))}
                 />
               </Card>

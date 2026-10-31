@@ -1,0 +1,55 @@
+# Version-update pull requests for every package ecosystem with a manifest in this repository.
+# Dependabot alerts and security updates are repository settings, not configured here.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      maven-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      frontend-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: npm
+    directory: /infrastructure
+    schedule:
+      interval: weekly
+    groups:
+      infrastructure-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # The Dockerfile's base images. Major versions are pinned on purpose: Java 21 (LTS) and Node 22.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # The images in docker-compose.yml (PostgreSQL 17, matching the Testcontainers tests). counterline-pos:local is built
+  # here, not pulled from a registry.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "counterline-pos"
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

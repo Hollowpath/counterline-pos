@@ -49,6 +49,8 @@ import java.util.stream.Stream;
 public class ReportService {
 
     private static final long MAX_DAYS = 366;
+    /** The most clock events one timecards report shows. */
+    static final int MAX_TIMECARD_EVENTS = 5000;
     /** A shift open for longer than this is shown as stale: a clock-out was most likely forgotten. */
     static final Duration STALE_SHIFT = Duration.ofHours(16);
 
@@ -113,7 +115,7 @@ public class ReportService {
             return List.of();
         }
         return List.of(new DiningOptionTotal("Retail", orders, net, orders,
-                net.divide(BigDecimal.valueOf(orders), 2, RoundingMode.DOWN)));
+                net.divide(BigDecimal.valueOf(orders), 2, RoundingMode.HALF_UP)));
     }
 
     public HourlySales hourlySales(Long outletId, LocalDate from, LocalDate to) {
@@ -189,11 +191,20 @@ public class ReportService {
         return new Modifiers(from, to, queries.modifiers(outletId, range.start(), range.end()));
     }
 
+    /**
+     * The clock events of the range. A range with more than {@link #MAX_TIMECARD_EVENTS} is refused (400), never cut
+     * short: a report that silently left events out would misstate hours.
+     */
     public Timecards timecards(Long outletId, LocalDate from, LocalDate to) {
         Range range = range(from, to);
         Instant now = clock.instant();
-        return new Timecards(from, to, queries.timecards(outletId, range.start(), range.end()),
-                queries.openShifts(outletId, since -> Duration.between(since, now).compareTo(STALE_SHIFT) > 0));
+        List<ReportDtos.TimecardEntry> events = queries.timecards(outletId, range.start(), range.end(), MAX_TIMECARD_EVENTS + 1);
+        if (events.size() > MAX_TIMECARD_EVENTS) {
+            throw new BadRequestException("That range has more than " + MAX_TIMECARD_EVENTS
+                    + " clock events. Choose a shorter range.");
+        }
+        return new Timecards(from, to, events,
+                queries.openShifts(outletId, since -> Duration.between(since, now).compareTo(STALE_SHIFT) > 0), zone.getId());
     }
 
     private record Range(Instant start, Instant end) {

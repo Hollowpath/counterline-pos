@@ -13,7 +13,10 @@ import org.springframework.stereotype.Component;
  * token's session version must equal the current one. A dashboard token also needs the manager's
  * dashboard login to still exist. Deactivating someone, changing their role, outlet, PIN or login,
  * or closing their outlet raises the version, so the old token stays invalid even if the account,
- * outlet or login is later restored. A till or approval token must also name a till device that is still set up at its outlet. Head-office and customer-display tokens are not affected.
+ * outlet or login is later restored. A till or approval token must also name a till device that is still set up at its outlet.
+ * A head-office token is checked the same way against its account: still active, and the session version unchanged (a new
+ * password or a deactivation raises it). Every staff and head-office token must also not have been logged out (see
+ * {@link TokenRevocations}). Customer-display tokens are not affected (their display row is checked on each call).
  * The refusal says nothing about the account.
  */
 @Component
@@ -28,6 +31,10 @@ class StaffSessionGuard {
     /** @throws InvalidBearerTokenException (401) if the token is a staff token that no longer holds */
     void check(Jwt jwt) {
         String role = jwt.getClaimAsString(TokenService.ROLE_CLAIM);
+        if (TokenService.ADMIN_ROLE.equals(role)) {
+            requireAdminSession(jwt);
+            return;
+        }
         if (!"STAFF".equals(role) && !"MANAGER".equals(role)) {
             return;
         }
@@ -39,18 +46,44 @@ class StaffSessionGuard {
         long device = jwt.getClaim(TokenService.DEVICE_CLAIM) instanceof Number number ? number.longValue() : -1L;
         Long staffId = parseId(jwt.getSubject());
         // A token without the session version (issued before it existed) is never valid.
-        boolean valid = staffId != null && outlet instanceof Number number && version instanceof Number sessionVersion
+        boolean valid = staffId != null && jwt.getId() != null && outlet instanceof Number number && version instanceof Number sessionVersion
                 && Boolean.TRUE.equals(jdbc.queryForObject("""
                         SELECT EXISTS (
                             SELECT 1 FROM staff s JOIN outlet o ON o.id = s.outlet_id
                             WHERE s.id = ? AND s.active AND s.role = ? AND s.outlet_id = ? AND o.active
                               AND s.auth_session_version = ? AND (? = FALSE OR s.email IS NOT NULL)
                               AND (? = TRUE OR EXISTS (SELECT 1 FROM till_device d
-                                                       WHERE d.id = ? AND d.outlet_id = s.outlet_id AND d.reset_at IS NULL)))""",
-                        Boolean.class, staffId, role, number.longValue(), sessionVersion.intValue(), dashboard, dashboard, device));
+                                                       WHERE d.id = ? AND d.outlet_id = s.outlet_id AND d.reset_at IS NULL))
+                              AND NOT EXISTS (SELECT 1 FROM revoked_token r WHERE r.token_id = ?))""",
+                        Boolean.class, staffId, role, number.longValue(), sessionVersion.intValue(), dashboard, dashboard, device,
+                        jwt.getId()));
         if (!valid) {
             throw new InvalidBearerTokenException("The session is no longer valid");
         }
+    }
+
+    /** A head-office token: its account is active, at the token's session version, and the token has not been logged out. */
+    private void requireAdminSession(Jwt jwt) {
+        Long adminId = parseAdminId(jwt.getSubject());
+        Object version = jwt.getClaim(TokenService.SESSION_VERSION_CLAIM);
+        // A token without the session version or an id (issued before they existed) is never valid.
+        boolean valid = adminId != null && jwt.getId() != null && version instanceof Number sessionVersion
+                && Boolean.TRUE.equals(jdbc.queryForObject("""
+                        SELECT EXISTS (
+                            SELECT 1 FROM admin_user a
+                            WHERE a.id = ? AND a.active AND a.auth_session_version = ?
+                              AND NOT EXISTS (SELECT 1 FROM revoked_token r WHERE r.token_id = ?))""",
+                        Boolean.class, adminId, sessionVersion.intValue(), jwt.getId()));
+        if (!valid) {
+            throw new InvalidBearerTokenException("The session is no longer valid");
+        }
+    }
+
+    private static Long parseAdminId(String subject) {
+        if (subject == null || !subject.startsWith("admin-")) {
+            return null;
+        }
+        return parseId(subject.substring("admin-".length()));
     }
 
     private static Long parseId(String subject) {

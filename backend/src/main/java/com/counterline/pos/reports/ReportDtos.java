@@ -35,7 +35,7 @@ public final class ReportDtos {
 
     /**
      * Every sale is "Retail" with 1 pax, as printed on receipts. {@code perPaxAverage} =
-     * amount ÷ pax, cut to the sen as the printed report does (RM784.00 ÷ 23 = RM34.08).
+     * amount ÷ pax, rounded half up to the sen (RM784.00 ÷ 23 = RM34.0869… = RM34.09).
      */
     public record DiningOptionTotal(String name, long orderCount, BigDecimal amount, long paxCount,
                                     BigDecimal perPaxAverage) {
@@ -111,9 +111,10 @@ public final class ReportDtos {
 
     /**
      * {@code entries}: the clock events in the period. {@code openShifts}: everyone clocked in at the outlet now,
-     * however long ago they clocked in (a shift left open stays listed until it is closed).
+     * however long ago they clocked in (a shift left open stays listed until it is closed). {@code timeZone}: the
+     * business time zone the clock times are read in (a correction's local time is in it too).
      */
-    public record Timecards(LocalDate from, LocalDate to, List<TimecardEntry> entries, List<OpenShift> openShifts) {
+    public record Timecards(LocalDate from, LocalDate to, List<TimecardEntry> entries, List<OpenShift> openShifts, String timeZone) {
     }
 
     /** {@code correctedBy}/{@code correctedReason}: set on an OUT that head office or a manager entered for the person. */

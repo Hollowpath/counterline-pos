@@ -3,7 +3,7 @@ import { deleteJson, postJson, putJson } from '../api/http'
 import { useApi } from '../api/useApi'
 import { useConfirm } from '../components/confirmContext'
 import { LoadState } from '../components/LoadState'
-import { message } from './catalogHelpers'
+import { isChangedElsewhere, message } from './catalogHelpers'
 import { field, note, noticeClass, sectionTitle, table, tableAsCards, tableFrame } from './styles'
 import { dashboardPaths, type AdminOutlet, type AdminStaff, type Notice } from './types'
 import { Page } from './ui'
@@ -77,7 +77,7 @@ export function StaffAdmin() {
               <tbody>
                 {staff.data.map((member) => (
                   <StaffRow key={`${member.id}-${member.fullName}-${member.role}-${member.outletId}-${member.active}-${member.email}`} member={member}
-                    outlets={outlets.data} onChanged={changed} onError={failed} />
+                    outlets={outlets.data} onChanged={changed} onError={failed} onStale={staff.reload} />
                 ))}
               </tbody>
             </table>
@@ -166,13 +166,19 @@ function NewStaffForm({ outlets, defaultOutletId, onAdded, onError }: {
   )
 }
 
-function StaffRow({ member, outlets, onChanged, onError }: {
+function StaffRow({ member: listed, outlets, onChanged, onError, onStale }: {
   member: AdminStaff
   outlets: AdminOutlet[]
   onChanged: (text: string) => void
   onError: (text: string) => void
+  /** The person was changed by someone else since the list loaded: load it again (the row is rebuilt if what it shows changed). */
+  onStale: () => void
 }) {
   const confirm = useConfirm()
+  // What the server last answered for this person from here. The list is reloaded after a change; until that arrives the
+  // next save must carry the version of this answer, never the older one the list still holds.
+  const [saved, setSaved] = useState<AdminStaff | null>(null)
+  const member = saved !== null && saved.version >= listed.version ? saved : listed
   const [fullName, setFullName] = useState(member.fullName)
   const [role, setRole] = useState<Role>(member.role)
   const [outletId, setOutletId] = useState(member.outletId)
@@ -182,13 +188,15 @@ function StaffRow({ member, outlets, onChanged, onError }: {
   const dirty = fullName !== member.fullName || role !== member.role || outletId !== member.outletId
   const name = member.fullName
 
-  async function run(action: () => Promise<unknown>, done: string) {
+  async function run(action: () => Promise<AdminStaff | void>, done: string) {
     setBusy(true)
     try {
-      await action()
+      const answer = await action()
+      if (answer) setSaved(answer)
       onChanged(done)
     } catch (error) {
       onError(message(error))
+      if (isChangedElsewhere(error)) onStale()
     } finally {
       setBusy(false)
     }
@@ -197,14 +205,15 @@ function StaffRow({ member, outlets, onChanged, onError }: {
   async function save() {
     if (member.role === 'MANAGER' && role === 'STAFF' && member.email !== null
       && !await confirm({ title: `Make ${name} a cashier?`, message: 'A cashier has no dashboard login, so theirs is removed and any dashboard session ends. They keep their till PIN.', confirmLabel: 'Make cashier' })) return
-    void run(() => putJson(dashboardPaths.adminStaffMember(member.id), { fullName, role, outletId }), `Saved ${fullName}`)
+    void run(() => putJson<AdminStaff>(dashboardPaths.adminStaffMember(member.id), { fullName, role, outletId, version: member.version }), `Saved ${fullName}`)
   }
 
   function setPin() {
     if (newPin === null) return
     void run(async () => {
-      await postJson(dashboardPaths.adminStaffPin(member.id), { pin: newPin })
+      const answer = await postJson<AdminStaff>(dashboardPaths.adminStaffPin(member.id), { pin: newPin })
       setNewPin(null)
+      return answer
     }, `Reset the PIN of ${name}`)
   }
 
@@ -254,13 +263,13 @@ function StaffRow({ member, outlets, onChanged, onError }: {
             <button type="button" className="btn btn-danger" disabled={busy} aria-label={`Deactivate ${name}`}
               onClick={async () => {
                 if (!await confirm({ title: `Deactivate ${name}?`, message: 'They can no longer sign in. Their past sales and timecards are kept, and they can be reactivated.', confirmLabel: 'Deactivate' })) return
-                void run(() => postJson(dashboardPaths.adminStaffAction(member.id, 'deactivate'), {}), `Deactivated ${name}`)
+                void run(() => postJson<AdminStaff>(dashboardPaths.adminStaffAction(member.id, 'deactivate'), {}), `Deactivated ${name}`)
               }}>
               Deactivate
             </button>
           ) : (
             <button type="button" className="btn" disabled={busy} aria-label={`Reactivate ${name}`}
-              onClick={() => void run(() => postJson(dashboardPaths.adminStaffAction(member.id, 'reactivate'), {}), `Reactivated ${name}`)}>
+              onClick={() => void run(() => postJson<AdminStaff>(dashboardPaths.adminStaffAction(member.id, 'reactivate'), {}), `Reactivated ${name}`)}>
               Reactivate
             </button>
           )}
@@ -270,7 +279,7 @@ function StaffRow({ member, outlets, onChanged, onError }: {
     {loginOpen && member.role === 'MANAGER' && (
       <tr>
         <td colSpan={5}>
-          <LoginPanel member={member} onChanged={onChanged} onError={onError} />
+          <LoginPanel member={member} onChanged={onChanged} onError={onError} onStale={onStale} onSaved={setSaved} />
         </td>
       </tr>
     )}
@@ -283,10 +292,13 @@ function StaffRow({ member, outlets, onChanged, onError }: {
  * either can be changed alone. The stored password is never shown, and a blank password field
  * leaves it as it is. The password field is emptied after every successful save.
  */
-function LoginPanel({ member, onChanged, onError }: {
+function LoginPanel({ member, onChanged, onError, onStale, onSaved }: {
   member: AdminStaff
   onChanged: (text: string) => void
   onError: (text: string) => void
+  onStale: () => void
+  /** The server's answer for the person, so the next change from here carries the version it holds. */
+  onSaved: (updated: AdminStaff) => void
 }) {
   const confirm = useConfirm()
   const hasLogin = member.email !== null
@@ -297,15 +309,17 @@ function LoginPanel({ member, onChanged, onError }: {
   const emailChanged = email.trim() !== '' && email.trim().toLowerCase() !== member.email
   const ready = hasLogin ? emailChanged || password !== '' : email.trim() !== '' && password !== ''
 
-  async function run(action: () => Promise<unknown>, done: string) {
+  async function run(action: () => Promise<AdminStaff | void>, done: string) {
     setBusy(true)
     try {
-      await action()
+      const answer = await action()
+      if (answer) onSaved(answer)
       setPassword('')
       onChanged(done)
     } catch (error) {
       // The e-mail and password stay in the form, so they can be corrected.
       onError(message(error))
+      if (isChangedElsewhere(error)) onStale()
     } finally {
       setBusy(false)
     }
@@ -314,7 +328,7 @@ function LoginPanel({ member, onChanged, onError }: {
   function save() {
     const login = { ...(emailChanged || !hasLogin ? { email: email.trim() } : {}), ...(password !== '' ? { password } : {}) }
     void run(
-      () => putJson(dashboardPaths.adminStaffMember(member.id), { fullName: member.fullName, role: member.role, outletId: member.outletId, ...login }),
+      () => putJson<AdminStaff>(dashboardPaths.adminStaffMember(member.id), { fullName: member.fullName, role: member.role, outletId: member.outletId, version: member.version, ...login }),
       hasLogin ? `Updated the dashboard login of ${name}` : `Added a dashboard login for ${name}`,
     )
   }
@@ -340,7 +354,7 @@ function LoginPanel({ member, onChanged, onError }: {
         <button type="button" className="btn btn-danger" disabled={busy} aria-label={`Remove dashboard login of ${name}`}
           onClick={async () => {
             if (!await confirm({ title: `Remove the dashboard login of ${name}?`, message: 'Their dashboard session ends. They can still sign in at the till with their PIN.', confirmLabel: 'Remove login' })) return
-            void run(() => deleteJson(dashboardPaths.adminStaffLogin(member.id)), `Removed the dashboard login of ${name}`)
+            void run(() => deleteJson<AdminStaff>(dashboardPaths.adminStaffLogin(member.id)), `Removed the dashboard login of ${name}`)
           }}>
           Remove login
         </button>

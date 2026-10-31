@@ -2,8 +2,9 @@ package com.counterline.pos.dashboard;
 
 import com.counterline.pos.auth.DashboardUser;
 import com.counterline.pos.common.BadRequestException;
+import com.counterline.pos.common.ResourceNotFoundException;
 import com.counterline.pos.outlet.OutletProperties;
-import com.counterline.pos.outlet.OutletService.OutletResponse;
+import com.counterline.pos.outlet.OutletService.HistoricOutlet;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -63,7 +64,8 @@ public class SalesOverviewService {
     public record DayTotal(LocalDate date, long orders, BigDecimal netSales) {
     }
 
-    public record OutletTotal(Long outletId, String name, long orders, BigDecimal netSales) {
+    /** {@code closed}: the outlet has been closed since; its sales in the period are still counted. */
+    public record OutletTotal(Long outletId, String name, long orders, BigDecimal netSales, boolean closed) {
     }
 
     /** {@code hour}: 0–23, in the outlets' time zone. */
@@ -103,12 +105,16 @@ public class SalesOverviewService {
             throw new BadRequestException("Choose a period of at most " + MAX_DAYS + " days");
         }
 
-        List<OutletResponse> visible = dashboard.outlets(user);
+        // A period's figures keep the outlets closed since: their sales are still sales of the period.
+        List<HistoricOutlet> visible = dashboard.outlets(user, true);
         if (outletId != null) {
             user.requireOutlet(outletId);
             visible = visible.stream().filter(outlet -> outlet.id().equals(outletId)).toList();
+            if (visible.isEmpty()) {
+                throw new ResourceNotFoundException("Outlet " + outletId + " not found");
+            }
         }
-        List<Long> ids = visible.stream().map(OutletResponse::id).toList();
+        List<Long> ids = visible.stream().map(HistoricOutlet::id).toList();
         if (ids.isEmpty()) {
             BigDecimal zero = money(BigDecimal.ZERO);
             Figures none = new Figures(zero, 0, zero, 0, 0, 0, 0, zero, zero, 0, zero);
@@ -121,7 +127,7 @@ public class SalesOverviewService {
                 figures(params),
                 figures(params(ids, start.minusDays(length), start, zone)),
                 days(params, start, end),
-                outlets(params, visible),
+                outlets(params, visible, outletId != null),
                 hours(params),
                 topItems(params),
                 categories(params),
@@ -197,8 +203,11 @@ public class SalesOverviewService {
         return days;
     }
 
-    /** Every outlet shown, best first. */
-    private List<OutletTotal> outlets(MapSqlParameterSource params, List<OutletResponse> visible) {
+    /**
+     * Every open outlet shown, and every closed one that took or refunded anything in the period (or the one picked),
+     * best first.
+     */
+    private List<OutletTotal> outlets(MapSqlParameterSource params, List<HistoricOutlet> visible, boolean picked) {
         Map<Long, long[]> orders = new HashMap<>();
         Map<Long, BigDecimal> net = new HashMap<>();
         jdbc.query("SELECT o.outlet_id, count(*) AS orders, sum(o.total) AS sales FROM sale_order o WHERE %s GROUP BY 1"
@@ -217,8 +226,9 @@ public class SalesOverviewService {
                 .map(outlet -> {
                     long[] count = orders.get(outlet.id());
                     return new OutletTotal(outlet.id(), outlet.name(), count == null ? 0 : count[0],
-                            money(net.getOrDefault(outlet.id(), BigDecimal.ZERO)));
+                            money(net.getOrDefault(outlet.id(), BigDecimal.ZERO)), outlet.closed());
                 })
+                .filter(total -> !total.closed() || picked || total.orders() > 0 || total.netSales().signum() != 0)
                 .sorted((a, b) -> b.netSales().compareTo(a.netSales()))
                 .toList();
     }

@@ -3,7 +3,7 @@ package com.counterline.pos.dashboard;
 import com.counterline.pos.auth.DashboardUser;
 import com.counterline.pos.dashboard.DashboardService.LiveSales;
 import com.counterline.pos.dashboard.SalesOverviewService.Overview;
-import com.counterline.pos.outlet.OutletService.OutletResponse;
+import com.counterline.pos.outlet.OutletService.HistoricOutlet;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -32,10 +32,12 @@ class DashboardController {
         this.overview = overview;
     }
 
-    @Operation(summary = "The outlets this user can see")
+    @Operation(summary = "The outlets this user can see",
+            description = "The open ones; with `includeClosed`, closed outlets too (marked `closed`), for reports and charts over a period.")
     @GetMapping("/outlets")
-    List<OutletResponse> outlets(@AuthenticationPrincipal Jwt jwt) {
-        return dashboard.outlets(DashboardUser.of(jwt));
+    List<HistoricOutlet> outlets(@RequestParam(defaultValue = "false") boolean includeClosed,
+                                 @AuthenticationPrincipal Jwt jwt) {
+        return dashboard.outlets(DashboardUser.of(jwt), includeClosed);
     }
 
     @Operation(summary = "Sales per outlet today (or on a date), with each outlet's latest orders",

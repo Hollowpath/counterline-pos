@@ -56,6 +56,8 @@ export interface AdminItem {
   seasonalFrom: string | null
   seasonalUntil: string | null
   seasonalNow: boolean
+  /** The version the form was loaded at: an edit carries it, and is refused (409) if the item was saved since. */
+  version: number
 }
 
 export interface AdminCategory {
@@ -68,6 +70,7 @@ export interface AdminCategory {
   /** Its items count towards "Buy 3" promotions. */
   countsForPromotions: boolean
   items: AdminItem[]
+  version: number
 }
 
 export interface AdminTab {
@@ -75,6 +78,7 @@ export interface AdminTab {
   name: string
   sortOrder: number
   folders: number
+  version: number
 }
 
 export interface AdminModifierOption {
@@ -82,6 +86,7 @@ export interface AdminModifierOption {
   name: string
   price: number
   active: boolean
+  version: number
 }
 
 export interface AdminModifierGroup {
@@ -90,6 +95,7 @@ export interface AdminModifierGroup {
   name: string
   chooseExactly: number
   options: AdminModifierOption[]
+  version: number
 }
 
 /** DELETED, or DEACTIVATED when there is sales history to keep. */
@@ -183,7 +189,8 @@ export interface SalesOverview {
   /** The period just before, as long. */
   previous: SalesFigures
   days: { date: string; orders: number; netSales: number }[]
-  outlets: { outletId: number; name: string; orders: number; netSales: number }[]
+  /** Closed outlets that sold or refunded in the period are listed too, marked `closed`. */
+  outlets: { outletId: number; name: string; orders: number; netSales: number; closed: boolean }[]
   /** 0–23, every hour. */
   hours: { hour: number; orders: number; sales: number }[]
   topItems: { name: string; quantity: number; sales: number }[]
@@ -197,6 +204,8 @@ export interface SalesOverview {
 export const dashboardPaths = {
   login: '/api/v1/dashboard/auth/login',
   outlets: '/api/v1/dashboard/outlets',
+  /** Every outlet, closed ones too (marked `closed`): for reports and charts over a period. */
+  outletsWithClosed: '/api/v1/dashboard/outlets?includeClosed=true',
   live: '/api/v1/dashboard/live',
   overview: (from: string, to: string, outletId: number | null) =>
     `/api/v1/dashboard/overview?${new URLSearchParams({ from, to, ...(outletId === null ? {} : { outletId: String(outletId) }) })}`,
@@ -263,4 +272,6 @@ export interface AdminStaff {
   outletId: number
   active: boolean
   email: string | null
+  /** The version the form was loaded at: an edit carries it, and is refused (409) if the person was changed since. */
+  version: number
 }

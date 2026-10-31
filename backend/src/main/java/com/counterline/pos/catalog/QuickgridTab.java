@@ -5,6 +5,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /** A bottom-bar tab on the sell screen (e.g. "Selling Items") holding a grid of category folders. */
 @Entity
@@ -15,9 +16,17 @@ public class QuickgridTab {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** Optimistic lock: a save made from a copy older than the row is refused (see CatalogAdminService). */
+    @Version
+    private long version;
+
     private String name;
 
     private short sortOrder;
+
+    public long getVersion() {
+        return version;
+    }
 
     protected QuickgridTab() {
     }

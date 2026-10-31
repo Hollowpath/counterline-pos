@@ -4,7 +4,7 @@ import { useApi } from '../api/useApi'
 import { useConfirm } from '../components/confirmContext'
 import { LoadState } from '../components/LoadState'
 import { checkbox, field, note } from './styles'
-import { message, moved } from './catalogHelpers'
+import { message, moved, needsReload, orderBody } from './catalogHelpers'
 import { dashboardPaths, type AdminModifierGroup, type AdminModifierOption, type Removal } from './types'
 import { Status } from './ui'
 
@@ -32,6 +32,8 @@ export function ModifiersEditor({ itemId, itemName }: { itemId: number; itemName
       return true
     } catch (error) {
       setStatus({ tone: 'error', text: message(error) })
+      // Saved by someone else meanwhile: show theirs.
+      if (needsReload(error)) groups.reload()
       return false
     }
   }
@@ -43,12 +45,12 @@ export function ModifiersEditor({ itemId, itemName }: { itemId: number; itemName
       <Status status={status} />
       {groups.data.length === 0 && <p className={note}>No option groups: the till adds {itemName} straight to the sale.</p>}
       {groups.data.map((group, index) => (
-        <GroupEditor key={`${group.id}-${group.name}-${group.chooseExactly}`} group={group} first={index === 0}
+        <GroupEditor key={`${group.id}-${group.version}-${group.name}-${group.chooseExactly}`} group={group} first={index === 0}
           last={index === groups.data.length - 1}
-          onSave={(name, chooseExactly) => run(() => putJson(dashboardPaths.modifierGroup(group.id), { name, chooseExactly }))}
+          onSave={(name, chooseExactly) => run(() => putJson(dashboardPaths.modifierGroup(group.id), { name, chooseExactly, version: group.version }))}
           onMove={(by) => {
             const order = moved(groupIds, group.id, by)
-            if (order) void run(() => putJson(dashboardPaths.modifierGroupsOrder(itemId), { ids: order }))
+            if (order) void run(() => putJson(dashboardPaths.modifierGroupsOrder(itemId), orderBody(groups.data, order)))
           }}
           onRemove={async () => {
             if (await confirm({ title: `Remove the ${group.name} option group?`, message: `It is taken off ${itemName}. Past sales keep the options they were sold with.`, confirmLabel: 'Remove group' })) {
@@ -97,12 +99,12 @@ function GroupEditor({ group, first, last, onSave, onMove, onRemove, run, remove
       </div>
       <ul className="mt-2 flex flex-col gap-1.5">
         {group.options.map((option, index) => (
-          <OptionRow key={`${option.id}-${option.name}-${option.price}-${option.active}`} option={option} first={index === 0}
+          <OptionRow key={`${option.id}-${option.version}-${option.name}-${option.price}-${option.active}`} option={option} first={index === 0}
             last={index === group.options.length - 1}
-            onSave={(next) => run(() => putJson(dashboardPaths.modifierOption(option.id), next))}
+            onSave={(next) => run(() => putJson(dashboardPaths.modifierOption(option.id), { ...next, version: option.version }))}
             onMove={(by) => {
               const order = moved(optionIds, option.id, by)
-              if (order) void run(() => putJson(dashboardPaths.modifierOptionsOrder(group.id), { ids: order }))
+              if (order) void run(() => putJson(dashboardPaths.modifierOptionsOrder(group.id), orderBody(group.options, order)))
             }}
             onRemove={async () => {
               if (await confirm({ title: `Remove the ${option.name} option?`, message: 'Past sales keep the option they were sold with.', confirmLabel: 'Remove option' })) {

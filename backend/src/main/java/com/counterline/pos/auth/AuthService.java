@@ -3,6 +3,8 @@ package com.counterline.pos.auth;
 import com.counterline.pos.auth.AuthDtos.LoginResponse;
 import com.counterline.pos.auth.AuthDtos.StaffResponse;
 import com.counterline.pos.auth.AuthDtos.TerminalSetupResponse;
+import com.counterline.pos.auth.LoginAttemptLimiter.Attempt;
+import com.counterline.pos.auth.LoginAttemptLimiter.Limit;
 import com.counterline.pos.auth.TokenService.IssuedToken;
 import com.counterline.pos.outlet.OutletService;
 import com.counterline.pos.outlet.OutletService.OutletResponse;
@@ -13,12 +15,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 
+/**
+ * Not transactional: each PIN attempt is admitted by the login throttle before it is checked and settled after, and the
+ * throttle must run outside a transaction (see {@link LoginAttemptLimiter}). The reads and writes here are single
+ * repository or service calls, each in its own short transaction.
+ */
 @Service
-@Transactional(readOnly = true)
 public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
@@ -53,30 +58,27 @@ public class AuthService {
      * @throws TooManyLoginAttemptsException if the outlet's PIN login is locked (too many wrong PINs in a row)
      * @throws InvalidPinException if no active staff member has this PIN, or they work elsewhere
      */
-    @Transactional
     public LoginResponse login(String pin, String deviceKey, String client) {
         // The iPad first: without a till's key nothing is tried, so nobody else can lock an outlet out.
         TillDevice device = tillDevices.requireActive(deviceKey);
         OutletResponse outlet = outletService.get(device.getOutletId());
-        String pad = PinPad.TILL.key(outlet.id());
-        limiter.checkAllowed(pad);
-
-        Staff staff = staffRepository.findByPinHmacAndActiveTrue(pinHasher.hash(pin)).orElse(null);
-        if (staff == null) {
-            log.warn("Failed PIN login at outlet {} from {}", outlet.id(), client);
-            throw new InvalidPinException(limiter.withTriesLeft("Invalid PIN", limiter.recordFailure(pad)));
+        try (Attempt attempt = limiter.begin(new Limit(PinPad.TILL.key(outlet.id()), limiter.maxFailures()))) {
+            Staff staff = staffRepository.findByPinHmacAndActiveTrue(pinHasher.hash(pin)).orElse(null);
+            if (staff == null) {
+                log.warn("Failed PIN login at outlet {} from {}", outlet.id(), client);
+                throw new InvalidPinException(limiter.withTriesLeft("Invalid PIN", attempt.failed()));
+            }
+            if (!staff.worksAt(outlet.id())) {
+                // Counted as a failure, like a wrong PIN.
+                log.warn("Staff {} tried to log in at outlet {} from {}", staff.getId(), outlet.id(), client);
+                // Answered like a wrong PIN, so the pad never confirms that a PIN is someone's.
+                throw new InvalidPinException(limiter.withTriesLeft("Invalid PIN", attempt.failed()));
+            }
+            attempt.succeeded();
+            IssuedToken token = tokenService.issue(staff, outlet.id(), device.getId());
+            log.info("Staff {} logged in at outlet {}", staff.getId(), outlet.id());
+            return new LoginResponse(token.value(), token.expiresAt(), StaffResponse.from(staff), outlet);
         }
-
-        if (!staff.worksAt(outlet.id())) {
-            // Counted as a failure, like a wrong PIN.
-            log.warn("Staff {} tried to log in at outlet {} from {}", staff.getId(), outlet.id(), client);
-            // Answered like a wrong PIN, so the pad never confirms that a PIN is someone's.
-            throw new InvalidPinException(limiter.withTriesLeft("Invalid PIN",
-                    limiter.recordFailure(pad)));
-        }
-        IssuedToken token = tokenService.issue(staff, outlet.id(), device.getId());
-        log.info("Staff {} logged in at outlet {}", staff.getId(), outlet.id());
-        return new LoginResponse(token.value(), token.expiresAt(), StaffResponse.from(staff), outlet);
     }
 
     /**
@@ -87,7 +89,6 @@ public class AuthService {
      *
      * @throws SpecialAccessDeniedException if the PIN is wrong or not a manager's
      */
-    @Transactional
     public TerminalSetupResponse setUpTerminal(String pin, Long outletId, String client) {
         OutletResponse outlet = outletService.get(outletId);
         Staff manager = requireManager(pin, outlet.id(), PinPad.SETUP, client);
@@ -124,16 +125,17 @@ public class AuthService {
 
     /** A manager of {@code outletId}, on that outlet's {@code pad}. */
     private Staff requireManager(String pin, Long outletId, PinPad pad, String client) {
-        String key = pad.key(outletId);
-        limiter.checkAllowed(key);
-        Staff manager = staffRepository.findByPinHmacAndActiveTrue(pinHasher.hash(pin))
-                .filter(staff -> staff.getRole() == StaffRole.MANAGER && staff.worksAt(outletId))
-                .orElse(null);
-        if (manager == null) {
-            log.warn("Failed manager PIN at outlet {} from {}", outletId, client);
-            throw new SpecialAccessDeniedException(limiter.withTriesLeft(SpecialAccessDeniedException.MESSAGE,
-                    limiter.recordFailure(key)));
+        try (Attempt attempt = limiter.begin(new Limit(pad.key(outletId), limiter.maxFailures()))) {
+            Staff manager = staffRepository.findByPinHmacAndActiveTrue(pinHasher.hash(pin))
+                    .filter(staff -> staff.getRole() == StaffRole.MANAGER && staff.worksAt(outletId))
+                    .orElse(null);
+            if (manager == null) {
+                log.warn("Failed manager PIN at outlet {} from {}", outletId, client);
+                throw new SpecialAccessDeniedException(limiter.withTriesLeft(SpecialAccessDeniedException.MESSAGE,
+                        attempt.failed()));
+            }
+            attempt.succeeded();
+            return manager;
         }
-        return manager;
     }
 }

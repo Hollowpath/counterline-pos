@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { deleteJson, putJson } from '../api/http'
 import { useApi } from '../api/useApi'
 import { useConfirm } from '../components/confirmContext'
-import { message, moved } from './catalogHelpers'
+import { message, moved, needsReload, orderBody } from './catalogHelpers'
 import { checkbox, field, note, sectionTitle } from './styles'
 import { dashboardPaths, type AdminCategory, type AdminTab, type Notice } from './types'
 
@@ -23,6 +23,11 @@ export function TabsPanel({ onChanged, onNotice }: { onChanged: () => void; onNo
       onChanged()
     } catch (error) {
       onNotice({ tone: 'error', text: message(error) })
+      // Saved by someone else meanwhile: show theirs.
+      if (needsReload(error)) {
+        tabs.reload()
+        onChanged()
+      }
     }
   }
 
@@ -34,11 +39,11 @@ export function TabsPanel({ onChanged, onNotice }: { onChanged: () => void; onNo
       ) : (
         <ul className="flex flex-col gap-2">
           {tabs.data.map((tab, index) => (
-            <TabRow key={`${tab.id}-${tab.name}`} tab={tab} first={index === 0} last={index === tabs.data.length - 1}
-              onRename={(name) => run(() => putJson(dashboardPaths.tab(tab.id), { name }))}
+            <TabRow key={`${tab.id}-${tab.version}-${tab.name}`} tab={tab} first={index === 0} last={index === tabs.data.length - 1}
+              onRename={(name) => run(() => putJson(dashboardPaths.tab(tab.id), { name, version: tab.version }))}
               onMove={(by) => {
                 const order = moved(ids, tab.id, by)
-                return order ? run(() => putJson(dashboardPaths.tabsOrder, { ids: order })) : undefined
+                return order ? run(() => putJson(dashboardPaths.tabsOrder, orderBody(tabs.data, order))) : undefined
               }}
               onDelete={async () => {
                 if (await confirm({ title: `Delete the ${tab.name} tab?`, message: 'The tab is empty, so no folders are affected.', confirmLabel: 'Delete tab' })) {
@@ -96,6 +101,7 @@ export function FolderToolbar({ category, tabs, onChanged, onNotice }: {
       onChanged()
     } catch (error) {
       onNotice({ tone: 'error', text: message(error) })
+      if (needsReload(error)) onChanged()
     }
   }
 
@@ -105,6 +111,7 @@ export function FolderToolbar({ category, tabs, onChanged, onNotice }: {
       tab: tabName.trim() === '' ? null : tabName.trim(),
       // Moving to another tab takes that tab's first free cell; staying keeps the cell.
       countsForPromotions: counts,
+      version: category.version,
     }), `Saved ${name.trim()}`)
   }
 

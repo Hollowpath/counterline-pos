@@ -360,14 +360,14 @@ class DisplayLifecycleIntegrationTest {
     }
 
     private ResultActions admin(MockHttpServletRequestBuilder request) throws Exception {
-        RequestPostProcessor admin = jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office"))
+        RequestPostProcessor admin = jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office").claim("channel", "dashboard"))
                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
         return mockMvc.perform(request.with(admin));
     }
 
     private ResultActions manager(MockHttpServletRequestBuilder request, long outlet) throws Exception {
         RequestPostProcessor manager = jwt().jwt(token -> token.claim("outlet", outlet).subject(cashierId.toString())
-                        .claim("role", "MANAGER").claim("name", "A Manager"))
+                        .claim("role", "MANAGER").claim("name", "A Manager").claim("channel", "dashboard"))
                 .authorities(new SimpleGrantedAuthority("ROLE_MANAGER"));
         return mockMvc.perform(request.with(manager));
     }

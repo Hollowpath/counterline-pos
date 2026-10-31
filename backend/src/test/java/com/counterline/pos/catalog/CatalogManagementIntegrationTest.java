@@ -37,6 +37,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -80,6 +81,157 @@ class CatalogManagementIntegrationTest {
         admin = token("head@manage.test", adminPassword);
         cashierId = staffRepository.save(new Staff("Cashier", pinHasher.hash("123456"), StaffRole.STAFF, 1L)).getId();
         TestRegister.open(jdbc, cashierId);
+    }
+
+    // ---- concurrent edits ----
+
+    @Test
+    void aStaleEditOfAnyCatalogueRowIsRefusedAndOverwritesNothing() throws Exception {
+        long pouch = folder("Pouch", "Selling Items");
+        long caramel = item(pouch, "Caramel", "10.00");
+        long flavours = group(caramel, "Flavours", 1);
+        long matcha = option(flavours, "Matcha", "2.00");
+        long tab = jdbc.queryForObject("SELECT id FROM quickgrid_tab WHERE name = 'Selling Items'", Long.class);
+
+        // Every row is listed with the version the form is loaded at.
+        call(get(BASE + "/items"), admin, null)
+                .andExpect(jsonPath("$[0].version").value(0)).andExpect(jsonPath("$[0].items[0].version").value(0));
+        call(get(BASE + "/tabs"), admin, null).andExpect(jsonPath("$[0].version").value(0));
+        call(get(BASE + "/items/" + caramel + "/modifier-groups"), admin, null)
+                .andExpect(jsonPath("$[0].version").value(0)).andExpect(jsonPath("$[0].options[0].version").value(0));
+
+        // Admin A saves each row from version 0: it is written, and the answer carries the next version.
+        call(put(BASE + "/items/" + caramel), admin, "{\"name\":\"Caramel A\",\"price\":11.00,\"version\":0}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
+        call(put(BASE + "/folders/" + pouch), admin, "{\"name\":\"Pouch A\",\"tab\":\"Selling Items\",\"version\":0}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
+        call(put(BASE + "/tabs/" + tab), admin, "{\"name\":\"Tab A\",\"version\":0}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
+        call(put(BASE + "/modifier-groups/" + flavours), admin, "{\"name\":\"Group A\",\"chooseExactly\":2,\"version\":0}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
+        call(put(BASE + "/modifier-options/" + matcha), admin, "{\"name\":\"Matcha A\",\"price\":2.50,\"version\":0}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
+
+        // Admin B's form was loaded before that and still says version 0: refused, the usual concurrent-change answer.
+        String changedElsewhere = "Changed elsewhere. Reload.";
+        call(put(BASE + "/items/" + caramel), admin, "{\"name\":\"Caramel B\",\"price\":99.00,\"version\":0}")
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(changedElsewhere));
+        call(put(BASE + "/folders/" + pouch), admin, "{\"name\":\"Pouch B\",\"tab\":\"Selling Items\",\"version\":0}")
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(changedElsewhere));
+        call(put(BASE + "/tabs/" + tab), admin, "{\"name\":\"Tab B\",\"version\":0}")
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(changedElsewhere));
+        call(put(BASE + "/modifier-groups/" + flavours), admin, "{\"name\":\"Group B\",\"chooseExactly\":3,\"version\":0}")
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(changedElsewhere));
+        call(put(BASE + "/modifier-options/" + matcha), admin, "{\"name\":\"Matcha B\",\"price\":99.00,\"version\":0}")
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(changedElsewhere));
+
+        // Nothing of B's was written.
+        assertThat(jdbc.queryForObject("SELECT name || ' ' || price FROM item WHERE id = ?", String.class, caramel)).isEqualTo("Caramel A 11.00");
+        assertThat(jdbc.queryForObject("SELECT name FROM category WHERE id = ?", String.class, pouch)).isEqualTo("Pouch A");
+        assertThat(jdbc.queryForObject("SELECT name FROM quickgrid_tab WHERE id = ?", String.class, tab)).isEqualTo("Tab A");
+        assertThat(jdbc.queryForObject("SELECT name || ' ' || choose_exactly FROM modifier_group WHERE id = ?", String.class, flavours))
+                .isEqualTo("Group A 2");
+        assertThat(jdbc.queryForObject("SELECT name || ' ' || price FROM modifier_option WHERE id = ?", String.class, matcha))
+                .isEqualTo("Matcha A 2.50");
+
+        // Reloaded, B's edit goes through; an edit that names no version is a bad request, not an overwrite.
+        call(put(BASE + "/items/" + caramel), admin, "{\"name\":\"Caramel B\",\"price\":12.00,\"version\":1}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(2));
+        call(put(BASE + "/items/" + caramel), admin, "{\"name\":\"Caramel C\",\"price\":13.00,\"version\":null}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("version is required when editing"));
+        call(put(BASE + "/modifier-options/" + matcha), admin, "{\"name\":\"Matcha C\",\"price\":3.00,\"version\":null}")
+                .andExpect(status().isBadRequest());
+        assertThat(jdbc.queryForObject("SELECT name FROM item WHERE id = ?", String.class, caramel)).isEqualTo("Caramel B");
+    }
+
+    @Test
+    void anEditLeftOpenIsStaleOnceItsRowWasMovedByAReorderButNotWhenItStoodStill() throws Exception {
+        long pouch = folder("Pouch", "Selling Items");
+        long first = item(pouch, "First", "10.00");
+        long second = item(pouch, "Second", "11.00");
+        long third = item(pouch, "Third", "12.00");
+
+        // Swapping the first two moves only them.
+        call(put(BASE + "/folders/" + pouch + "/items/order"), admin, "{\"ids\":[" + second + "," + first + "," + third + "]}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$[*].name").value(contains("Second", "First", "Third")));
+        // The form opened before the reorder is refused for a row that moved; one loaded after it is accepted.
+        call(put(BASE + "/items/" + first), admin, "{\"name\":\"First\",\"price\":99.00,\"version\":0}")
+                .andExpect(status().isConflict());
+        assertThat(jdbc.queryForObject("SELECT price FROM item WHERE id = ?", java.math.BigDecimal.class, first))
+                .isEqualByComparingTo("10.00");
+        long current = jdbc.queryForObject("SELECT version FROM item WHERE id = ?", Long.class, first);
+        assertThat(current).isPositive();
+        call(get(BASE + "/items"), admin, null)
+                .andExpect(jsonPath("$[0].items[?(@.name == 'First')].version").value(contains((int) current)));
+        call(put(BASE + "/items/" + first), admin, "{\"name\":\"First\",\"price\":12.00,\"version\":" + current + "}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(current + 1));
+        // The row that stood still keeps its version, so a form open on it is still good.
+        assertThat(jdbc.queryForObject("SELECT version FROM item WHERE id = ?", Long.class, third)).isZero();
+        call(put(BASE + "/items/" + third), admin, "{\"name\":\"Third\",\"price\":13.00,\"version\":0}").andExpect(status().isOk());
+    }
+
+    @Test
+    void aReorderToTheOrderTheRowsAlreadyHaveChangesNoVersionEvenWithGapsBetweenThePositions() throws Exception {
+        long pouch = folder("Pouch", "Selling Items");
+        long a = item(pouch, "A", "1.00");
+        long b = item(pouch, "B", "2.00");
+        long c = item(pouch, "C", "3.00");
+        // Deleting the middle one leaves a gap in the positions (1 and 3).
+        call(delete(BASE + "/items/" + b), admin, null).andExpect(jsonPath("$.outcome").value("DELETED"));
+
+        call(put(BASE + "/folders/" + pouch + "/items/order"), admin, "{\"ids\":[" + a + "," + c + "]}").andExpect(status().isOk());
+
+        assertThat(jdbc.queryForList("SELECT version FROM item WHERE category_id = ? ORDER BY id", Long.class, pouch))
+                .containsExactly(0L, 0L);
+        assertThat(jdbc.queryForList("SELECT sort_order FROM item WHERE category_id = ? ORDER BY id", Integer.class, pouch))
+                .containsExactly(1, 3);
+    }
+
+    @Test
+    void aReorderMadeFromAListThatHasChangedSinceIsRefusedAndAnIncompleteOrMissingOneIsABadRequest() throws Exception {
+        long pouch = folder("Pouch", "Selling Items");
+        long a = item(pouch, "A", "1.00");
+        long b = item(pouch, "B", "2.00");
+        long tabOne = jdbc.queryForObject("SELECT id FROM quickgrid_tab WHERE name = 'Selling Items'", Long.class);
+        folder("Other", "Second");
+        long tabTwo = jdbc.queryForObject("SELECT id FROM quickgrid_tab WHERE name = 'Second'", Long.class);
+        long gift = item(folder("Tin", "Selling Items"), "Gift Box", "70.00");
+        long g1 = group(gift, "One", 1);
+        long g2 = group(gift, "Two", 1);
+        long o1 = option(g1, "Caramel", "0.00");
+        long o2 = option(g1, "Matcha", "1.00");
+        String changedElsewhere = "Changed elsewhere. Reload.";
+
+        // Another admin edits one row of each list after this admin loaded it (every version was 0).
+        call(put(BASE + "/items/" + a), admin, "{\"name\":\"A2\",\"price\":1.00,\"version\":0}").andExpect(status().isOk());
+        call(put(BASE + "/tabs/" + tabOne), admin, "{\"name\":\"Selling 2\",\"version\":0}").andExpect(status().isOk());
+        call(put(BASE + "/modifier-groups/" + g1), admin, "{\"name\":\"One 2\",\"chooseExactly\":1,\"version\":0}").andExpect(status().isOk());
+        call(put(BASE + "/modifier-options/" + o1), admin, "{\"name\":\"Caramel 2\",\"price\":0,\"version\":0}").andExpect(status().isOk());
+
+        call(put(BASE + "/folders/" + pouch + "/items/order"), admin, "{\"ids\":[" + b + "," + a + "],\"versions\":[0,0]}")
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(changedElsewhere));
+        call(put(BASE + "/tabs/order"), admin, "{\"ids\":[" + tabTwo + "," + tabOne + "],\"versions\":[0,0]}")
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(changedElsewhere));
+        call(put(BASE + "/items/" + gift + "/modifier-groups/order"), admin, "{\"ids\":[" + g2 + "," + g1 + "],\"versions\":[0,0]}")
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(changedElsewhere));
+        call(put(BASE + "/modifier-groups/" + g1 + "/options/order"), admin, "{\"ids\":[" + o2 + "," + o1 + "],\"versions\":[0,0]}")
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.detail").value(changedElsewhere));
+        // Nothing moved.
+        assertThat(jdbc.queryForList("SELECT id FROM item WHERE category_id = ? ORDER BY sort_order", Long.class, pouch))
+                .containsExactly(a, b);
+        assertThat(jdbc.queryForList("SELECT id FROM quickgrid_tab ORDER BY sort_order", Long.class)).containsExactly(tabOne, tabTwo);
+
+        // A list that is missing a row is still a bad request, and so is one with no (or too few) versions.
+        call(put(BASE + "/folders/" + pouch + "/items/order"), admin, "{\"ids\":[" + a + "],\"versions\":[1]}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value(containsString("must list every one")));
+        call(put(BASE + "/folders/" + pouch + "/items/order"), admin, "{\"ids\":[" + b + "," + a + "],\"versions\":null}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value(containsString("List the version")));
+        call(put(BASE + "/folders/" + pouch + "/items/order"), admin, "{\"ids\":[" + b + "," + a + "],\"versions\":[0]}")
+                .andExpect(status().isBadRequest());
+
+        // From the current versions it goes through.
+        call(put(BASE + "/folders/" + pouch + "/items/order"), admin, "{\"ids\":[" + b + "," + a + "]}")
+                .andExpect(status().isOk()).andExpect(jsonPath("$[*].name").value(contains("B", "A2")));
     }
 
     // ---- folders ----
@@ -407,6 +559,7 @@ class CatalogManagementIntegrationTest {
 
     private ResultActions call(MockHttpServletRequestBuilder request, String token, String json) throws Exception {
         request.header(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+        json = CatalogVersions.stamped(jdbc, request, json);
         if (json != null) {
             request.contentType(MediaType.APPLICATION_JSON).content(json);
         }

@@ -2,13 +2,45 @@ const dateTime = new Intl.DateTimeFormat('en-MY', { dateStyle: 'medium', timeSty
 const time = new Intl.DateTimeFormat('en-MY', { timeStyle: 'short' })
 const date = new Intl.DateTimeFormat('en-MY', { dateStyle: 'medium' })
 
-/** Shown in the terminal's local time zone, which is the outlet's. */
-export function formatDateTime(iso: string): string {
-  return dateTime.format(new Date(iso))
+/** Formatters for a named time zone (the business's), made once each. */
+const inZone = new Map<string, { dateTime: Intl.DateTimeFormat; time: Intl.DateTimeFormat }>()
+
+function formattersIn(zone: string) {
+  let formatters = inZone.get(zone)
+  if (!formatters) {
+    formatters = {
+      dateTime: new Intl.DateTimeFormat('en-MY', { dateStyle: 'medium', timeStyle: 'short', timeZone: zone }),
+      time: new Intl.DateTimeFormat('en-MY', { timeStyle: 'short', timeZone: zone }),
+    }
+    inZone.set(zone, formatters)
+  }
+  return formatters
 }
 
-export function formatTime(iso: string): string {
-  return time.format(new Date(iso))
+/** Shown in the terminal's local time zone, which is the outlet's; or in {@code zone}, the business time zone, when given. */
+export function formatDateTime(iso: string, zone?: string): string {
+  return (zone ? formattersIn(zone).dateTime : dateTime).format(new Date(iso))
+}
+
+export function formatTime(iso: string, zone?: string): string {
+  return (zone ? formattersIn(zone).time : time).format(new Date(iso))
+}
+
+/**
+ * The wall-clock time now, in {@code zone} (the business time zone) as a datetime-local value (YYYY-MM-DDTHH:mm). Without a
+ * zone, the browser's. The value carries no zone: whoever reads it reads it in the business's.
+ */
+export function localDateTimeIn(zone?: string, now: Date = new Date()): string {
+  if (!zone) {
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+    return local.toISOString().slice(0, 16)
+  }
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(now).map((part) => [part.type, part.value]),
+  )
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
 }
 
 export function formatDate(iso: string): string {

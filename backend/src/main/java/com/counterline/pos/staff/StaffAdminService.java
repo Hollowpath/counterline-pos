@@ -1,5 +1,6 @@
 package com.counterline.pos.staff;
 
+import com.counterline.pos.auth.Actor;
 import com.counterline.pos.auth.AdminUserRepository;
 import com.counterline.pos.auth.PasswordPolicy;
 import com.counterline.pos.auth.PinHasher;
@@ -8,6 +9,7 @@ import com.counterline.pos.common.ConflictException;
 import com.counterline.pos.common.DatabaseConflicts;
 import com.counterline.pos.common.ResourceNotFoundException;
 import com.counterline.pos.outlet.Outlet;
+import com.counterline.pos.staff.StaffAuditLog.Action;
 import com.counterline.pos.outlet.OutletService;
 import com.counterline.pos.timecards.OpenShifts;
 import jakarta.validation.constraints.NotBlank;
@@ -17,6 +19,7 @@ import jakarta.validation.constraints.Size;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,9 +46,11 @@ public class StaffAdminService {
     private final PinHasher pinHasher;
     private final PasswordEncoder passwordEncoder;
     private final OpenShifts openShifts;
+    private final StaffAuditLog audit;
 
     StaffAdminService(StaffRepository staffRepository, AdminUserRepository adminRepository, OutletService outletService,
-                      PinHasher pinHasher, PasswordEncoder passwordEncoder, OpenShifts openShifts) {
+                      PinHasher pinHasher, PasswordEncoder passwordEncoder, OpenShifts openShifts, StaffAuditLog audit) {
+        this.audit = audit;
         this.staffRepository = staffRepository;
         this.adminRepository = adminRepository;
         this.outletService = outletService;
@@ -55,11 +60,12 @@ public class StaffAdminService {
     }
 
     /** No PIN, password or hash: {@code email} is the dashboard login, if the manager has one. */
-    public record AdminStaff(Long id, String fullName, StaffRole role, Long outletId, boolean active, String email) {
+    public record AdminStaff(Long id, String fullName, StaffRole role, Long outletId, boolean active, String email,
+                             long version) {
 
         static AdminStaff from(Staff staff) {
             return new AdminStaff(staff.getId(), staff.getFullName(), staff.getRole(), staff.getOutletId(),
-                    staff.isActive(), staff.getEmail());
+                    staff.isActive(), staff.getEmail(), staff.getVersion());
         }
     }
 
@@ -82,14 +88,16 @@ public class StaffAdminService {
     /**
      * A manager without a dashboard login is given one with both {@code email} and {@code password}.
      * One with a login may change just the e-mail, just the password, or both; a blank field is left
-     * unchanged, so a blank password never overwrites the stored one.
+     * unchanged, so a blank password never overwrites the stored one. {@code version}: the version the form was loaded
+     * at (required); a person changed since is refused (409, "Changed elsewhere. Reload.") rather than overwritten.
      */
     public record StaffEdit(
             @NotBlank @Size(max = 120) String fullName,
             @NotNull StaffRole role,
             @NotNull Long outletId,
             @Size(max = 254) String email,
-            @Size(max = 200) String password) {
+            @Size(max = 200) String password,
+            Long version) {
 
         @Override
         public String toString() {
@@ -115,7 +123,8 @@ public class StaffAdminService {
         return staff.stream().map(AdminStaff::from).toList();
     }
 
-    public AdminStaff create(StaffRequest request) {
+    /** Every change below is recorded against {@code actor} (see {@link StaffAuditLog}) in the same transaction. */
+    public AdminStaff create(Actor actor, StaffRequest request) {
         // Held open until this transaction ends: the outlet cannot be deactivated between this check and the insert.
         outletService.getActiveHeldOpen(request.outletId());
         String name = requireName(request.fullName());
@@ -132,13 +141,18 @@ public class StaffAdminService {
             staff.setDashboardLogin(email, passwordEncoder.encode(request.password()));
         }
         staff = save(staff);
+        audit.record(actor, staff.getId(), Action.CREATE);
+        if (email != null) {
+            audit.record(actor, staff.getId(), Action.LOGIN_CHANGED);
+        }
         log.info("Head office created staff {} ({}) at outlet {}", staff.getId(), staff.getRole(), staff.getOutletId());
         return AdminStaff.from(staff);
     }
 
     /** Name, role and outlet; a cashier has no dashboard login, so demoting a manager removes theirs. */
-    public AdminStaff update(Long id, StaffEdit request) {
+    public AdminStaff update(Actor actor, Long id, StaffEdit request) {
         Staff staff = find(id);
+        requireCurrent(request.version(), staff);
         boolean moved = !request.outletId().equals(staff.getOutletId());
         boolean leavesAsManager = staff.isActive() && staff.getRole() == StaffRole.MANAGER
                 && (moved || request.role() != StaffRole.MANAGER);
@@ -172,6 +186,9 @@ public class StaffAdminService {
         String currentEmail = staff.getEmail();
         String currentHash = staff.getPasswordHash();
         boolean roleChanged = request.role() != staff.getRole();
+        boolean edited = roleChanged || moved || !name.equals(staff.getFullName());
+        boolean loginChanged = request.role() != StaffRole.STAFF && ((email != null && !email.equals(currentEmail)) || hasPassword);
+        boolean loginRemoved = request.role() == StaffRole.STAFF && currentEmail != null;
         staff.edit(name, request.role(), request.outletId());
         if (moved || roleChanged || (email != null && !email.equals(currentEmail)) || hasPassword) {
             staff.revokeAuthSessions();
@@ -183,23 +200,33 @@ public class StaffAdminService {
                     hasPassword ? passwordEncoder.encode(request.password()) : currentHash);
         }
         staff = save(staff);
+        if (edited) {
+            audit.record(actor, id, Action.EDIT);
+        }
+        if (loginChanged) {
+            audit.record(actor, id, Action.LOGIN_CHANGED);
+        }
+        if (loginRemoved) {
+            audit.record(actor, id, Action.LOGIN_REMOVED);
+        }
         log.info("Head office edited staff {}", id);
         return AdminStaff.from(staff);
     }
 
     /** Takes the dashboard login away (idempotent); the person keeps working at the till. */
-    public AdminStaff removeDashboardLogin(Long id) {
+    public AdminStaff removeDashboardLogin(Actor actor, Long id) {
         Staff staff = find(id);
         if (staff.getEmail() != null) {
             staff.clearDashboardLogin();
             staff.revokeAuthSessions();
             staff = save(staff);
+            audit.record(actor, id, Action.LOGIN_REMOVED);
             log.info("Head office removed the dashboard login of staff {}", id);
         }
         return AdminStaff.from(staff);
     }
 
-    public AdminStaff deactivate(Long id) {
+    public AdminStaff deactivate(Actor actor, Long id) {
         Staff staff = find(id);
         if (staff.isActive()) {
             if (staff.getRole() == StaffRole.MANAGER) {
@@ -209,6 +236,7 @@ public class StaffAdminService {
             staff.deactivate();
             staff.revokeAuthSessions();
             staff = save(staff);
+            audit.record(actor, id, Action.DEACTIVATE);
             log.info("Head office deactivated staff {}", id);
         }
         return AdminStaff.from(staff);
@@ -270,7 +298,7 @@ public class StaffAdminService {
     }
 
     /** @throws ConflictException (409) while the staff member's outlet is deactivated */
-    public AdminStaff reactivate(Long id) {
+    public AdminStaff reactivate(Actor actor, Long id) {
         Staff staff = find(id);
         if (!staff.isActive()) {
             try {
@@ -281,13 +309,14 @@ public class StaffAdminService {
             }
             staff.reactivate();
             staff = save(staff);
+            audit.record(actor, id, Action.REACTIVATE);
             log.info("Head office reactivated staff {}", id);
         }
         return AdminStaff.from(staff);
     }
 
     /** The new PIN must not belong to anyone else, deactivated staff included. */
-    public AdminStaff resetPin(Long id, PinReset request) {
+    public AdminStaff resetPin(Actor actor, Long id, PinReset request) {
         Staff staff = find(id);
         String pinHmac = pinHasher.hash(request.pin());
         Staff holder = staffRepository.findByPinHmac(pinHmac).orElse(null);
@@ -297,8 +326,19 @@ public class StaffAdminService {
         staff.setPinHmac(pinHmac);
         staff.revokeAuthSessions();
         staff = save(staff);
+        audit.record(actor, id, Action.PIN_RESET);
         log.info("Head office reset the PIN of staff {}", id);
         return AdminStaff.from(staff);
+    }
+
+    /** An edit made from a copy older than the person (they were changed meanwhile) is refused, never written over theirs. */
+    private static void requireCurrent(Long requested, Staff staff) {
+        if (requested == null) {
+            throw new BadRequestException("version is required when editing");
+        }
+        if (requested != staff.getVersion()) {
+            throw new ObjectOptimisticLockingFailureException(Staff.class, staff.getId());
+        }
     }
 
     private Staff find(Long id) {

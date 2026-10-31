@@ -124,7 +124,7 @@ class VouchersAndAdjustmentsIntegrationTest {
         Integer batchId = JsonPath.read(created, "$.batch.id");
         call(get("/api/v1/dashboard/vouchers/" + batchId), admin(), null)
                 .andExpect(jsonPath("$[?(@.code == '" + code + "')].status").value(contains("USED")));
-        call(get("/api/v1/dashboard/vouchers"), manager(), null).andExpect(status().isForbidden());
+        call(get("/api/v1/dashboard/vouchers"), dashboardManager(), null).andExpect(status().isForbidden());
     }
 
     @Test
@@ -245,10 +245,10 @@ class VouchersAndAdjustmentsIntegrationTest {
                 .andExpect(jsonPath("$.entries[0].type").value("ADJUST"))
                 .andExpect(jsonPath("$.entries[0].reason").value("Points missed on receipt R12"))
                 .andExpect(jsonPath("$.entries[0].adjustedBy").value("Head Office"));
-        call(post("/api/v1/dashboard/customers/" + memberId + "/points"), manager(), "{\"points\":-10,\"reason\":\"Typo\"}")
+        call(post("/api/v1/dashboard/customers/" + memberId + "/points"), dashboardManager(), "{\"points\":-10,\"reason\":\"Typo\"}")
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.detail").value("Nur Aisyah has only 5 points"));
-        call(post("/api/v1/dashboard/customers/" + memberId + "/points"), manager(), "{\"points\":-2,\"reason\":\"Typo\"}")
+        call(post("/api/v1/dashboard/customers/" + memberId + "/points"), dashboardManager(), "{\"points\":-2,\"reason\":\"Typo\"}")
                 .andExpect(jsonPath("$.balance").value(3))
                 .andExpect(jsonPath("$.entries[0].adjustedBy").value("Test Manager"));
         call(post("/api/v1/dashboard/customers/" + memberId + "/points"), admin(), "{\"points\":3,\"reason\":\" \"}")
@@ -303,7 +303,7 @@ class VouchersAndAdjustmentsIntegrationTest {
         sellBirthdayCan().andExpect(status().isUnprocessableContent());
 
         // ...until head office records that it was owed.
-        call(get("/api/v1/dashboard/promotions"), manager(), null)
+        call(get("/api/v1/dashboard/promotions"), dashboardManager(), null)
                 .andExpect(jsonPath("$[*].name").value(hasItem("Birthday Reward")))
                 .andExpect(jsonPath("$[*].name").value(not(hasItem("Member Redemption"))));
         call(post("/api/v1/dashboard/customers/" + memberId + "/owed-items"), admin(),
@@ -395,6 +395,13 @@ class VouchersAndAdjustmentsIntegrationTest {
         return jwt().jwt(token -> token.claim("outlet", 1L).subject(cashierId.toString()).claim("name", "Test Cashier"));
     }
 
+    /** A manager signed in to the dashboard (email and password): the only kind of manager session that opens it. */
+    private RequestPostProcessor dashboardManager() {
+        return jwt().jwt(token -> token.claim("outlet", 1L).subject(managerId.toString())
+                        .claim("role", "MANAGER").claim("name", "Test Manager").claim("channel", "dashboard"))
+                .authorities(new SimpleGrantedAuthority("ROLE_MANAGER"));
+    }
+
     private RequestPostProcessor manager() {
         return jwt().jwt(token -> token.claim("outlet", 1L).subject(managerId.toString())
                         .claim("role", "MANAGER").claim("name", "Test Manager"))
@@ -402,7 +409,7 @@ class VouchersAndAdjustmentsIntegrationTest {
     }
 
     private static RequestPostProcessor admin() {
-        return jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office"))
+        return jwt().jwt(token -> token.subject("admin-1").claim("role", "ADMIN").claim("name", "Head Office").claim("channel", "dashboard"))
                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 }
