@@ -96,7 +96,7 @@ Synthesis tests show what the template asks for, not what AWS does with it. They
 ## Limitations
 
 - **CI is a set of checks, not a release gate for AWS.** It builds and tests the backend, frontend and CDK synthesis, scans the packaged image with Trivy (fixed HIGH/CRITICAL only; a point-in-time check, so a new advisory can fail a later run of unchanged code), starts that image and runs the Playwright smoke tests against it. It never deploys, and nothing automated verifies a deployed AWS environment or its runtime behaviour; the synthesis tests show what the template asks for, not what AWS does with it. Whether a given run passed is shown by GitHub Actions, not recorded here.
-- **Browser coverage is smoke tests only** (above): no other screen, role, payment method or failure path is driven through a browser, and there is no cross-browser or mobile-viewport run.
+- **Browser coverage is smoke tests only** (above): no other screen, role, payment method or failure path is driven through a browser, there is no cross-browser run, and the only phone-width coverage is the cart test in `till.e2e.ts`.
 - **No contract tests** between frontend and backend types or between the dashboard and the API.
 - **No coverage measurement** is configured, so coverage is unknown.
 - **No source-dependency scan in CI.** The Trivy scan covers the built image, not the lock files as such. Dependabot opens version-update pull requests (`.github/dependabot.yml`), but whether Dependabot alerts and security updates are enabled is a repository setting that is not recorded here.

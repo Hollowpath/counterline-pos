@@ -9,6 +9,7 @@ Placeholders below: `<profile>` is your AWS CLI profile, `<owner-ip>` your publi
 - Node.js and `npm ci` in this directory.
 - AWS credentials for `<profile>` with permission to deploy, and the environment already prepared with `cdk bootstrap` (once per account and region).
 - Docker, to build and push the application image.
+- AWS budget notifications and a billing-review routine, set up in the account beforehand. They are external to this repository, which neither creates nor checks them; they notify only and do not cap spending.
 
 ## Everyday commands
 
@@ -52,4 +53,4 @@ npx cdk destroy --profile <profile>
 
   The current stack creates the repository named `counterline-pos` itself and cannot automatically reuse a retained one, so redeploying this unchanged stack while the retained repository exists conflicts. Delete the retained repository before redeploying. Keeping it would first require changing the repository design in the stack, for example importing the existing repository.
 - The database, its automated backups, the log group and the secrets are deleted with the stack, so teardown destroys the synthetic database and secrets. Deletion is irreversible: take any export you need first. CloudFormation deletes the secrets without a recovery window (it force-deletes them), but permanent deletion is asynchronous, so creating a secret with the same name straight away may need a short retry.
-- Confirm in the AWS console that nothing is left running, and review billing the same day. Budget notifications, where configured, notify only; they do not cap or stop spending.
+- Confirm in the AWS console that nothing is left running, and review billing the same day. Budget notifications (an external prerequisite, above) notify only; they do not cap or stop spending.

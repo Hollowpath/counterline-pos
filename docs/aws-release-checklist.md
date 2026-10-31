@@ -14,7 +14,7 @@ Commands are for Git Bash. Placeholders in angle brackets are yours to fill; nev
 | `<tag>` | the immutable image tag (the Git commit, below) |
 | `<application-url>` | the `ApplicationUrl` stack output |
 
-> **Shell variables do not persist between terminals.** `export` lines apply only to the terminal they are typed in. A new terminal, or a new Claude/IDE session, starts without them: set them again before continuing.
+> **Shell variables do not persist between terminals.** `export` lines apply only to the terminal they are typed in. A new terminal, or a new IDE or editor session, starts without them: set them again before continuing.
 
 Legend: **[LOCAL]** touches nothing outside your machine. **[AWS]** changes AWS and is done by the owner. **[AWS read-only]** only reads. **[CLEANUP]** removes resources.
 
@@ -22,6 +22,7 @@ Legend: **[LOCAL]** touches nothing outside your machine. **[AWS]** changes AWS 
 
 - [ ] JDK 21, Node.js, Docker (running), AWS CLI, and Git (see the main README).
 - [ ] `cdk bootstrap` has been run once for the account and region (infrastructure/README.md, Prerequisites).
+- [ ] AWS budget notifications and a billing-review routine are set up in the account. They are external to this repository, which neither creates nor checks them; they notify only and do not cap spending.
 - [ ] A clean working tree on the commit you intend to ship, so the tag below names exactly what was built:
 
 ```bash
