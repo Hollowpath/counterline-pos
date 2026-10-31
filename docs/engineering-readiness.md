@@ -59,6 +59,15 @@ Each item is intentionally not built. Build it when its trigger is met, not befo
 | Secrets rotation | When deployed with a managed secrets service | Trigger met: the stack defines Secrets Manager secrets. No rotation is configured |
 | Accessibility audit                                                                               | Before the UI is offered to users outside the owner                                            | Not performed                                                                                                  |
 
+## Accepted dependency advisories
+
+**GHSA-g3hv-75wg-m249 (CVE-2026-118764), `minimatch` before 11.0.1.** A medium denial of service: someone who can supply a glob pattern can make matching use excessive CPU. Dependabot alerts 1 and 2 were dismissed as "Risk is tolerable to this project" on 2026-11-01 (GitHub recorded 2026-10-31 17:57 UTC). No manifest, lockfile or code was changed.
+
+- **Frontend (alert 1, development only).** `minimatch` 3.1.5 (via `eslint`, `@eslint/config-array`, `@eslint/eslintrc`) and 10.2.6 (via `@typescript-eslint/typescript-estree`). ESLint's patterns are fixed strings in `frontend/eslint.config.js`. `typescript-estree` calls `minimatch` only for `allowDefaultProject`, which is not configured. Neither copy is in the image, and CI runs with read-only permissions and no secrets.
+- **Infrastructure (alert 2, labelled runtime because `aws-cdk-lib` is a dependency).** `minimatch` 10.2.6 is bundled inside `aws-cdk-lib`, so it cannot be overridden. The tooling is run by the owner from a trusted checkout and is not shipped. The stack uses no assets, excludes or glob patterns.
+- **Why it is not fixed.** On 2026-10-31 no released `eslint`, `typescript-estree`, `@eslint/*` or `aws-cdk-lib` allowed `minimatch` 11 or later, 10.x has no backport, and the 3.x users call `minimatch` as a function, which later versions do not export.
+- **Reassess when** `eslint`, `typescript-eslint` or `aws-cdk-lib` releases a version that depends on `minimatch` 11 or later (Dependabot's minor and patch pull requests will propose it); when any of these tools starts taking glob patterns from untrusted input, for example `allowDefaultProject` or assets with `exclude` patterns; or when a new advisory affects these paths.
+
 ## Review cadence
 
 Revisit this file whenever a trigger is met, when the AWS roadmap changes, or when a gap is closed. Update the table; do not delete history of what was claimed.
