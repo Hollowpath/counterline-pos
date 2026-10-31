@@ -9,6 +9,9 @@ updates:
     groups:
       maven-minor-and-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /frontend
@@ -17,6 +20,9 @@ updates:
     groups:
       frontend-minor-and-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /infrastructure
@@ -25,6 +31,9 @@ updates:
     groups:
       infrastructure-minor-and-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -33,6 +42,9 @@ updates:
     groups:
       actions-minor-and-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # The Dockerfile's base images. Major versions are pinned on purpose: Java 21 (LTS) and Node 22.
   - package-ecosystem: docker
