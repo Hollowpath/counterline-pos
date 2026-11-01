@@ -40,7 +40,7 @@ npm run test:e2e
 docker compose --profile app down                 # without -v: that would also remove the development database volume
 ```
 
-Each run records one more sale in the Compose `app` database. These tests prove that the packaged application serves both apps and completes one sign-in and one sale; they are not a regression suite.
+Each run records one more sale in the Compose `app` database. These tests prove that the packaged application serves all three web apps (POS, customer display and dashboard) and completes one sign-in and one sale; they are not a regression suite.
 
 ### Static checks
 

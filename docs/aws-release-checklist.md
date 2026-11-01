@@ -150,7 +150,7 @@ From `<owner-ip>`, the only address the load balancer accepts. The health reques
 curl -s <application-url>/actuator/health            # expect "status":"UP"
 ```
 
-Then, in a browser: `<application-url>/dashboard.html` signs in as head office and as the manager; set up a till with the manager PIN and sign in at the till. Also confirm the load balancer target is healthy and the application logs reach CloudWatch (docs/testing.md lists the manual checks). Record nothing here; observe it.
+Then, in a browser: `<application-url>/dashboard.html` signs in as head office and as the manager; set up a till with the manager PIN and sign in at the till. Also confirm the load balancer target is healthy and the application logs reach CloudWatch ([testing.md](testing.md) lists the manual checks). Record nothing here; observe it.
 
 ## 7. Roll back to the previous image [AWS]
 
@@ -179,6 +179,13 @@ aws ecr delete-repository --repository-name counterline-pos --force --profile <p
 
 Skip this only if you are deliberately keeping the images and have first changed the stack's repository design.
 
+CDK also deploys a small helper function that restricts the VPC's default security group. `cdk destroy` does not remove that function's log group: after the 2026-10-31 deployment ([record](deployment-verification-2026-10-31.md)) one empty group named `/aws/lambda/Counterline-CustomVpcRestrictDefaultSGCustomResour-…` remained. It costs nothing while empty, but delete it for a complete teardown. In Git Bash, `MSYS_NO_PATHCONV=1` stops the leading `/` being rewritten as a Windows path:
+
+```bash
+MSYS_NO_PATHCONV=1 aws logs describe-log-groups --log-group-name-prefix /aws/lambda/Counterline --profile <profile> --region <region>
+MSYS_NO_PATHCONV=1 aws logs delete-log-group --log-group-name <log-group-name-from-above> --profile <profile> --region <region>
+```
+
 ## 10. Final sweep [AWS read-only]
 
 Confirm nothing billable remains, then review billing the same day (budget notifications only notify; they do not stop spending). Read-only calls, each with `--profile <profile> --region <region>`:
@@ -196,4 +203,4 @@ aws logs describe-log-groups
 aws ecr describe-repositories
 ```
 
-Anything still listed from this stack is to be cleaned up deliberately; the AWS console's billing pages are the authority on cost.
+The application log group is deleted with the stack, so any log group still listed under `/aws/lambda/Counterline-` is the helper group from section 9. Anything else still listed from this stack is to be cleaned up deliberately; the AWS console's billing pages are the authority on cost.

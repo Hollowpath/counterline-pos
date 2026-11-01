@@ -14,7 +14,7 @@ All data is synthetic. Payments are recorded, not processed, and the project is 
 
 | POS: a sale in progress | POS: taking payment |
 | --- | --- |
-| ![POS with two items in the cart](docs/screenshots/pos-sale.png) | ![Payment dialog with cash selected](docs/screenshots/pos-payment.png) |
+| ![POS with three items (two lines) in the cart](docs/screenshots/pos-sale.png) | ![Payment dialog with cash selected](docs/screenshots/pos-payment.png) |
 
 | Customer display | Dashboard overview |
 | --- | --- |
