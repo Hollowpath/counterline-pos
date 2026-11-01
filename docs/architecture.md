@@ -78,6 +78,21 @@ Owner (one IPv4 /32) ──HTTP :80──▶ ALB (public subnets) ──HTTP :80
 - **Response headers.** Every response (the web apps, static files and the API) carries a `Content-Security-Policy` limited to the application's own origin, with scripts from `'self'` only (no inline or eval'd script) and no `'unsafe-inline'` for styles either: React sets its `style` values through the CSSOM, which `style-src 'self'` allows. `data:` is allowed for images only (one inline SVG icon in the stylesheet); fonts and everything else come from the origin. `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY` accompany it. There is no `Strict-Transport-Security` header yet: it waits for HTTPS. Under `local`, Swagger UI's own paths get a slightly looser policy (its page needs one inline style element); the apps keep the strict one (`auth/SecurityConfig.java`).
 - Secrets have no defaults outside the `local` profile.
 
+## Consistency guarantees
+
+A summary of the guarantees under concurrent or repeated requests, each backed by a test; the details are in the design decisions below. Tests are in `backend/src/test/java/com/counterline/pos/`.
+
+| Guarantee | Test |
+| --- | --- |
+| A retried or concurrently duplicated checkout (same client request id) records one sale. | `orders/CheckoutApiIntegrationTest` (`concurrentDuplicateSubmissionsRecordTheSaleOnce`) |
+| One manager approval completes one sale; racing sales cannot both succeed, and a failed sale leaves it usable. | `orders/ManagerApprovalIntegrationTest` (`twoSalesRacingForOneApprovalCannotBothSucceed`, `aSaleThatFailsLeavesItsApprovalUsable`) |
+| A drawer event racing a register close is counted by it or refused, never attached after it; concurrent pay-outs cannot spend the same cash. | `register/RegisterCashIntegrationTest` (`aCashSaleRacingTheCloseLandsBeforeItOrIsRefusedAndNeverAfter`, `twoPayOutsCannotSpendTheSameCash`) |
+| Paying and voiding the same order at once leaves a consistent order. | `orders/OrderLifecycleApiIntegrationTest` (`concurrentPayAndVoidLeaveAConsistentOrder`) |
+| An edit made from a stale copy of a catalogue row is refused with a 409 and overwrites nothing. | `catalog/CatalogManagementIntegrationTest` (`aStaleEditOfAnyCatalogueRowIsRefusedAndOverwritesNothing`) |
+| Whether someone is clocked in follows their latest event by id, not by the time on the event. | `timecards/TimecardIntegrityIntegrationTest` (`theCurrentStateIsTheLatestEventByIdWhateverTimesTheEventsCarry`) |
+| A burst of parallel login guesses gets no more than the limit's worth past the throttle. | `auth/ThrottleConcurrencyIntegrationTest` (`aBurstOfParallelGuessesAtOneAccountOnOneClientGetsExactlyTheLimitAndIsThenLocked`) |
+| The staff audit log is append-only. | `staff/ActorAttributionIntegrationTest` (`theRecordIsAppendOnly`) |
+
 ## Design decisions
 
 - **Single image, same origin.** Simplest thing to run and deploy; avoids CORS and a separate static host. Cost: web and API releases are coupled.
