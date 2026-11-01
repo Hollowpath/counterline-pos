@@ -12,7 +12,15 @@ All data is synthetic. Payments are recorded, not processed, and the project is 
 | **Customer display** (`/display.html`) | Customer, on a paired second screen | Shows the current sale, member sign-up/sign-in by phone number, and rotating posters while idle |
 | **Dashboard** (`/dashboard.html`) | Head office and outlet managers | Outlets, staff, catalogue and prices, discounts and vouchers, customers, till devices, sales reports |
 
-The full feature list is in [docs/features.md](docs/features.md).
+| POS: a sale in progress | POS: taking payment |
+| --- | --- |
+| ![POS with two items in the cart](docs/screenshots/pos-sale.png) | ![Payment dialog with cash selected](docs/screenshots/pos-payment.png) |
+
+| Customer display | Dashboard overview |
+| --- | --- |
+| ![Customer display showing the order and member prompt](docs/screenshots/customer-display.png) | ![Dashboard overview with sales figures for the outlets](docs/screenshots/dashboard-overview.png) |
+
+Screenshots show the local sample catalogue and synthetic sales, captured from the packaged app. The full feature list is in [docs/features.md](docs/features.md).
 
 ## Engineering highlights
 
