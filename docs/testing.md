@@ -32,11 +32,13 @@ Playwright tests (`@playwright/test`, Chromium only, line reporter; configuratio
 - **Till:** the iPad is set up for the sample outlet with the manager PIN, the cashier signs in, the register is opened if it is closed, a seeded item is added and paid for in cash, and the "Sale complete" dialog confirms the sale was recorded. An outlet has one till, so a till left over from an earlier run against the same database is reset first through the dashboard, as head office would.
 
 ```bash
+# from the repository root
 docker compose --profile app up --no-build -d     # after building counterline-pos:local; wait for /actuator/health
 cd frontend
 npm ci
 npx playwright install chromium                   # once
 npm run test:e2e
+cd ..                                             # back to the repository root
 docker compose --profile app down                 # without -v: that would also remove the development database volume
 ```
 
@@ -50,7 +52,7 @@ Each run records one more sale in the Compose `app` database. These tests prove 
 ## Commands
 
 ```bash
-# Backend: needs Docker running (Testcontainers pulls postgres:17-alpine)
+# Backend, from the repository root: needs Docker running (Testcontainers pulls postgres:17-alpine)
 cd backend
 ./mvnw test
 ./mvnw test -Dtest=CheckoutApiIntegrationTest   # one class
@@ -59,8 +61,8 @@ cd backend
 .\mvnw.cmd test
 .\mvnw.cmd test "-Dtest=CheckoutApiIntegrationTest"
 
-# Frontend
-cd frontend
+# Frontend (the commands above leave you in backend/; from the repository root use `cd frontend`)
+cd ../frontend
 npm ci
 npm test            # vitest run
 npm run test:watch

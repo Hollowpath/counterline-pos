@@ -2,7 +2,7 @@
 
 A checklist for a temporary, owner-run deployment of the CDK stack, from a clean checkout to teardown. It is a runbook, not a record: it holds no results, and what is deployed at any moment is external state this repository cannot show. The explanations live elsewhere: [infrastructure/README.md](../infrastructure/README.md) (first-deploy order, bootstrap, teardown details), [aws-deployment.md](aws-deployment.md) (status and limits) and [architecture.md](architecture.md#aws-deployment-temporary) (what the stack defines).
 
-Commands are for Git Bash. Placeholders in angle brackets are yours to fill; never commit real values, account details, URLs, addresses or credentials.
+Commands are for Git Bash. Where a command changes into `infrastructure`, it does so from the repository root, so it works wherever your terminal was left by an earlier step. Placeholders in angle brackets are yours to fill; never commit real values, account details, URLs, addresses or credentials.
 
 | Placeholder | Meaning |
 | --- | --- |
@@ -100,13 +100,13 @@ The repository does not exist until the stack creates it, and the service cannot
 1. In the stack source set the image tag to `<tag>` and the ECS service `desiredCount` to `0`. Then:
 
 ```bash
-cd infrastructure
+cd "$(git rev-parse --show-toplevel)/infrastructure"
 npm run build && npm test
 npx cdk diff   --profile <profile> --parameters AllowedIpv4Cidr=<owner-ip>/32
 npx cdk deploy --profile <profile> --parameters AllowedIpv4Cidr=<owner-ip>/32
 ```
 
-2. Read `RepositoryUri` from the stack outputs (the deploy prints it) and push the image built in step 3:
+2. Read `RepositoryUri` from the stack outputs (the deploy prints it) and push the image built in section 3:
 
 ```bash
 export AWS_PROFILE=<profile> AWS_REGION=<region> AWS_SDK_LOAD_CONFIG=true TAG=<tag>
@@ -134,7 +134,7 @@ docker tag counterline-pos:"$TAG" <repository-uri>:"$TAG"
 docker push <repository-uri>:"$TAG"
 
 # set the image tag in infrastructure/lib/infrastructure-stack.ts to <tag>, then:
-cd infrastructure
+cd "$(git rev-parse --show-toplevel)/infrastructure"
 npm run build && npm test
 npx cdk diff   --profile <profile> --parameters AllowedIpv4Cidr=<owner-ip>/32
 npx cdk deploy --profile <profile> --parameters AllowedIpv4Cidr=<owner-ip>/32
@@ -165,7 +165,7 @@ Tags are immutable and the repository keeps the five most recent images, so the 
 Billable resources run while the stack exists (load balancer, Fargate task, database, public IPv4 addresses), so destroy it when the exercise is finished. This permanently deletes the synthetic database and secrets.
 
 ```bash
-cd infrastructure
+cd "$(git rev-parse --show-toplevel)/infrastructure"
 npx cdk destroy --profile <profile>
 ```
 

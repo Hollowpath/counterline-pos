@@ -56,21 +56,27 @@ More in [docs/architecture.md](docs/architecture.md).
 
 Prerequisites: JDK 21, Node.js (the image builds with Node 22), Docker.
 
+Steps 1 and 2 run in a first terminal and step 3 in a second. Each terminal starts in the repository root, and the API in step 2 keeps running, so step 3 needs its own terminal.
+
 ```bash
+# Terminal 1, from the repository root
 # 1. Database
 docker compose up -d
 
 # 2. API on :8080 (the "local" profile loads the sample catalogue, sample staff and throwaway secrets)
 cd backend
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+```
 
+```bash
+# Terminal 2, from the repository root
 # 3. Web apps on :5173 (proxies /api to :8080)
 cd frontend
 npm ci
 npm run dev
 ```
 
-On Windows PowerShell, run step 2 as follows (the quotes stop PowerShell splitting the `-D` argument):
+On Windows PowerShell, run step 2 as follows, from the repository root (the quotes stop PowerShell splitting the `-D` argument):
 
 ```powershell
 cd backend
@@ -96,7 +102,7 @@ Local-only sample accounts (seeded by the `local` profile, outlet codes `O1` and
 docker compose --profile app up --build
 ```
 
-Builds the single image and starts it with its own database at `http://localhost:8090` (POS), `/display.html` and `/dashboard.html`. This database is separate from the one in step 1 above and starts empty of sales; the container runs with the `local` profile, so the sample catalogue and accounts above apply. Set up the device with an outlet and manager PIN on first load.
+Run from the repository root, this builds the single image and starts it with its own database at `http://localhost:8090` (POS), `/display.html` and `/dashboard.html`. This database is separate from the one in step 1 above and starts empty of sales; the container runs with the `local` profile, so the sample catalogue and accounts above apply. Set up the device with an outlet and manager PIN on first load.
 
 To build the image only: `docker build -t counterline-pos .`
 
@@ -104,7 +110,7 @@ Compose credentials are for localhost only.
 
 ### Tests
 
-`cd backend && ./mvnw test` (needs Docker) and `cd frontend && npm test`. See [docs/testing.md](docs/testing.md).
+From the repository root: `(cd backend && ./mvnw test)` (needs Docker) and `(cd frontend && npm test)`. See [docs/testing.md](docs/testing.md).
 
 ## Status and limits
 
