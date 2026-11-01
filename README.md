@@ -1,5 +1,7 @@
 # Counterline POS
 
+[![CI](https://github.com/Hollowpath/counterline-pos/actions/workflows/ci.yml/badge.svg)](https://github.com/Hollowpath/counterline-pos/actions/workflows/ci.yml)
+
 A multi-outlet retail point-of-sale system built with Spring Boot, PostgreSQL, React and TypeScript. One API serves three web apps: a tablet **POS** for the till, a customer-facing **display**, and a back-office **dashboard** for head office and managers.
 
 All data is synthetic. Payments are recorded, not processed, and the project is a demo, not production-ready (see [Status and limits](#status-and-limits)).
@@ -129,6 +131,7 @@ From the repository root: `(cd backend && ./mvnw test)` (needs Docker) and `(cd 
 - [Deployment verification, 2026-10-31](docs/deployment-verification-2026-10-31.md): record of one temporary deployment and its checks
 - [Engineering readiness](docs/engineering-readiness.md): scope, evidence policy, known gaps
 - [infrastructure/README.md](infrastructure/README.md): operator guide for the CDK stack
+- [Security policy](SECURITY.md): supported version and how to report a vulnerability
 
 ## License
 
