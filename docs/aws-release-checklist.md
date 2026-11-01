@@ -1,6 +1,6 @@
 # On-demand AWS release checklist
 
-A checklist for a temporary, owner-run deployment of the CDK stack, from a clean checkout to teardown. It is a runbook, not a record: it holds no results, and what is deployed at any moment is external state this repository cannot show. The explanations live elsewhere: [infrastructure/README.md](../infrastructure/README.md) (first-deploy order, bootstrap, teardown details), [README.md](../README.md#aws-deployment-status-and-roadmap) (status and limits) and [architecture.md](architecture.md#aws-deployment-temporary) (what the stack defines).
+A checklist for a temporary, owner-run deployment of the CDK stack, from a clean checkout to teardown. It is a runbook, not a record: it holds no results, and what is deployed at any moment is external state this repository cannot show. The explanations live elsewhere: [infrastructure/README.md](../infrastructure/README.md) (first-deploy order, bootstrap, teardown details), [aws-deployment.md](aws-deployment.md) (status and limits) and [architecture.md](architecture.md#aws-deployment-temporary) (what the stack defines).
 
 Commands are for Git Bash. Placeholders in angle brackets are yours to fill; never commit real values, account details, URLs, addresses or credentials.
 
@@ -114,7 +114,7 @@ docker tag counterline-pos:"$TAG" <repository-uri>:"$TAG"
 docker push <repository-uri>:"$TAG"
 ```
 
-3. Populate the secret `counterline/application` with generated values (`pinPepper`, `jwtSecret` and the `POS_BOOTSTRAP_*` values the README's first-run section requires). Write the JSON to a file **outside the repository**, never commit it, use only synthetic temporary values, and delete the file afterwards:
+3. Populate the secret `counterline/application` with generated values (`pinPepper`, `jwtSecret` and the `POS_BOOTSTRAP_*` values the first-run section of [configuration.md](configuration.md) requires). Write the JSON to a file **outside the repository**, never commit it, use only synthetic temporary values, and delete the file afterwards:
 
 ```bash
 aws secretsmanager put-secret-value --secret-id counterline/application \

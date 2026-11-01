@@ -5,7 +5,7 @@ What this system is scoped to do, what evidence exists for its quality, and whic
 ## Scope
 
 - Built and run by a single owner. No production traffic, no real customers, no service-level commitments.
-- Intended workload: a small number of outlets, run locally or in one small cloud environment. A reproducible CDK stack for a temporary, owner-run, owner-restricted deployment on AWS exists, but the repository provides no continuously hosted environment; deployments are external, owner-managed and created on demand (see the [README](../README.md#aws-deployment-status-and-roadmap)); it is not production-ready. No capacity figure is established.
+- Intended workload: a small number of outlets, run locally or in one small cloud environment. A reproducible CDK stack for a temporary, owner-run, owner-restricted deployment on AWS exists, but the repository provides no continuously hosted environment; deployments are external, owner-managed and created on demand (see the [AWS deployment status](aws-deployment.md)); it is not production-ready. No capacity figure is established.
 - Single region, single database, single container image. No multi-region, disaster-recovery or high-availability design.
 - Out of scope today: real payment-gateway integration (payments are recorded, not processed), tax filing, fiscal printer integration, offline till operation, and multi-tenant isolation.
 

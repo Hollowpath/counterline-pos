@@ -1,46 +1,48 @@
 # Counterline POS
 
-A multi-outlet retail point-of-sale system: a tablet POS for the till, a customer-facing display, and a back-office dashboard, served by one Spring Boot API backed by PostgreSQL.
+A multi-outlet retail point-of-sale system built with Spring Boot, PostgreSQL, React and TypeScript. One API serves three web apps: a tablet **POS** for the till, a customer-facing **display**, and a back-office **dashboard** for head office and managers.
 
-## What it does today
+All data is synthetic. Payments are recorded, not processed, and the project is a demo, not production-ready (see [Status and limits](#status-and-limits)).
 
-**POS (till)**
+## The three interfaces
 
-- Staff sign in with a PIN; roles are `STAFF` and `MANAGER`. A device is set up once for an outlet with a manager PIN. Repeated failed PINs are throttled.
-- Catalogue grid, cart, item options and discounts, custom amounts.
-- Checkout with cash and cashless payments (split payments supported), payment references, idempotent payment retries.
-- Place an order and pay later; void unpaid orders and fully refund paid orders. These need a manager, either signed in or approving at the till ("Special Access").
-- Members, promotions, loyalty points and vouchers.
-- Cash register open/close with a declared opening float (RM0.00 unless said otherwise, never carried over from an earlier session), pay in / pay out that cannot take more than the register's expected cash, staff clock-in/out, printed-style receipts and sales reports.
+| Interface | Used by | What it does |
+| --- | --- | --- |
+| **POS** (`/`) | Cashiers and managers at the till | PIN sign-in, catalogue grid and cart, split cash/cashless payments, place-now-pay-later orders, voids and refunds with manager approval, members, loyalty points and vouchers, register open/close, clock-in/out, receipts |
+| **Customer display** (`/display.html`) | Customer, on a paired second screen | Shows the current sale, member sign-up/sign-in by phone number, and rotating posters while idle |
+| **Dashboard** (`/dashboard.html`) | Head office and outlet managers | Outlets, staff, catalogue and prices, discounts and vouchers, customers, till devices, sales reports |
 
-**Customer display**
+The full feature list is in [docs/features.md](docs/features.md).
 
-- A paired second screen showing the current sale and member sign-up/sign-in by phone number. While no sale is open it rotates posters; a promotion's poster appears only while the server reports that promotion running today in the configured business time zone (otherwise only neutral posters that promise no reward).
+## Engineering highlights
 
-**Dashboard**
-
-- Head-office and manager sign-in with email and password.
-- Outlets (head office): add, edit name and address, deactivate and reactivate. The outlet code is set once and never changes; outlets are never deleted, and deactivation is refused while a register is open.
-- Staff (head office): cashiers and managers per outlet; add, edit name, role and outlet, deactivate and reactivate, reset a PIN. Managers can have a dashboard e-mail and password. PINs and passwords are never shown or logged, staff are never deleted, and a deactivated person cannot sign in. Each change is recorded against the head-office account that made it.
-- Sales overview per outlet; catalogue (folders and tabs: add, rename, move, reorder, delete when empty; items: add, price, move, reorder, remove; item option groups and options; sold items and options are taken off sale rather than deleted, so past sales stay intact), discount and voucher management (head office); customers, member adjustments, till devices and PIN locks.
-
-**Platform**
-
-- Multiple outlets, each with its own staff and registers, all sharing one configured business time zone (`POS_OUTLET_TIME_ZONE`, default `Asia/Kuala_Lumpur`); there is no per-outlet time zone.
-- REST API under `/api/v1`, OpenAPI/Swagger UI (local profile only), health endpoint at `/actuator/health`.
-- Flyway-managed schema (versioned migrations in `backend/src/main/resources/db/migration`).
+- **Multi-outlet model.** Each outlet has its own staff, till devices and cash registers. All outlets share one configured business time zone, which defines report days, receipts and promotion dates.
+- **Authentication and authorization.** Stateless JWT with separate channels for till, dashboard, display and single-action approval, so a token for one cannot be used on another. Staff PINs are hashed with a server-side pepper, dashboard passwords with BCrypt, and failed attempts are throttled with counts stored in PostgreSQL. Tokens end when a person is deactivated or their PIN, role or outlet changes.
+- **Sensitive actions need a manager.** Discount approvals, voids and refunds take a short-lived, single-use approval token tied to one operation; used tokens are recorded in the database.
+- **Transaction handling.** Money is `BigDecimal` in the API and integer sen in the browser. Recording a payment is idempotent: a retried request with the same client request id returns the already-paid order instead of recording the payment a second time (there is no payment gateway). Optimistic locking guards orders, registers, staff and outlets, and pessimistic locks guard loyalty balances. Catalogue edits are version-checked and a stale edit gets a 409. Reports count events on the day they happened.
+- **Database.** PostgreSQL 17 with Flyway-managed migrations and Hibernate set to validate only. Staff changes are written to an audit table in the same transaction.
+- **Testing.** Backend integration tests run against a real PostgreSQL container with Testcontainers; frontend tests use Vitest and Testing Library; Playwright smoke tests drive the packaged app in a browser. What each layer does and does not prove is in [docs/testing.md](docs/testing.md).
+- **CI.** GitHub Actions runs four jobs on every push to `main` and every pull request: backend `verify` (including the Testcontainers tests); frontend lint, tests and build; infrastructure (CDK) build and tests; and a packaged-image job that builds the Docker image, scans it with Trivy (fixable HIGH and CRITICAL vulnerabilities fail the job), starts it with Compose, waits for the health check and runs the Playwright smoke tests. Third-party actions are pinned to commit hashes.
+- **Docker.** One multi-stage image runs the API and serves the three web apps from the same origin, as a non-root user with a health check. Docker Compose runs it locally.
+- **AWS infrastructure as code.** A CDK (TypeScript) stack defines ECR, a two-AZ VPC, an owner-restricted load balancer, Fargate, an encrypted PostgreSQL instance on RDS, Secrets Manager and CloudWatch logs. It was deployed on demand and exercised end to end, then destroyed: see the [dated verification record](docs/deployment-verification-2026-10-31.md). Nothing is hosted continuously.
 
 ## Stack
 
-| Layer     | Technology                                                                         |
-| --------- | ---------------------------------------------------------------------------------- |
-| API       | Java 21, Spring Boot 4.1, Spring Security (stateless JWT), Spring Data JPA, Flyway |
-| Database  | PostgreSQL 17                                                                      |
-| Web apps  | React 19, TypeScript, Vite 7, Tailwind CSS 4 (three entry pages from one codebase) |
-| Tests     | JUnit with Testcontainers; Vitest with Testing Library                             |
-| Packaging | Single multi-stage Docker image; Docker Compose for local use                      |
+| Layer | Technology |
+| --- | --- |
+| API | Java 21, Spring Boot 4.1, Spring Security (stateless JWT), Spring Data JPA, Flyway |
+| Database | PostgreSQL 17 |
+| Web apps | React 19, TypeScript, Vite 7, Tailwind CSS 4 (three entry pages from one codebase) |
+| Tests | JUnit with Testcontainers; Vitest with Testing Library; Playwright |
+| Packaging and delivery | Multi-stage Docker image, Docker Compose, GitHub Actions |
+| Infrastructure | AWS CDK (TypeScript) |
 
-See [docs/architecture.md](docs/architecture.md).
+```
+Browser (POS / display / dashboard) ──HTTP /api/v1──▶ Spring Boot API ──JDBC──▶ PostgreSQL
+       static files served by the same API process ◀──┘
+```
+
+More in [docs/architecture.md](docs/architecture.md).
 
 ## Run locally
 
@@ -71,18 +73,16 @@ Open `http://localhost:5173/` (POS), `/display.html` (customer display) and `/da
 
 Local-only sample accounts (seeded by the `local` profile, outlet codes `O1` and `O2`):
 
-| Where            | Who             | Credential                                                                               |
-| ---------------- | --------------- | ---------------------------------------------------------------------------------------- |
-| POS, outlet `O1` | Staff / Manager | PIN `111111` / `999999`                                                                  |
-| POS, outlet `O2` | Staff / Manager | PIN `222222` / `888888`                                                                  |
-| Dashboard        | Head office     | `admin@counterline.test` / `counterline-demo`                                            |
-| Dashboard        | Managers        | `daniel@counterline.test` (`O1`), `meiling@counterline.test` (`O2`) / `counterline-demo` |
+| Where | Who | Credential |
+| --- | --- | --- |
+| POS, outlet `O1` | Staff / Manager | PIN `111111` / `999999` |
+| POS, outlet `O2` | Staff / Manager | PIN `222222` / `888888` |
+| Dashboard | Head office | `admin@counterline.test` / `counterline-demo` |
+| Dashboard | Managers | `daniel@counterline.test` (`O1`), `meiling@counterline.test` (`O2`) / `counterline-demo` |
 
-**Localhost only.** The sample accounts above, the `pos`/`pos` database credentials in `docker-compose.yml` and the `local` profile's PIN pepper and JWT key are public in this repository, so anyone can sign in with them or forge tokens. Use them only on your own machine with synthetic data: never run the `local` profile, or this Compose file, on a reachable host or with real data. Compose publishes its ports on `127.0.0.1` only.
+**Localhost only.** The sample accounts above, the `pos`/`pos` database credentials in `docker-compose.yml` and the `local` profile's PIN pepper and JWT key are public in this repository, so anyone can sign in with them or forge tokens. Use them only on your own machine with synthetic data: never run the `local` profile, or this Compose file, on a reachable host or with real data. Compose publishes its ports on `127.0.0.1` only. Outside the `local` profile, `POS_SECURITY_PIN_PEPPER` and `POS_SECURITY_JWT_SECRET` must be supplied; there are no defaults.
 
-These exist only under the `local` profile. Outside it, `POS_SECURITY_PIN_PEPPER` and `POS_SECURITY_JWT_SECRET` must be supplied; there are no defaults.
-
-## Run in Docker
+### Run in Docker
 
 ```bash
 docker compose --profile app up --build
@@ -94,84 +94,27 @@ To build the image only: `docker build -t counterline-pos .`
 
 Compose credentials are for localhost only.
 
-## Tests
+### Tests
 
-See [docs/testing.md](docs/testing.md). In short: `cd backend && ./mvnw test` (needs Docker) and `cd frontend && npm test`.
+`cd backend && ./mvnw test` (needs Docker) and `cd frontend && npm test`. See [docs/testing.md](docs/testing.md).
 
-## Configuration
+## Status and limits
 
-| Variable                                             | Default                   | Purpose                                       |
-| ---------------------------------------------------- | ------------------------- | --------------------------------------------- |
-| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`               | local Compose database    | Database connection                           |
-| `POS_SECURITY_PIN_PEPPER`, `POS_SECURITY_JWT_SECRET` | none (local profile only) | PIN hashing pepper and JWT signing key        |
-| `POS_OUTLET_TIME_ZONE`                               | `Asia/Kuala_Lumpur`       | The one business time zone shared by all outlets: report days, receipts, promotion dates, display posters, timecard corrections |
-| `POS_OUTLET_PHONE_COUNTRY_CODE`                      | `60`                      | Default country code for member phone numbers |
-| `POS_BOOTSTRAP_ENABLED`                              | `false`                   | One-time first-run set-up (below)             |
-
-### First-run set-up of a fresh database (outside the `local` profile)
-
-A new database has the single outlet `O1` (migration `V14`) and the catalogue tables, but no staff or head-office account. With `POS_BOOTSTRAP_ENABLED=true` the application creates, once at start-up, one head-office account for the dashboard and one manager for the existing outlet. The manager can set up a till, sign in at the till with a PIN, and sign in to the dashboard with an e-mail and password. It is for non-local environments only: the application refuses to start if bootstrap is enabled while the `local` profile is active (that profile seeds its own sample accounts).
-
-When enabled, all of these are required. There are no defaults, and the application does not start if one is missing or invalid:
-
-| Variable                          | Rule                                                     |
-| --------------------------------- | -------------------------------------------------------- |
-| `POS_BOOTSTRAP_OUTLET_CODE`       | Code of an existing, active outlet (for example `O1`)    |
-| `POS_BOOTSTRAP_HEAD_OFFICE_NAME`  | Display name, up to 100 characters                       |
-| `POS_BOOTSTRAP_HEAD_OFFICE_EMAIL` | Valid e-mail; stored lower case                          |
-| `POS_BOOTSTRAP_HEAD_OFFICE_PASSWORD` | At least 12 characters and at most 72 bytes in UTF-8  |
-| `POS_BOOTSTRAP_MANAGER_NAME`      | Display name, up to 120 characters                       |
-| `POS_BOOTSTRAP_MANAGER_PIN`       | Exactly six digits                                       |
-| `POS_BOOTSTRAP_MANAGER_EMAIL`     | Valid e-mail, different from the head-office e-mail      |
-| `POS_BOOTSTRAP_MANAGER_PASSWORD`  | At least 12 characters and at most 72 bytes in UTF-8     |
-
-Supply the credential values from the environment's secret store, never from the repository. The application never logs them.
-
-Behaviour on re-runs: an account that already matches (same e-mail, and for the manager the same PIN, outlet and role) is left as it is, and its stored credentials are never overwritten. The application refuses to start if the outlet does not exist or is inactive, or if an e-mail or PIN is already held by a different account (including a deactivated one).
-
-Operational sequence:
-
-1. Deploy with `POS_BOOTSTRAP_ENABLED=true` and the variables above set, and start the application once.
-2. Check access: sign in to the dashboard as head office and as the manager, set up a till with the manager PIN, then sign in at the till.
-3. Redeploy with `POS_BOOTSTRAP_ENABLED` unset (or `false`) and every `POS_BOOTSTRAP_*` credential variable removed. The initializer creates only this initial head-office account and manager; further outlets and staff are managed in the dashboard (Outlets, Staff). A fresh non-local database also has an empty catalogue: head office builds it in the dashboard under Items & Prices, by adding a folder (naming its till-grid tab) and then items in it. Nothing is seeded outside the `local` profile.
-
-If the credentials are held in AWS Secrets Manager, removing them from the current secret value does not erase the previous encrypted version, which Secrets Manager keeps until the secret is deleted. Use this workflow only with synthetic, temporary credentials; the AWS steps are in [infrastructure/README.md](infrastructure/README.md).
-
-## AWS deployment status and roadmap
-
-**Runtime state.** The repository provides no continuously hosted environment. Deployments are external, owner-managed and created on demand; the repository describes what can be deployed, and these docs cannot assert live external state.
-
-**What exists.** A GitHub Actions workflow (`.github/workflows/ci.yml`) builds and tests the backend and frontend. The owner-managed AWS CDK stack in `infrastructure/` (TypeScript) is reproducible and was designed for temporary, owner-run deployments. It defines:
-
-- a private Amazon ECR repository for the application image (immutable tags, scan on push, the five most recent images kept, retained if the stack is deleted);
-- a two-AZ VPC with public and isolated database subnets and no NAT gateway;
-- an internet-facing Application Load Balancer serving HTTP only, reachable only from the owner's IPv4 address (a single `/32`, supplied as a stack parameter);
-- one Fargate task with a public IP, receiving traffic from the load balancer on port 8080;
-- an encrypted, single-AZ Amazon RDS for PostgreSQL 17 instance in the isolated subnets, not publicly accessible;
-- AWS Secrets Manager secrets for the database credentials and the application's keys;
-- CloudWatch application logs with seven-day retention.
-
-**What this is not.** This is a temporary, owner-run deployment, not production-ready: HTTP only, one task, a single-AZ database with one day of backups, no alarms, no autoscaling, and resources that are deleted with the stack (except the ECR repository). There is no automated deployment pipeline: CI builds the image only for a local smoke test and never publishes it or touches AWS, and the owner pushes images and deploys the stack by hand. The operator steps are in [infrastructure/README.md](infrastructure/README.md), and an end-to-end on-demand checklist (build, push, deploy, smoke checks, rollback, teardown, final sweep) is in [docs/aws-release-checklist.md](docs/aws-release-checklist.md).
-
-**Deploy briefly, then destroy.** The load balancer, Fargate task, database and public IPv4 addresses are billed while they exist, even when idle, so deploy only for testing or demonstrations and tear the stack down afterwards with `cdk destroy`. Before any deployment, set up AWS budget notifications and a billing-review routine in the account: they are external to this repository, which neither creates nor checks them, and they notify only. Teardown deletes the synthetic database and the secrets. The ECR repository is retained by the stack and must be deleted separately for a complete teardown (see [infrastructure/README.md](infrastructure/README.md#teardown-and-cost)).
-
-**Planned, not built.** Region `ap-southeast-1`, one small environment. Each item is added only when it is needed:
-
-- HTTPS on a domain the owner controls, before any access beyond the owner.
-- Automated delivery from GitHub Actions (image publishing, then deployment using GitHub OIDC rather than stored AWS keys).
-- A small set of CloudWatch alarms.
-- Production availability and backups for the database.
-
-Cost is a design constraint: the plan avoids services that bill while idle unless they are required. See [docs/engineering-readiness.md](docs/engineering-readiness.md) for what is deliberately not yet in place.
+- A demo with synthetic data. There is no payment-gateway integration, tax or fiscal printing, offline till mode or multi-tenant isolation.
+- The AWS stack is temporary and owner-run: HTTP only, one task, a single-AZ database, no alarms or autoscaling, and no automated deployment pipeline. CI never publishes an image or touches AWS.
+- Deliberately deferred controls, each with the trigger that would bring it in, are listed in [docs/engineering-readiness.md](docs/engineering-readiness.md).
 
 ## Documentation
 
-- [docs/architecture.md](docs/architecture.md)
-- [docs/testing.md](docs/testing.md)
-- [docs/engineering-readiness.md](docs/engineering-readiness.md)
-- [docs/aws-release-checklist.md](docs/aws-release-checklist.md): on-demand AWS deployment checklist
-- [docs/deployment-verification-2026-10-31.md](docs/deployment-verification-2026-10-31.md): dated record of one temporary deployment and its checks
-- [infrastructure/README.md](infrastructure/README.md): operator guide for the AWS CDK stack
+- [Features](docs/features.md): the full feature list
+- [Architecture](docs/architecture.md): components, security model, design decisions, AWS topology
+- [Testing](docs/testing.md): test layers, commands and what they do not cover
+- [Configuration and first-run set-up](docs/configuration.md): environment variables and bootstrapping a fresh database
+- [AWS deployment status and roadmap](docs/aws-deployment.md): what the stack defines, cost, and what is planned
+- [AWS release checklist](docs/aws-release-checklist.md): on-demand deploy and teardown runbook
+- [Deployment verification, 2026-10-31](docs/deployment-verification-2026-10-31.md): record of one temporary deployment and its checks
+- [Engineering readiness](docs/engineering-readiness.md): scope, evidence policy, known gaps
+- [infrastructure/README.md](infrastructure/README.md): operator guide for the CDK stack
 
 ## License
 
