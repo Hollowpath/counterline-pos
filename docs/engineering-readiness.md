@@ -80,6 +80,29 @@ Each item is intentionally not built. Build it when its trigger is met, not befo
 - **Limits.** OSV and `npm audit` snapshots only; Maven plugin classpaths, the container image (covered separately by Trivy in CI), reachability and other databases were not checked; the OSV-Scanner binary was not used.
 - **Recheck when** the triggers listed above occur, when Spring Boot or any resolved Maven version changes, or on a new advisory for the resolved set.
 
+## CSRF protection disabled: CodeQL alert #1 (assessed 9 November 2026)
+
+**Alert.** `java/spring-disabled-csrf-protection` (high), open, at `SecurityConfig.java` lines 92 to 93 (`.csrf(AbstractHttpConfigurer::disable)`). Nothing was dismissed or changed in GitHub; the alert state is the owner's to decide after reading this record.
+
+**What CSRF needs.** A forged cross-site request only works if the browser attaches the victim's credential by itself: a cookie, a server-side session, HTTP Basic or another browser-managed credential. "The application is stateless" is not the justification here. The justification is that no such credential can authenticate a request in this application, and that is checked rather than assumed.
+
+**Authentication channels inspected (source, 9 November 2026).** One security filter chain. Requests authenticate only through `oauth2ResourceServer().jwt()` with the default bearer-token resolution, which reads the `Authorization: Bearer` header and has the query-parameter and form-body methods switched off. No `httpBasic`, `formLogin`, `rememberMe`, logout filter or session handling is configured; the session policy is stateless; a search of the main source for cookies and HTTP sessions found none. The unauthenticated endpoints (`permitAll`: PIN login, terminal setup, PIN lock, outlet reads, display connect, dashboard login) receive no ambient credential and return a token in the response body.
+
+**Evidence.** `AuthenticationChannelsIntegrationTest` (real security filters, PostgreSQL, synthetic staff, head-office account and member; tokens and passwords never printed) covers one till mutation (adding a member) and one dashboard mutation (deactivating a member):
+- a valid till or dashboard token in cookies alone, in nine cookies (names a framework or convention might read, including `Authorization`, `JSESSIONID` and `SESSION`), is refused (401) and changes nothing;
+- HTTP Basic, including real head-office credentials and a token used as the Basic username or password, is refused;
+- a token in the query string (as a parameter on the POST and on a read) or in a form-encoded body is refused;
+- the same requests with a bearer header succeed (201 and 200);
+- till login, dashboard login, terminal setup and an authenticated mutation each issue no cookie, no `Set-Cookie` header and no server-side session.
+
+Result on 9 November 2026 (Claude Code, local): the five new tests passed together with the existing `AuthApiIntegrationTest` and `LogoutAndAdminSessionIntegrationTest` (27 tests, none failing). As a check that the tests can fail, the query-string and form-body token methods were temporarily enabled in `SecurityConfig` and the new tests failed; the change was reverted and no application code differs. No application behavior, dependency or setting was changed to address the alert.
+
+**Conclusion.** The alert's premise, a request authenticated by a browser-attached credential, does not hold for the current code: no cookie, Basic, form or session channel authenticates a request, and an attacker's page cannot supply the bearer header. The alert remains open in GitHub until the owner decides what to do with it.
+
+**Limits.** MockMvc, not a browser or a deployed stack: it does not cover a reverse proxy, an ALB, CORS configuration (not assessed here), or the Swagger UI paths. The tests show today's behavior only and do not prevent a future change. The attacker-page scenario was reasoned about, not exercised in a browser. CodeQL has not been rerun on this change.
+
+**Renewed CSRF review is required before merging any change that** (1) sets an authentication cookie or starts a server-side session, including "remember me" and a backend-for-frontend design; (2) adds HTTP Basic or Digest, form login, client certificates or another browser-managed credential; (3) adds an alternative token source, such as reading the token from a cookie, the query string, a form body or a custom resolver, or enables `allowUriQueryParameter` or `allowFormEncodedBodyParameter`; (4) changes the session creation policy; (5) adds an OAuth or single-sign-on login redirect flow; or (6) needs `AuthenticationChannelsIntegrationTest` assertions to change. Re-enabling CSRF protection, with tokens, is the response if any of these is accepted.
+
 ## Review cadence
 
 Revisit this file whenever a trigger is met, when the AWS roadmap changes, or when a gap is closed. Update the table; do not delete history of what was claimed.
