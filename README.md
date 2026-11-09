@@ -1,6 +1,6 @@
 # Counterline POS
 
-[![CI](https://github.com/Hollowpath/counterline-pos/actions/workflows/ci.yml/badge.svg)](https://github.com/Hollowpath/counterline-pos/actions/workflows/ci.yml)
+[![CI](https://github.com/Hollowpath/counterline-pos/actions/workflows/ci.yml/badge.svg)](https://github.com/Hollowpath/counterline-pos/actions/workflows/ci.yml) [![CodeQL](https://github.com/Hollowpath/counterline-pos/actions/workflows/github-code-scanning/codeql/badge.svg?branch=main)](https://github.com/Hollowpath/counterline-pos/actions/workflows/github-code-scanning/codeql)
 
 A multi-outlet retail point-of-sale system built with Spring Boot, PostgreSQL, React and TypeScript. One API serves three web apps: a tablet **POS** for the till, a customer-facing **display**, and a back-office **dashboard** for head office and managers.
 
