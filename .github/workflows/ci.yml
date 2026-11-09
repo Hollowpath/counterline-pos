@@ -112,12 +112,50 @@ jobs:
       - name: Build the image
         run: docker build -t counterline-pos:local .
 
+      # Installs the same Trivy release the action used to install itself (v0.70.0), but separately, so a failed download
+      # is visible and retried. The release tarball is pinned by SHA-256 (the value in the release's own checksums file
+      # and in the GitHub release API); a download that does not match is rejected and never executed. The installer
+      # inside the action (a script that downloads two files and exits silently on failure) is skipped below.
+      - name: Install Trivy (pinned, checksum-verified)
+        env:
+          TRIVY_VERSION: "0.70.0"
+          TRIVY_SHA256: 8b4376d5d6befe5c24d503f10ff136d9e0c49f9127a4279fd110b727929a5aa9
+        run: |
+          set -u
+          asset="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          url="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/${asset}"
+          archive="${RUNNER_TEMP}/${asset}"
+          ok=""
+          for attempt in 1 2 3 4 5; do
+            rm -f "$archive"
+            rc=0
+            code=$(curl -sS -L --connect-timeout 15 --max-time 180 -w '%{http_code}' -o "$archive" "$url") || rc=$?
+            actual=""
+            [ -s "$archive" ] && actual=$(sha256sum "$archive" | cut -d' ' -f1)
+            echo "attempt ${attempt}/5: curl exit ${rc}, HTTP ${code:-none}, bytes $( [ -f "$archive" ] && wc -c < "$archive" || echo 0 ), sha256 ${actual:-none}"
+            if [ "$rc" -eq 0 ] && [ "$code" = "200" ] && [ "$actual" = "$TRIVY_SHA256" ]; then
+              ok=1
+              break
+            fi
+            [ -n "$actual" ] && [ "$actual" != "$TRIVY_SHA256" ] && echo "checksum mismatch: expected ${TRIVY_SHA256}"
+            [ "$attempt" -lt 5 ] && sleep $((attempt * 10))
+          done
+          if [ -z "$ok" ]; then
+            echo "::error title=Trivy download failed::${asset} could not be downloaded and verified from ${url} after 5 attempts (see the attempt lines above)."
+            exit 1
+          fi
+          mkdir -p "${HOME}/.local/bin/trivy-bin"
+          tar -xzf "$archive" -C "${HOME}/.local/bin/trivy-bin" trivy
+          echo "${HOME}/.local/bin/trivy-bin" >> "$GITHUB_PATH"
+          "${HOME}/.local/bin/trivy-bin/trivy" --version
+
       # Scans the image built above (not rebuilt): OS packages and application libraries. Only
       # vulnerabilities with a fix available at HIGH or CRITICAL severity fail the job.
       - name: Scan the image for vulnerabilities
         id: trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          skip-setup-trivy: true
           image-ref: counterline-pos:local
           format: table
           vuln-type: os,library
