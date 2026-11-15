@@ -15,17 +15,17 @@
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
     "country-flag-icons": "1.6.20",
-    "libphonenumber-js": "1.13.15",
+    "libphonenumber-js": "1.13.16",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
     "@playwright/test": "^1.65.0",
-    "@tailwindcss/vite": "^4.3.4",
+    "@tailwindcss/vite": "^4.3.5",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
-    "@testing-library/user-event": "^14.6.8",
+    "@testing-library/user-event": "^14.6.10",
     "@types/node": "^22.20.5",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
@@ -37,8 +37,8 @@
     "jsdom": "^26.1.0",
     "tailwindcss": "^4.3.2",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.72.1",
-    "vite": "^7.1.2",
+    "typescript-eslint": "^8.72.2",
+    "vite": "^7.3.8",
     "vitest": "^4.1.12"
   }
 }
